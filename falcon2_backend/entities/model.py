@@ -21,7 +21,7 @@ class ModelScore:
     anchor: Optional[float] = None
 
     # --- WINDOW CONSTANTS ---
-    WINDOW_RECENT: ClassVar[timedelta] = timedelta(hours=12)
+    WINDOW_RECENT: ClassVar[timedelta] = timedelta(days=1)
     WINDOW_STEADY: ClassVar[timedelta] = timedelta(days=3)
     WINDOW_ANCHOR: ClassVar[timedelta] = timedelta(days=7)
 

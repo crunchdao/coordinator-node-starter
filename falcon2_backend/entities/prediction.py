@@ -6,13 +6,15 @@ from model_runner_client.model_concurrent_runners.model_concurrent_runner import
 
 import logging
 from collections import defaultdict
-from dataclasses import dataclass, field
+from pydantic.dataclasses import dataclass
+from pydantic import Field
 from datetime import datetime, timezone, timedelta
 
 from importlib.machinery import ModuleSpec
 from typing import Optional
 
 __spec__: Optional[ModuleSpec]
+logger: logging.Logger = Field(default_factory=lambda: logging.getLogger(__spec__.name if __spec__ else __name__))
 
 
 ## Aggregate
@@ -35,7 +37,7 @@ class PredictionScore:
     value: float | None
     success: bool
     failed_reason: str | None
-    scored_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    scored_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -94,7 +96,7 @@ class PredictionConfig:
     prediction_interval: int
     active: bool
     order: int
-    id: str = field(default_factory=generate_config_id)
+    id: str = Field(default_factory=generate_config_id)
 
     @staticmethod
     def get_active_assets(configs: list["PredictionConfig"]) -> set[str]:
@@ -108,8 +110,7 @@ class GroupScheduler:
     prediction_interval: int
     assets: list[str]
     index: int = 0
-    next_run: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    logger: logging.Logger = field(default_factory=lambda: logging.getLogger(__spec__.name if __spec__ else __name__))
+    next_run: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def should_run(self, now: datetime) -> bool:
         return now >= self.next_run
@@ -119,7 +120,7 @@ class GroupScheduler:
         self.index = (self.index + 1) % len(self.assets)
         self.next_run = now + timedelta(seconds=self.prediction_interval / len(self.assets))
 
-        self.logger.debug(f"Next Run: {self.next_run.strftime("%H:%M:%S")}, Code: {self.assets[self.index]}, Horizon: {int(self.horizon / 60)}m, Step: {int(self.step / 60)}m")
+        logger.debug(f"Next Run: {self.next_run.strftime("%H:%M:%S")}, Code: {self.assets[self.index]}, Horizon: {int(self.horizon / 60)}m, Step: {int(self.step / 60)}m")
 
         return code
 

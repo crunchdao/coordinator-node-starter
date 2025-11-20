@@ -68,7 +68,7 @@ class DbPredictionRepository(PredictionRepository):
                     WHERE resolvable_at >= NOW() - INTERVAL '1 second' * :anchor_seconds
                 ) AS mean_anchor
             FROM predictions
-            WHERE resolvable_at >= NOW() - INTERVAL '1 second' * :anchor_seconds
+            WHERE resolvable_at >= NOW() - INTERVAL '1 second' * :anchor_seconds and score_scored_at is not null
             GROUP BY model_id, asset, horizon, step;
         """)
 
