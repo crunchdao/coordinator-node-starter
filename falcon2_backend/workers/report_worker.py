@@ -1,5 +1,5 @@
 import logging
-from typing import Annotated, Generator, Any, List
+from typing import Annotated, Generator, Any, List, Optional
 from datetime import datetime
 
 import uvicorn
@@ -49,17 +49,17 @@ def get_leaderboard_repository(
 class LeaderboardEntryResponse(BaseModel):
     created_at: datetime
     model_id: int
-    score_recent: float
-    score_steady: float
-    score_anchor: float
+    score_recent: Optional[float]
+    score_steady: Optional[float]
+    score_anchor: Optional[float]
     rank: int
 
 
 class GlobalMetricsResponse(BaseModel):
     model_id: int
-    score_recent: float
-    score_steady: float
-    score_anchor: float
+    score_recent: Optional[float]
+    score_steady: Optional[float]
+    score_anchor: Optional[float]
 
 
 class ParamMetricsResponse(BaseModel):
@@ -68,9 +68,9 @@ class ParamMetricsResponse(BaseModel):
     asset: str
     horizon: int
     step: int
-    score_recent: float
-    score_steady: float
-    score_anchor: float
+    score_recent: Optional[float]
+    score_steady: Optional[float]
+    score_anchor: Optional[float]
 
 
 class MetricsReportArgs(BaseModel):
@@ -97,7 +97,7 @@ def get_leaderboard(
 
     return [
         LeaderboardEntryResponse(
-            created_at=entry.created_at,
+            created_at=leaderboard.created_at,
             model_id=entry.model_id,
             score_recent=entry.score.recent,
             score_steady=entry.score.steady,

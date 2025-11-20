@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict
+from pydantic.dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable
 

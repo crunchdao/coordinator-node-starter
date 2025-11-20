@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Optional
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from falcon2_backend.entities.leaderboard import Leaderboard, LeaderboardEntry
 from falcon2_backend.services.interfaces.leaderboard_repository import LeaderboardRepository
@@ -41,17 +41,16 @@ class DBLeaderboardRepository(LeaderboardRepository):
         self._session.commit()
 
     def get_latest(self) -> Optional[Leaderboard]:
-        row = (
-            self._session.query(LeaderboardRow)
-            .order_by(LeaderboardRow.created_at.desc())
-            .first()
-        )
+        stmt = select(LeaderboardRow).order_by(LeaderboardRow.created_at.desc())
+        row = self._session.exec(stmt).first()
 
         if row is None:
             return None
 
+        entries = [LeaderboardEntry(**entry) for entry in row.entries]
+
         return Leaderboard(
             id=row.id,
-            entries=row.entries,
+            entries=entries,
             created_at=row.created_at
         )

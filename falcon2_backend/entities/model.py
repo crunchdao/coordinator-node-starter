@@ -1,6 +1,7 @@
-from dataclasses import dataclass, field
+from pydantic.dataclasses import dataclass
+from pydantic import Field
 from datetime import timedelta
-from typing import ClassVar
+from typing import ClassVar, Optional
 
 from model_runner_client.model_runners.model_runner import ModelRunner
 
@@ -9,15 +10,15 @@ from falcon2_backend.entities.prediction import PredictionParams
 
 @dataclass
 class Player:
-    crunch_identifier: str # unique identifier
+    crunch_identifier: str  # unique identifier
     name: str
 
 
 @dataclass
 class ModelScore:
-    recent: float
-    steady: float | None
-    anchor: float | None
+    recent: Optional[float] = None
+    steady: Optional[float] = None
+    anchor: Optional[float] = None
 
     # --- WINDOW CONSTANTS ---
     WINDOW_RECENT: ClassVar[timedelta] = timedelta(hours=12)
@@ -27,18 +28,20 @@ class ModelScore:
     def get_ranking_value(self):
         return self.anchor
 
+
 @dataclass
 class ModelScoreByParam:
     param: PredictionParams
     score: ModelScore
 
+
 @dataclass
 class Model:
-    crunch_identifier: str # unique identifier from tournament hub
+    crunch_identifier: str  # unique identifier from tournament hub
     player: Player
     name: str
     deployment_identifier: str
-    scores_by_param: list[ModelScoreByParam] = field(default_factory=list)
+    scores_by_param: list[ModelScoreByParam] = Field(default_factory=list)
     overall_score: ModelScore = None
 
     @staticmethod
