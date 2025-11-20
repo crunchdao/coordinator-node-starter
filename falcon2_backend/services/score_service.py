@@ -21,8 +21,6 @@ from falcon2_backend.services.interfaces.price_repository import PriceRepository
 from importlib.machinery import ModuleSpec
 from typing import Optional
 
-from falcon2_backend.services.interfaces.snapshot_publisher import SnapshotPublisher
-
 __spec__: Optional[ModuleSpec]
 
 MINUTE = 60
@@ -38,7 +36,6 @@ class ScoreService:
                  model_repository: ModelRepository,
                  prediction_repository: PredictionRepository,
                  leaderboard_repository: LeaderboardRepository,
-                 snapshot_publisher: SnapshotPublisher
 
                  ):
         """
@@ -53,7 +50,6 @@ class ScoreService:
         self.model_repository = model_repository
         self.prediction_repository = prediction_repository
         self.leaderboard_repository = leaderboard_repository
-        self.snapshot_publisher = snapshot_publisher
 
         self.logger = logging.getLogger(__spec__.name if __spec__ else __name__)
 
@@ -181,10 +177,6 @@ class ScoreService:
         self.leaderboard_repository.save(leaderboard)
         self.last_leaderboard = leaderboard
 
-    def publish_game_snapshot(self):
-        self.snapshot_publisher.publish_leaderboard(self.last_leaderboard)
-        self.snapshot_publisher.publish_models(self.models.values())
-
     async def run(self):
         """
         Main loop for scoring predictions.
@@ -217,7 +209,6 @@ class ScoreService:
             if self.score_predictions() or force_scoring:
                 self.score_models()
                 self.compute_leaderboard()
-                self.publish_game_snapshot()
 
                 self.prediction_repository.clean()
             try:

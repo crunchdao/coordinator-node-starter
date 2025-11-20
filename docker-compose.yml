@@ -1,9 +1,18 @@
+x-common-env: &common-env
+  env_file:
+    - ${ENV_FILE}
+
+x-common-build: &common-build
+  build:
+    context: ${PROJECT_DIR:-./}
+    dockerfile: Dockerfile
+
 services:
   postgres:
     image: postgres:15
+    <<: *common-env
     container_name: falcon2-postgres
     restart: always
-    env_file: .env
     ports:
       - "5432:5432"
     healthcheck:
@@ -13,52 +22,72 @@ services:
       retries: 20
       start_period: 10s
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7
-    container_name: falcon2-redis
-    restart: always
-    command: [ "redis-server", "--appendonly", "yes" ]
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
+      - ./data/postgres_data:/var/lib/postgresql/data
+    networks: [ falconnet ]
 
   init_db:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: [ *common-env, *common-build ]
     # todo improve and handle migration
-    env_file: .env
     command: [ "python", "-m", "falcon2_backend.infrastructure.db.init_db" ]
     depends_on:
       postgres:
         condition: service_healthy
+    networks: [ falconnet ]
 
   predict_worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: [ *common-env, *common-build ]
     restart: always
-    env_file: .env
     command: [ "python", "-m", "falcon2_backend.workers.predict_worker" ]
     depends_on:
       init_db:
         condition: service_completed_successfully
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    networks: [ falconnet ]
 
   score_worker:
-    build:
-      context: .
+    <<: [ *common-env, *common-build ]
     restart: always
-    env_file: .env
     command: [ "python", "-m", "falcon2_backend.workers.score_worker" ]
     depends_on:
       init_db:
         condition: service_completed_successfully
+    networks: [ falconnet ]
 
-volumes:
-  postgres_data:
-  redis_data:
+  report_worker:
+    <<: [ *common-env, *common-build ]
+    restart: always
+    command: [ "python", "-m", "falcon2_backend.workers.report_worker" ]
+    ports:
+      - "8000:8000"
+    depends_on:
+      init_db:
+        condition: service_completed_successfully
+    networks: [ falconnet ]
+
+  model-orchestrator:
+    image: 728958649654.dkr.ecr.eu-west-1.amazonaws.com/model-orchestrator
+    container_name: synth--model-orchestrator--${ENVIRONMENT_NAME:-dev}
+    restart: unless-stopped
+    init: true
+    ports:
+      - "9091:9091"
+      #environment:
+      #AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?error}
+      #AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?error}
+      #AWS_DEFAULT_REGION: ${AWS_REGION:-eu-west-1}
+      #NEW_RELIC_APP_NAME: synth--model-orchestrator--${ENVIRONMENT_NAME:-dev}
+    volumes:
+      - ./data/model-orchestrator:/data/
+      - /var/run/docker.sock:/var/run/docker.sock # for local runner
+    privileged: true # for local runner
+    command:
+      - "--configuration-file"
+      - "/data/orchestrator.dev.yml"
+    networks: [ falconnet ]
+
+  # depends_on:
+  #    web-to-3:
+  #      condition: service_health
+
+networks:
+  falconnet:
+    driver: bridge

@@ -11,6 +11,10 @@ class ModelRepository(ABC):
         pass
 
     @abstractmethod
+    def fetch_by_ids(self, ids: list[str]) -> dict[str, Model]:
+        pass
+
+    @abstractmethod
     def fetch(self, model_id) -> Model:
         pass
 

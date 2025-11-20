@@ -34,7 +34,7 @@ class ModelScoreByParam:
 
 @dataclass
 class Model:
-    crunch_identifier: str # unique identifier
+    crunch_identifier: str # unique identifier from tournament hub
     player: Player
     name: str
     deployment_identifier: str

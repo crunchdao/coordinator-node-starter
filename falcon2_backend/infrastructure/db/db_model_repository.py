@@ -33,6 +33,18 @@ class DbModelRepository(ModelRepository):
 
         return result
 
+    def fetch_by_ids(self, ids: list[str]) -> dict[str, Model]:
+        stmt = select(ModelRow).where(ModelRow.crunch_identifier.in_(ids))
+        rows = self._session.exec(stmt).all()
+
+        result: Dict[str, Model] = {}
+
+        for row in rows:
+            model = self._row_to_domain(row)
+            result[row.crunch_identifier] = model
+
+        return result
+
     def fetch(self, model_id: str) -> Model | None:
         row = self._session.get(ModelRow, model_id)
         if not row:
