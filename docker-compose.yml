@@ -16,7 +16,7 @@ services:
     image: postgres:15
     environment:
       <<: *common-db-env
-    container_name: falcon2-postgres
+    container_name: condor-postgres
     restart: always
     ports:
       - "5432:5432"
@@ -28,7 +28,7 @@ services:
       start_period: 10s
     volumes:
       - ./data/postgres_data:/var/lib/postgresql/data
-    networks: [ falconnet ]
+    networks: [ condornet ]
 
   init-db:
     <<: *common-build
@@ -39,7 +39,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [ falconnet ]
+    networks: [ condornet ]
 
   predict-worker:
     <<: *common-build
@@ -54,7 +54,7 @@ services:
         condition: service_completed_successfully
       model-orchestrator:
         condition: service_started
-    networks: [ falconnet ]
+    networks: [ condornet ]
 
   score-worker:
     <<: *common-build
@@ -65,7 +65,7 @@ services:
     depends_on:
       init-db:
         condition: service_completed_successfully
-    networks: [ falconnet ]
+    networks: [ condornet ]
 
   report-worker:
     <<: *common-build
@@ -78,45 +78,27 @@ services:
     depends_on:
       init-db:
         condition: service_completed_successfully
-    networks: [ falconnet ]
+    networks: [ condornet ]
 
-
-  ## Model Nodes
+  # required only for production environment
   webto3:
-    image: 728958649654.dkr.ecr.eu-west-1.amazonaws.com/webto3
     container_name: webto3
     restart: unless-stopped
     ports:
       - "3000:3000"
-    environment:
-      SOLANA_ENV: ${SOLANA_ENV:-devnet}
-      TOURNAMENT_API_BASE_URL: ${TOURNAMENT_API_BASE_URL:-https://api.hub.crunchdao.com}
-      TOURNAMENT_API_KEY: ${TOURNAMENT_API_KEY:?error}
-    volumes:
-      - .config/solana/:/root/.config/solana/
-
-    networks: [ falconnet ]
+    networks: [ condornet ]
+    profiles:
+      - production
 
   model-orchestrator:
-    image: 728958649654.dkr.ecr.eu-west-1.amazonaws.com/model-orchestrator
     container_name: model-orchestrator
     restart: unless-stopped
     init: true
     ports:
       - "9091:9091"
-    environment:
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?error}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?error}
-      AWS_DEFAULT_REGION: ${AWS_REGION:-eu-west-1}
-    volumes:
-      - ./data/model-orchestrator:/data/
-      - ~/.aws:/root/.aws:ro
-    command: [ "--configuration-file", "/data/orchestrator.yml" ]
-    networks: [ falconnet ]
-
-    depends_on:
-      - webto3
+    networks: [ condornet ]
 
 networks:
-  falconnet:
+  condornet:
     driver: bridge
+    name: condornet

@@ -1,0 +1,28 @@
+## Will deploy the models local in your infrastructure.
+
+services:
+  webto3:
+    image: 728958649654.dkr.ecr.eu-west-1.amazonaws.com/webto3
+    container_name: webto3
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      SOLANA_ENV: ${SOLANA_ENV:-devnet}
+      TOURNAMENT_API_BASE_URL: ${TOURNAMENT_API_BASE_URL:-https://api.hub.crunchdao.com}
+      TOURNAMENT_API_KEY: ${TOURNAMENT_API_KEY:?error}
+    volumes:
+      - .config/solana/:/root/.config/solana/
+
+  model-orchestrator:
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?error}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?error}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-eu-west-1}
+    volumes:
+      - ./data/model-orchestrator:/data/
+      - ~/.aws:/root/.aws:ro
+    command: [ "--configuration-file", "/data/orchestrator.yml" ]
+
+    depends_on:
+      - webto3

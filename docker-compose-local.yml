@@ -1,0 +1,16 @@
+services:
+  webto3: {} # not required for local
+  model-orchestrator:
+    build:
+      context: /Users/aboutrig/Documents/Pro/CrunchDao/Devs/model-orchestrator
+      #context: https://github.com/crunchdao/model-orchestrator.git make it public
+    container_name: model-orchestrator-local
+    environment:
+      DOCKER_NETWORK_NAME: ${MODEL_ORCHESTRATOR_NETWORK-condornet}
+    volumes:
+      - ./deployment/local/model-orchestrator/data/:/app/data/
+      - ./deployment/local/model-orchestrator/config/:/app/config/
+      - /var/run/docker.sock:/var/run/docker.sock # for local runner
+    privileged: true # for local runner
+    entrypoint: [ "/app/config/docker-entrypoint.sh" ]
+    command: [ "model-orchestrator", "dev", "--configuration-file", "/app/config/orchestrator.dev.yml", "--rebuild", "if-code-modified"]
