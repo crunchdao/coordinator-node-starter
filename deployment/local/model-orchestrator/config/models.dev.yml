@@ -1,0 +1,18 @@
+models:
+- id: '12311'
+
+    # name of the model, can be anything
+  name: benchmarktracker
+
+    # submission code id, it is the code used to run the model
+    # the corresponding directory must exist in the storage
+  submission_id: condorgame-benchmarktracker
+
+    # which crunch this model must be run on
+  crunch_id: condorgame
+
+    # which desired state this model must be in: "RUNNING", "RUNNING"
+  desired_state: RUNNING
+
+  cruncher_id: cruncher_id_1
+
