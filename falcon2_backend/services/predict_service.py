@@ -7,7 +7,7 @@ from model_runner_client.grpc.generated.commons_pb2 import Argument, Variant, Va
 from model_runner_client.utils.datatype_transformer import encode_data
 
 from falcon2_backend.entities.model import Model
-from falcon2_backend.entities.prediction import Prediction, GroupScheduler, PredictionConfig
+from falcon2_backend.entities.prediction import Prediction, GroupScheduler, PredictionConfig, logger
 from falcon2_backend.infrastructure.memory.prices_cache import PriceStore
 from falcon2_backend.services.interfaces.model_repository import ModelRepository
 from falcon2_backend.services.interfaces.prediction_repository import PredictionRepository
@@ -27,7 +27,7 @@ __spec__: Optional[ModuleSpec]
 class PredictService:
     PRICE_FREQUENCY = 60  # seconds
     PRICES_HISTORY_PERIOD = timedelta(days=30)
-    PRICE_RESOLUTION = "5minute"
+    PRICE_RESOLUTION = "minute"
 
     MODEL_RUNNER_TIMEOUT = 60
     MODEL_RUNNER_NODE_HOST = os.getenv("MODEL_RUNNER_NODE_HOST", 'localhost')
@@ -172,6 +172,12 @@ class PredictService:
                 self.prices_cache.add_prices(asset, new_prices)
                 prices_updated[asset] = new_prices
 
+        if logger.isEnabledFor(logging.DEBUG):
+            for asset, prices in prices_updated.items():
+                for ts, price in prices:
+                    self.logger.debug(f"Price updated for {asset} at {datetime.fromtimestamp(ts)}: {price:.2f}")
+
+
         return prices_updated
 
     async def _predict(self, asset_code: str, horizon: int, step: int):
@@ -221,6 +227,9 @@ class PredictService:
 
         for asset in self.asset_codes:
             self.prices_cache.add_prices(asset, self.prices_repository.fetch_historical_prices(asset, from_date, dt, self.PRICE_RESOLUTION))
+
+        if self.prices_cache.empty():
+            raise Exception("No prices loaded from historical data provider")
 
     def _init_asset_configs(self):
         self.asset_configs = self.prediction_repository.fetch_active_configs()

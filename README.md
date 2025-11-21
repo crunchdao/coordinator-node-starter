@@ -17,7 +17,7 @@ This project supports three distinct modes of operation. Use the **Makefile** to
 3. **Development**  
    For active development and debugging, where services are run manually or via the IDE.  
    - Uses: `.dev.env`  
-   - Launch your IDE with `.dev.env` to ensure proper connection to dependent services:
+   - Launch your IDE with `.dev.env` to ensure proper connection to dependent services
    
 ---
 

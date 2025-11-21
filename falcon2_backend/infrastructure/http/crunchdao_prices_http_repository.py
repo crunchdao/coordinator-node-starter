@@ -29,7 +29,7 @@ class CrunchdaoPricesHttpRepository(PriceRepository):
                 response = requests.get(self.url, params=params, timeout=10)
                 response.raise_for_status()
                 data = response.json()
-                return list(zip(data["close"], data["timestamp"]))
+                return list(zip(data["timestamp"], data["close"]))
             except requests.RequestException as e:
                 logging.error(f"Attempt {attempt + 1} failed: {e}")
                 if attempt < self.retries - 1:

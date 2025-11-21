@@ -154,3 +154,6 @@ class PriceStore:
         else:
             return ts[after], prices[after]
 
+
+    def empty(self):
+        return len(self.data) == 0

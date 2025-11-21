@@ -9,7 +9,7 @@ import os
 DATABASE_URL = f"postgresql+psycopg2://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@" \
                f"{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
 
-engine = create_engine(DATABASE_URL, echo=True, echo_pool="debug")
+engine = create_engine(DATABASE_URL)
 
 HOUR = 60 * 60
 MINUTE = 60
