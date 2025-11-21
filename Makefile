@@ -16,7 +16,7 @@ IS_PRODUCTION := $(filter production,$(MAKECMDGOALS))
 # Compose files
 COMPOSE_FILES := -f docker-compose.yml
 ifeq ($(IS_PRODUCTION),production)
-	COMPOSE_FILES += -f docker-compose-prod.yml --env-file .production.env
+	COMPOSE_FILES += -f docker-compose-prod.yml --env-file .production.env --profile production
 else ifeq ($(IS_DEV),dev)
     COMPOSE_FILES += -f docker-compose-local.yml --env-file .dev.env
 else

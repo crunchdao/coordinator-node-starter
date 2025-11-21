@@ -28,7 +28,7 @@ MINUTE = 60
 
 class ScoreService:
     PRICES_HISTORY_PERIOD = timedelta(days=2)  # Cache period for predictions
-    PRICE_RESOLUTION = "5minute"
+    PRICE_RESOLUTION = "minute"
     SLEEP_TIMEOUT = 15 * MINUTE
 
     def __init__(self,
