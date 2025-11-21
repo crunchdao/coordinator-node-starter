@@ -68,6 +68,9 @@ class Model:
         self.player.name = player_name
         self.deployment_identifier = model_deployment_id
 
+    def deployment_changed(self, model_runner: ModelRunner):
+        return self.deployment_identifier != model_runner.deployment_id
+
     def update_score(self, param: PredictionParams, score: ModelScore):
 
         existing = next((s for s in self.scores_by_param if s.param == param), None)
