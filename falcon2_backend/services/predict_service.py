@@ -126,14 +126,6 @@ class PredictService:
 
         model_responses = await self._prepare_and_call_tick(prices)
 
-        success, failed, timed_out = 0, 0, 0
-        for model_runner, tick_res in model_responses.items():
-            success += 1 if tick_res.status == ModelPredictResult.Status.SUCCESS else 0
-            failed += 1 if tick_res.status == ModelPredictResult.Status.FAILED else 0
-            timed_out += 1 if tick_res.status == ModelPredictResult.Status.TIMEOUT else 0
-
-        self.logger.info(f"Tick finished with {success} success, {failed} failed and {timed_out} timed out")
-
         # maybe should we retry in the next tick the timed out or failed?
 
         new_model_joining, model_changed_deployment = await self._update_game_models(model_responses)
@@ -159,7 +151,17 @@ class PredictService:
 
         args = ([prices_arg], [])
 
-        return await self.model_concurrent_runner.call("tick", args, model_runs=model_runs)
+        model_responses = await self.model_concurrent_runner.call("tick", args, model_runs=model_runs)
+
+        success, failed, timed_out = 0, 0, 0
+        for model_runner, tick_res in model_responses.items():
+            success += 1 if tick_res.status == ModelPredictResult.Status.SUCCESS else 0
+            failed += 1 if tick_res.status == ModelPredictResult.Status.FAILED else 0
+            timed_out += 1 if tick_res.status == ModelPredictResult.Status.TIMEOUT else 0
+
+        self.logger.info(f"Tick finished with {success} success, {failed} failed and {timed_out} timed out")
+
+        return model_responses
 
     async def _update_game_models(self, model_responses):
         new_model_joining = {}
