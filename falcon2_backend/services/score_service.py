@@ -10,7 +10,7 @@ import numpy as np
 from densitypdf import density_pdf
 
 from falcon2_backend.entities.leaderboard import Leaderboard
-from falcon2_backend.entities.model import ModelScore, Model
+from falcon2_backend.entities.model import ModelScore, Model, ModelScoreSnapshot
 from falcon2_backend.entities.prediction import Prediction, PredictionScore, PredictionConfig, PredictionStatus, PredictionParams
 from falcon2_backend.infrastructure.memory.prices_cache import PriceStore
 from falcon2_backend.services.interfaces.leaderboard_repository import LeaderboardRepository
@@ -163,10 +163,17 @@ class ScoreService:
             model.update_score(PredictionParams(score.asset, score.horizon, score.step),
                                ModelScore(score.recent_mean, score.steady_mean, score.anchor_mean))
 
-        for model in self.models.values():
+        models = self.models.values()
+        if not models:
+            return
+
+        dt = datetime.now(timezone.utc)
+        for model in models:
             model.calc_overall_score()
 
-        self.model_repository.save_all(self.models.values())
+        self.model_repository.save_all(models)
+        self.model_repository.snapshot_model_scores([ModelScoreSnapshot.create(model, dt) for model in models])
+        self.model_repository.prune_snapshots()
 
     def compute_leaderboard(self):
         leaderboard = Leaderboard.create(self.models.values())
@@ -210,7 +217,7 @@ class ScoreService:
                 self.score_models()
                 self.compute_leaderboard()
 
-                self.prediction_repository.clean()
+                self.prediction_repository.prune()
             try:
                 self.logger.debug("Sleeping for %d seconds", self.SLEEP_TIMEOUT)
                 await asyncio.wait_for(self.stop_event.wait(), timeout=self.SLEEP_TIMEOUT)

@@ -1,6 +1,6 @@
 from pydantic.dataclasses import dataclass
 from pydantic import Field
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 from typing import ClassVar, Optional
 
 from model_runner_client.model_runners.model_runner import ModelRunner
@@ -95,3 +95,24 @@ class Model:
 
     def qualified_name(self):
         return f"{self.player.name}/{self.name}"
+
+
+@dataclass
+class ModelScoreSnapshot:
+    id: str
+    overall_score: ModelScore
+    scores_by_param: list[ModelScoreByParam]
+    model_id: str
+    performed_at: datetime
+
+    MAX_HISTORY_AGE: ClassVar[timedelta] = timedelta(days=10)
+
+    @staticmethod
+    def create(model: Model, performed_at: datetime = datetime.now(timezone.utc)):
+        return ModelScoreSnapshot(
+            id=f"SNP_M{model.crunch_identifier}_{performed_at.strftime('%Y%m%d_%H%M%S')}",
+            model_id=model.crunch_identifier,
+            performed_at=performed_at,
+            overall_score=model.overall_score,
+            scores_by_param=model.scores_by_param
+        )

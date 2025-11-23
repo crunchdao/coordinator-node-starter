@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Iterable
+from datetime import datetime
+from typing import Iterable, Optional
 
-from falcon2_backend.entities.model import Model
+from falcon2_backend.entities.model import Model, ModelScoreSnapshot
 
 
 class ModelRepository(ABC):
@@ -24,4 +25,16 @@ class ModelRepository(ABC):
 
     @abstractmethod
     def save_all(self, models: Iterable[Model]):
+        pass
+
+    @abstractmethod
+    def snapshot_model_scores(self, model_score_snapshots: Iterable[ModelScoreSnapshot]):
+        pass
+
+    @abstractmethod
+    def fetch_model_score_snapshots(self, model_ids: list[str], _from: Optional[datetime], to: Optional[datetime]) -> dict[str, list[ModelScoreSnapshot]]:
+        pass
+
+    @abstractmethod
+    def prune_snapshots(self):
         pass

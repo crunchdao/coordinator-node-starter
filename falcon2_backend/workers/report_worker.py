@@ -3,15 +3,16 @@ from typing import Annotated, Generator, Any, List, Optional
 from datetime import datetime
 
 import uvicorn
-from fastapi import FastAPI, Depends, Query
+from fastapi import FastAPI, Depends, Query, HTTPException, status
 from pydantic import BaseModel, Field
 
 from sqlmodel import Session
 
-from falcon2_backend.infrastructure.db import DbModelRepository, DBLeaderboardRepository
+from falcon2_backend.infrastructure.db import DbModelRepository, DBLeaderboardRepository, DbPredictionRepository
 from falcon2_backend.infrastructure.db.init_db import engine, init_db
 from falcon2_backend.services.interfaces.leaderboard_repository import LeaderboardRepository
 from falcon2_backend.services.interfaces.model_repository import ModelRepository
+from falcon2_backend.services.interfaces.prediction_repository import PredictionRepository
 from falcon2_backend.utils.logging_config import setup_logging
 
 # ------------------------------------------------------------------------------
@@ -42,13 +43,19 @@ def get_leaderboard_repository(
     return DBLeaderboardRepository(session_db)
 
 
+def get_prediction_repository(
+    session_db: Annotated[Session, Depends(get_db_session)]
+) -> DbPredictionRepository:
+    return DbPredictionRepository(session_db)
+
+
 # ------------------------------------------------------------------------------
 # Pydantic Schemas
 # ------------------------------------------------------------------------------
 
 class LeaderboardEntryResponse(BaseModel):
     created_at: datetime
-    model_id: int
+    model_id: str
     score_recent: Optional[float]
     score_steady: Optional[float]
     score_anchor: Optional[float]
@@ -56,14 +63,15 @@ class LeaderboardEntryResponse(BaseModel):
 
 
 class GlobalMetricsResponse(BaseModel):
-    model_id: int
+    model_id: str
     score_recent: Optional[float]
     score_steady: Optional[float]
     score_anchor: Optional[float]
+    performed_at: datetime
 
 
 class ParamMetricsResponse(BaseModel):
-    model_id: int
+    model_id: str
     param: str
     asset: str
     horizon: int
@@ -71,10 +79,24 @@ class ParamMetricsResponse(BaseModel):
     score_recent: Optional[float]
     score_steady: Optional[float]
     score_anchor: Optional[float]
+    performed_at: datetime
+
+
+class PredictionScoreResponse(BaseModel):
+    model_id: str
+    param: str
+    asset: str
+    horizon: int
+    step: int
+    score_value: Optional[float]
+    score_success: bool
+    score_failed_reason: Optional[str]
+    scored_at: datetime
+    performed_at: datetime
 
 
 class MetricsReportArgs(BaseModel):
-    model_ids: List[int] = Query(..., alias="projectIds")
+    model_ids: List[str] = Query(..., alias="projectIds")
     start: datetime
     end: datetime
 
@@ -117,16 +139,18 @@ def get_models_global(
     All models global metrics.
     (Filtering ignored for now — apply it when repository supports it)
     """
-    models = model_repo.fetch_all()
+    model_score_snapshots = model_repo.fetch_model_score_snapshots(model_ids=filter_query.model_ids, _from=filter_query.start, to=filter_query.end)
 
     return [
         GlobalMetricsResponse(
-            model_id=model.crunch_identifier,
-            score_recent=model.overall_score.recent,
-            score_steady=model.overall_score.steady,
-            score_anchor=model.overall_score.anchor,
+            model_id=score_snapshot.model_id,
+            score_recent=score_snapshot.overall_score.recent,
+            score_steady=score_snapshot.overall_score.steady,
+            score_anchor=score_snapshot.overall_score.anchor,
+            performed_at=score_snapshot.performed_at
         )
-        for _, model in models.items()
+        for _, score_snapshots in model_score_snapshots.items()
+        for score_snapshot in score_snapshots
     ]
 
 
@@ -138,11 +162,11 @@ def get_models_params(
     """
     Detailed parameters metrics for each model.
     """
-    models = model_repo.fetch_all()
+    model_score_snapshots = model_repo.fetch_model_score_snapshots(model_ids=filter_query.model_ids, _from=filter_query.start, to=filter_query.end)
 
     return [
         ParamMetricsResponse(
-            model_id=model.crunch_identifier,
+            model_id=score_snapshot.model_id,
             param=f"{sbp.param.asset}-{sbp.param.horizon}-{sbp.param.step}",
             asset=sbp.param.asset,
             horizon=sbp.param.horizon,
@@ -150,9 +174,46 @@ def get_models_params(
             score_recent=sbp.score.recent,
             score_steady=sbp.score.steady,
             score_anchor=sbp.score.anchor,
+            performed_at=score_snapshot.performed_at
         )
-        for _, model in models.items()
-        for sbp in model.scores_by_param
+        for _, score_snapshots in model_score_snapshots.items()
+        for score_snapshot in score_snapshots
+        for sbp in score_snapshot.scores_by_param
+    ]
+
+
+@app.get("/reports/predictions", response_model=List[PredictionScoreResponse])
+def get_models_params(
+    filter_query: Annotated[MetricsReportArgs, Query()],
+    prediction_repo: Annotated[PredictionRepository, Depends(get_prediction_repository)],
+):
+    """
+    Detailed parameters metrics for each model.
+    """
+
+    if len(filter_query.model_ids) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Service is available only for one model at a time. Please provide a single model_id."
+        )
+
+    predictions_scored = prediction_repo.query_scores(model_ids=filter_query.model_ids, _from=filter_query.start, to=filter_query.end)
+
+    return [
+        PredictionScoreResponse(
+            model_id=prediction.model_id,
+            param=f"{prediction.asset}-{prediction.horizon}-{prediction.step}",
+            asset=prediction.asset,
+            horizon=prediction.horizon,
+            step=prediction.step,
+            score_value=prediction.score_value,
+            score_success=prediction.score_success,
+            score_failed_reason=prediction.score_failed_reason,
+            scored_at=prediction.score_scored_at,
+            performed_at=prediction.performed_at,
+        )
+        for _, predictions in predictions_scored.items()
+        for prediction in predictions
     ]
 
 

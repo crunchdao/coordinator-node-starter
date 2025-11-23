@@ -24,6 +24,22 @@ class ModelRow(SQLModel, table=True):
     )
 
 
+class ModelScoreSnapshotRow(SQLModel, table=True):
+    __tablename__ = "model_score_snapshots"
+
+    id: str = Field(primary_key=True)
+
+    overall_score_recent: Optional[float] = None
+    overall_score_steady: Optional[float] = None
+    overall_score_anchor: Optional[float] = None
+
+    scores_by_param: list[dict] = Field(
+        default_factory=list,
+        sa_column=Column(JSON)
+    )
+    model_id: str = Field(index=True, foreign_key="models.crunch_identifier")
+    performed_at: datetime = Field(index=True)
+
 class LeaderboardRow(SQLModel, table=True):
     __tablename__ = "leaderboards"
 

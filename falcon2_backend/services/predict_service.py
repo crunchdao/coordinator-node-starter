@@ -85,7 +85,6 @@ class PredictService:
         while not self.stop_predicting_event.is_set():
             now = datetime.now(timezone.utc)
 
-            # TODO check >= because always return value
             prices = self._update_prices()
             if prices and any(prices.values()):
                 await self._tick(prices)

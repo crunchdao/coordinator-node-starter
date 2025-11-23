@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Iterable
+from datetime import datetime
+from typing import Dict, Iterable, Optional
 
 from falcon2_backend.entities.prediction import Prediction, PredictionConfig
 
@@ -24,6 +25,11 @@ class PredictionRepository(ABC):
 
     @abstractmethod
     def save_all(self, predictions: Iterable[Prediction]):
+        pass
+
+    # todo type the result
+    @abstractmethod
+    def query_scores(self, model_ids: list[str], _from: Optional[datetime], to: Optional[datetime]) -> dict[str, list[dict]]:
         pass
 
     @abstractmethod
@@ -51,5 +57,5 @@ class PredictionRepository(ABC):
 
     @abstractmethod
     # Will remove all the predictions scored and who has more than 10 days
-    def clean(self):
+    def prune(self):
         pass

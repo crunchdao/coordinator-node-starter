@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, Dict, List, Optional
 
@@ -130,7 +131,7 @@ class DbPredictionRepository(PredictionRepository):
     #                  PUBLIC METHODS — PREDICTIONS
     # ------------------------------------------------------------
 
-    def fetch(self, prediction_id: str) -> Optional[Prediction]:
+    def fetch_by_id(self, prediction_id: str) -> Optional[Prediction]:
         row = self._session.get(PredictionRow, prediction_id)
         if not row:
             return None
@@ -173,7 +174,7 @@ class DbPredictionRepository(PredictionRepository):
             self._save(p, commit=False)
         self._session.commit()
 
-    def clean(self):
+    def prune(self):
         threshold = datetime.now(timezone.utc) - timedelta(days=30)
 
         stmt = (
@@ -187,6 +188,36 @@ class DbPredictionRepository(PredictionRepository):
 
         # result.rowcount is supported by SQLAlchemy Core
         return result.rowcount or 0
+
+    def query_scores(self, model_ids: list[str], _from: Optional[datetime], to: Optional[datetime]) -> dict[str, list[dict]]:
+        stmt = (
+            select(
+                PredictionRow.id,
+                PredictionRow.model_id,
+                PredictionRow.asset,
+                PredictionRow.horizon,
+                PredictionRow.step,
+                PredictionRow.score_value,
+                PredictionRow.score_success,
+                PredictionRow.score_failed_reason,
+                PredictionRow.score_scored_at,
+                PredictionRow.performed_at
+            )
+            .where(PredictionRow.model_id.in_(model_ids))
+            .where(PredictionRow.score_scored_at != None)
+            .where(PredictionRow.performed_at >= _from if _from else True)
+            .where(PredictionRow.performed_at <= to if to else True)
+        )
+        rows = self._session.exec(stmt).all()
+        predictions_by_model = {}
+
+        for row in rows:
+            if row.model_id not in predictions_by_model:
+                predictions_by_model[row.model_id] = []
+            predictions_by_model[row.model_id].append(row)
+
+        logging.info(f"predictions: {predictions_by_model}")
+        return predictions_by_model
 
     # ------------------------------------------------------------
     #            PUBLIC METHODS — PREDICTION CONFIGS
