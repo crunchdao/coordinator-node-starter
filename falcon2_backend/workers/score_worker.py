@@ -10,7 +10,14 @@ from falcon2_backend.services.score_service import ScoreService
 from falcon2_backend.utils.logging_config import setup_logging
 
 
-async def main():
+def parse_arguments():
+    import argparse
+    parser = argparse.ArgumentParser(description="Score a specific prediction by ID for debugging or testing purposes.")
+    parser.add_argument("--prediction-id", required=False, help="The ID of the prediction to score")
+    return parser.parse_args()
+
+
+async def main(prediction_id: str):
     setup_logging()
     logging.getLogger("falcon2_backend").setLevel(logging.DEBUG)
 
@@ -23,8 +30,15 @@ async def main():
     leaderboard_repo = DBLeaderboardRepository(session)
 
     score_service = ScoreService(price_repo, model_repo, prediction_repo, leaderboard_repo)
+
+    if prediction_id:
+        prediction = score_service.score_prediction(prediction_repo.fetch_by_id(prediction_id))
+        logging.info(f"Prediction {prediction_id} score: {prediction}")
+        return
+
     await score_service.run()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    args = parse_arguments()
+    asyncio.run(main(args.prediction_id))

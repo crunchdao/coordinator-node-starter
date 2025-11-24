@@ -27,7 +27,7 @@ MINUTE = 60
 
 
 class ScoreService:
-    PRICES_HISTORY_PERIOD = timedelta(days=2)  # Cache period for predictions
+    PRICES_HISTORY_PERIOD = timedelta(days=7)  # Cache period for predictions
     PRICE_RESOLUTION = "minute"
     SLEEP_TIMEOUT = 15 * MINUTE
 
