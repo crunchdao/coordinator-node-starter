@@ -89,7 +89,7 @@ class PredictionScoreResponse(BaseModel):
     horizon: int
     step: int
     score_value: Optional[float]
-    score_success: bool
+    score_failed: bool
     score_failed_reason: Optional[str]
     scored_at: datetime
     performed_at: datetime
@@ -207,7 +207,7 @@ def get_models_params(
             horizon=prediction.horizon,
             step=prediction.step,
             score_value=prediction.score_value,
-            score_success=prediction.score_success,
+            score_failed=not prediction.score_success,
             score_failed_reason=prediction.score_failed_reason,
             scored_at=prediction.score_scored_at,
             performed_at=prediction.performed_at,
