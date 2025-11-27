@@ -31,8 +31,10 @@ ifeq ($(IS_ALL),all)
 else ifeq ($(IS_DEV),dev)
 	SERVICES_EXCLUDE := $(BACKEND_SERVICES)
 	SERVICES := $(filter-out $(SERVICES_EXCLUDE),$(shell docker compose $(COMPOSE_FILES) config --services))
-else
+else ifeq ($(IS_PRODUCTION),production)
 	SERVICES := $(BACKEND_SERVICES)
+else
+	SERVICES :=
 endif
 
 

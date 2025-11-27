@@ -1,0 +1,30 @@
+site_name: Condor Game Documentation
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - content.action.edit
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Introduction: INTRODUCTION.md
+      - Architecture Overview: ARCHITECTURE_OVERVIEW.md
+      - Running Locally: RUNNING_LOCALLY.md
+      - Build Your Challenge: BUILD_YOUR_OWN_CHALLENGE.md
+
+
+  - Core Mechanics:
+      - Core Concepts: CORE_CONCEPTS.md
+      - Predict Worker: PREDICT_WORKER.md
+      - Score Worker: SCORE_WORKER.md
+      - Report Worker: REPORT_WORKER.md
+      - Entities: ENTITIES.md
+
+
+  - Operations:
+      - Deployment: DEPLOYMENT.md
+      - FAQ: FAQ.md
