@@ -2,6 +2,10 @@
 # Condor Backend Deployment Makefile
 # ---------------------------------------------------------
 
+# Optional CLI override:
+#   make deploy dev SERVICES="predict-worker score-worker"
+SERVICES ?=
+
 # List of backend services only (edit here if needed)
 BACKEND_SERVICES = \
     init-db \
@@ -18,25 +22,27 @@ COMPOSE_FILES := -f docker-compose.yml
 ifeq ($(IS_PRODUCTION),production)
 	COMPOSE_FILES += -f docker-compose-prod.yml --env-file .production.env --profile production
 else ifeq ($(IS_DEV),dev)
-    COMPOSE_FILES += -f docker-compose-local.yml --env-file .dev.env
+	COMPOSE_FILES += -f docker-compose-local.yml --env-file .dev.env
 else
-    # used during the dev or local testing
+    # used during dev or local testing
 	COMPOSE_FILES += -f docker-compose-local.yml --env-file .local.env
 endif
 
-
 # Decide the list of services
-ifeq ($(IS_ALL),all)
-	SERVICES :=
-else ifeq ($(IS_DEV),dev)
-	SERVICES_EXCLUDE := $(BACKEND_SERVICES)
-	SERVICES := $(filter-out $(SERVICES_EXCLUDE),$(shell docker compose $(COMPOSE_FILES) config --services))
-else ifeq ($(IS_PRODUCTION),production)
-	SERVICES := $(BACKEND_SERVICES)
-else
-	SERVICES :=
+# If SERVICES is provided on the command line, we keep it as-is.
+# Otherwise, we fall back to your default logic.
+ifeq ($(SERVICES),)
+	ifeq ($(IS_ALL),all)
+		SERVICES :=
+	else ifeq ($(IS_DEV),dev)
+        SERVICES_EXCLUDE := $(BACKEND_SERVICES) documentation
+		SERVICES := $(filter-out $(SERVICES_EXCLUDE),$(shell docker compose $(COMPOSE_FILES) config --services))
+	else ifeq ($(IS_PRODUCTION),production)
+		SERVICES := $(BACKEND_SERVICES)
+	else
+		SERVICES :=
+	endif
 endif
-
 
 # ---------------------------------------------------------
 # Commands
@@ -70,6 +76,7 @@ else
 	docker compose $(COMPOSE_FILES) logs -f
 endif
 
+## Stop & remove
 down:
 ifneq ($(SERVICES),)
 	docker compose $(COMPOSE_FILES) down $(SERVICES)
@@ -77,6 +84,7 @@ else
 	docker compose $(COMPOSE_FILES) down
 endif
 
+## Build images
 build:
 ifneq ($(SERVICES),)
 	docker compose $(COMPOSE_FILES) build $(SERVICES)
@@ -84,11 +92,10 @@ else
 	docker compose $(COMPOSE_FILES) build
 endif
 
-
 # ---------------------------------------------------------
 # Tell make "all" is not a target, it's an argument
 # ---------------------------------------------------------
-.PHONY: deploy restart stop logs down all dev production
+.PHONY: deploy restart stop logs down build all dev production
 
 all:
 	@true   # do nothing

@@ -79,7 +79,9 @@ Returns:
 
 ## Frontend integration
 
-The CrunchDAO hub, or your custom frontend, calls these endpoints.
+The CrunchDAO hub, calls these endpoints.
+
+> **Note:** We are actively working towards enabling local front-end connectivity with your endpoints for a seamless integration experience.
 
 The UI is configurable:
 

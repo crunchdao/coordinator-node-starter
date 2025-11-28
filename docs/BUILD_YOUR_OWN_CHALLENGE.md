@@ -19,6 +19,8 @@ It should contain:
   - expected outputs,
   - scoring rules.
 
+You can draw inspiration from the [Condor Game public GitHub repository](https://github.com/crunchdao/condorgame).
+
 ---
 
 ## Step 2 – Define the base class
@@ -29,7 +31,7 @@ Example:
 
 ```python
 class MyGameBaseModel:
-    def on_tick(self, data):
+    def tick(self, data):
         """Receive latest features."""
         raise NotImplementedError
 
@@ -41,7 +43,6 @@ class MyGameBaseModel:
 Document:
 
 - the format of `data`,
-- the meaning of `asset`, `horizon`, `step`,
 - the expected structure of the return value.
 
 ---
@@ -63,8 +64,8 @@ This model will also be useful for your own local tests.
 In your Predict worker, configure the ModelRunner client
 to talk to the orchestrator:
 
-- in local mode through Docker,
-- in production mode through a node managed by CrunchDAO.
+- in local mode using Docker,
+- in production mode through a CrunchDAO-managed node. Connection details (IP, port, etc.) will be provided.
 
 Once `runner.init()` and `runner.sync()` are called,
 you can start sending ticks and predicts.

@@ -12,14 +12,14 @@ intentionally kept separate from the Predict worker.
 
 The Score worker:
 
-1. Fetches stored predictions.
+1. Retrieves stored predictions that are ready for scoring.  
 2. Fetches realised market data (prices).
 3. Applies your scoring algorithm on each prediction.
 4. Aggregates scores per model.
 5. Computes rolling statistics:
-   - recent score (e.g. last 24h),
-   - steady score (e.g. last 72h),
-   - anchor score (e.g. last 7 days).
+    - recent score (e.g. last 24h),
+    - steady score (e.g. last 72h),
+    - anchor score (e.g. last 7 days).
 6. Builds and stores the leaderboard.
 7. Cleans old predictions.
 
@@ -32,10 +32,10 @@ In Condor, each model returns a **distribution** instead of a single point predi
 The scoring:
 
 1. For each prediction:
-   - find the realised outcome (for example the realised return),
-   - find the closest point in the distribution grid,
-   - read the PDF value at that point,
-   - transform it into a score.
+    - find the prices required to compute the realised outcome,
+    - compute the realised outcome (e.g., the realised return),
+    - evaluate the predicted PDF at that value,
+    - convert the PDF density into a score.
 
 2. Aggregate all scores per model over the selected window.
 3. Normalize if needed.
@@ -61,13 +61,20 @@ while still showing the other scores so newcomers see progress quickly.
 
 ---
 
+## Snapshotting Scores
+
+After computing the scores, the Score worker creates a **snapshot** of the model scores to ensure historical tracking.
+This snapshot allows past performance to be reported to participants through the Report Worker.
+
+
 ## Cleaning old data
 
-Predictions can accumulate quickly, especially with distributions.
+Predictions and snapshots can accumulate quickly, especially with distributions.
 
 To avoid unbounded growth:
 
 - delete predictions older than a certain age (e.g. 10 days),
+- delete snapshots older than a certain age (e.g. 10 days),
 - keep only what is needed for your rolling windows.
 
 This keeps:

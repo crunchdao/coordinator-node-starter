@@ -16,8 +16,9 @@ and makes it easier to change the implementation later.
 class Model:
     id: str
     name: str
-    player_id: str  # cruncher identity
-    score: "ModelScore | None"
+    player_id: Player
+    overall_score: ModelScore | None
+    ...
 ```
 
 ### Prediction
@@ -26,30 +27,12 @@ class Model:
 class Prediction:
     id: str
     model_id: str
-    asset: str
-    horizon: int
-    step: int
-    status: str        # SUCCESS / FAILURE / TIMEOUT
+    params: PredictionParams
+    status: PredictionStatus
     distribution: dict # model output (for Condor)
-    created_at: datetime
-```
-
-### PredictionParameters
-
-```python
-class PredictionParameters:
-    asset: str
-    horizon: int
-    step: int
-```
-
-### ModelScore
-
-```python
-class ModelScore:
-    recent: float
-    steady: float
-    anchor: float
+    resolvable_at: datetime
+    score: PredictionScore | None = None
+    ...
 ```
 
 You can adapt this to your own game.
@@ -60,9 +43,9 @@ You can adapt this to your own game.
 
 Entities allow you to:
 
-- attach helper methods (e.g. `ModelScore.is_good()`),
+- attach helper methods (e.g. `ModelScore.calc_overall_score()`),
 - avoid duplicating field lists everywhere,
-- change DB schema in one place,
+- Easy to persist regardless of the solution (database, JSON, etc.)
 - pass structured data across layers (Predict / Score / Report).
 
 This is useful both for readability and for long-term maintenance.
@@ -74,17 +57,23 @@ This is useful both for readability and for long-term maintenance.
 We also define repository interfaces, for example:
 
 ```python
-class ModelRepository(Protocol):
-    async def find_all(self) -> list[Model]: ...
-    async def find_by_id(self, model_id: str) -> Model | None: ...
-    async def save(self, model: Model) -> None: ...
+class ModelRepository(ABC):
+    @abstractmethod
+    def fetch_all(self) -> dict[str, Model]: ...
+    @abstractmethod
+    def fetch_by_ids(self, ids: list[str]) -> dict[str, Model]: ...
+    @abstractmethod
+    def save(self, model: Model): ...
 ```
 
 ```python
-class PredictionRepository(Protocol):
+class PredictionRepository(ABC):
+    @abstractmethod
     async def save(self, prediction: Prediction) -> None: ...
-    async def find_for_scoring(self, since: datetime) -> list[Prediction]: ...
-    async def delete_older_than(self, cutoff: datetime) -> None: ...
+    @abstractmethod
+    def fetch_ready_to_score(self) -> list[Prediction]: ...
+    @abstractmethod
+    def fetch_all_windowed_scores(self) -> list[WindowedScoreRow]: ...
 ```
 
 The Predict and Score workers only depend on these interfaces.
