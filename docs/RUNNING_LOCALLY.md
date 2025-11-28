@@ -47,7 +47,7 @@ make logs
 ### Dev mode (run workers from your IDE)
 
 ```bash
-make dev-deploy
+make dev deploy
 ```
 
 This command:
@@ -63,6 +63,8 @@ You then:
 
 This is very helpful when you want to step through the logic.
 
+
+
 ---
 
 ### Other useful commands
@@ -76,73 +78,100 @@ make build     # rebuild Docker images
 
 ---
 
-## Local models: submissions
+## Local Models
 
-The orchestrator can load local models directly from the repository.
+> **Note:** This mode is enabled when you run the system locally through `docker-compose-local.yml
 
-There is a folder:
-
-```text
-deployment/config/data/submission/
+In local or development mode, the orchestrator runs through:
+```
+deployment/local/model-orchestrator/config/docker-entrypoint.sh
 ```
 
-Each subfolder inside `submission/` is a model.
+This provides flexibility for automation, such as rebuilding runner images or applying custom logic before the orchestrator starts.
 
-Example:
+For the Condor Game, a notebook example is imported and configured to demonstrate model execution.
 
-```text
-deployment/config/data/submission/
-    condor_game_benchmark/
-        main.py
-        requirements.txt
-    benchmark_2/
-        main.py
-        requirements.txt
+
+### Submissions
+
+The orchestrator can load **local models** directly from the `submissions` directory.
+
+This compose file launches the model orchestrator in **development mode**, loading its configuration from:
+```
+deployment/local/model-orchestrator/config/orchestrator.dev.yml
 ```
 
-When the orchestrator starts, it:
+In this mode, the orchestrator will:
 
-1. scans the `submission/` folder,
-2. installs `requirements.txt` for each model,
-3. starts each model process.
+1. Read the list of models defined in `models.dev.yml`  
+   (see the [Configuration](#configuration) section below)
 
-You can print logs inside the model to confirm it is running.
+2. Scan the `submissions` directory :  
+      ```
+         deployment/local/model-orchestrator/data/submissions/
+      ```
+3. For each model configured directory found, it will:  
+      - detect file changes  
+      - automatically rebuild the Docker image  
+      - install dependencies from `requirements.txt`  
+      - start the model container and execute `main.py`
+
+This provides a fast feedback loop while developing models locally.
 
 ---
 
-## Local model configuration: models.dev.yaml
+### Configuration
 
-The orchestrator also reads a configuration file, for example:
-
-```text
-deployment/config/models.dev.yaml
+Inside `orchestrator.dev.yml`, the orchestrator references a model definition file:
+```
+models.dev.yml
 ```
 
-Here you declare which local models should join the game.
+This file lists **all models** that should run in local mode.
 
-Example:
+To register a new local model, add a new entry inside `models.dev.yml`.
+
+A typical model definition looks like this:
 
 ```yaml
-models:
-  - id: "alexis_model"
-    name: "Alexis"
-    path: "submission/condor_game_benchmark"
-
-  - id: "ap_model"
-    name: "AP"
-    path: "submission/benchmark_2"
+- id: my-local-model
+  submission_id: my-local-model
+  crunch_id: condor
+  desired_state: RUNNING
+  cruncher_id: cruncher-local-1
 ```
 
-- `id` is the internal identifier for the model.
-- `name` is a human name, used in the leaderboard.
-- `path` is the folder under `submission/`.
+#### Field description
 
-On startup, the orchestrator reads this file and knows:
+- **id**  
+  Unique identifier for the model inside the orchestrator.  
+  This is also the identifier you will receive inside the Predict Worker.
 
-- which models to load,
-- where to find their code.
+- **submission_id**  
+  Name of the folder located in `submissions/`.
 
+- **crunch_id**  
+  The name of the game/challenge (for example `"condor"`).  
+  Models using the same `crunch_id` belong to the same game.
+
+- **desired_state**  
+  Controls whether the orchestrator should start the model.  
+  Possible values:  
+    - `RUNNING` → the orchestrator launches the model  
+    - `STOPPED` → the orchestrator ignores the model
+
+- **cruncher_id**  
+  A simulated blockchain identifier representing the cruncher that owns the model.
 ---
+
+## Choosing Your Game Name
+
+Your game name appears in several locations:
+
+- in `models.dev.yml` (`crunch_id`)
+- in the Predict Service during creation instance of `DynamicSubclassModelConcurrentRunner`
+- in the orchestrator configuration `orchestrator.dev.yml` (`crunches.id` and `crunches.name`)
+
 
 ## Docker Compose view
 

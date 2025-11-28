@@ -1,7 +1,6 @@
 # Architecture Overview
 
 This section explains the global architecture of the game.
-It follows the same structure as the drawing used in the talk.
 
 ---
 
@@ -17,13 +16,13 @@ It follows the same structure as the drawing used in the talk.
                                   ▼
                 +-----------------+-----------------+
                 | Predict / Score / Report workers |
-                +-----------+-----------+----------+
-                            │           │
-                            ▼           │
-                    ModelRunner client  │
-                            │           │
-                            ▼           │
-                   +--------+-----------+--------+
+                +-----------+----------------------+
+                            │           
+                            ▼           
+                    ModelRunner client  
+                            │           
+                            ▼           
+                   +--------+--------------------+
                    |      Model Orchestrator     |
                    +--------+-----------+--------+
                             │
@@ -114,9 +113,9 @@ The Score worker:
 - fetches realised market data,
 - applies your scoring algorithm (for Condor: distribution-based scoring),
 - computes rolling scores:
-  - recent (24h),
-  - steady (72h),
-  - anchor (7 days),
+    - recent (24h),
+    - steady (72h),
+    - anchor (7 days),
 - updates the leaderboard.
 
 It is CPU intensive, so we keep it isolated from Predict.
@@ -129,9 +128,9 @@ The Report worker:
 
 - is a small FastAPI application,
 - exposes HTTP endpoints:
-  - leaderboard,
-  - metrics,
-  - detailed per-model views,
+    - leaderboard,
+    - metrics,
+    - detailed per-model views,
 - is fully **decentralised**: nothing is stored by CrunchDAO,
   the coordinator (you) answers all requests.
 
@@ -157,6 +156,7 @@ For a simpler game, you could start with:
 
 - parquet files,
 - plain JSON files,
+- Redis
 - another database.
 
 The pattern remains the same.

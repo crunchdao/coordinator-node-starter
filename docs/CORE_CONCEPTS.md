@@ -7,7 +7,7 @@ before diving into individual workers.
 
 ## Public game repository and base class
 
-To create a game, you must publish a **public GitHub repository**.
+To create a game, you must publish a **public GitHub repository** and package it on **PyPI**.
 
 Inside this repo, you define a **base class** that all participant models must implement.
 
@@ -15,7 +15,7 @@ Example (simplified):
 
 ```python
 class TrackerBase:
-    def on_tick(self, data):
+    def tick(self, data):
         """Receive latest market data."""
         raise NotImplementedError
 
@@ -26,9 +26,9 @@ class TrackerBase:
 
 Participants:
 
-- clone this repo,
-- implement their own model class inheriting from `TrackerBase`,
-- submit it to the orchestrator.
+- use the PyPI package to import the base class (preferably from a notebook quickstarter),
+- implement their own model class by inheriting from `TrackerBase`,
+- submit it on [https://hub.crunchdao.com/](https://hub.crunchdao.com/).
 
 Because you control the base class:
 
@@ -53,7 +53,7 @@ Two central ideas:
 Typical flow:
 
 1. Fetch or receive new market data.
-2. Call `on_tick` on all models with that data.
+2. Call `tick` on all models with that data.
 3. Call `predict` on all models to get predictions.
 4. Store predictions for scoring.
 
@@ -64,26 +64,21 @@ Predict must return a structured payload.
 
 ## Timeouts and failures
 
-All calls to models have a timeout.
+All calls to models are executed with a timeout. The ModelRunner library performs concurrent calls to all models and applies a timeout to ensure that a slow or unresponsive model cannot block the system.
 
-If a model:
+A call is marked as:
 
-- takes too long,
-- raises an exception,
-- returns invalid data,
+- **timeout** if the model takes too long to respond.
+- **failure** if the model raises an exception, or returns invalid data.
 
-the call is marked as **failure**.
-
-The ModelRunner keeps a counter of **consecutive failures**.
-When the limit is reached, the model is disconnected.
+The ModelRunner keeps a counter of **consecutive failures** and **consecutive timeouts**.
+When the limit is reached, the model is stopped and disconnected.
 
 This protects your system from:
 
 - buggy models,
 - very slow models,
 - models that do not respect the interface.
-
----
 
 ## Async and the event loop
 
@@ -108,7 +103,7 @@ Your own code must avoid blocking this event loop:
 
 ## Dynamic subclass vs factory
 
-In the current implementation, the orchestrator:
+In the current implementation, the ModelRunner:
 
 - scans the participant code,
 - finds the first class that inherits from your base class,
@@ -118,17 +113,10 @@ This is called a **dynamic subclass** approach.
 
 In the future, we may switch to a **factory** approach, where each model:
 
-- exposes a function like `build_model()`,
+- exposes a function like `create_model()`,
 - returns the instance to run.
 
 The goal is to:
 
 - avoid ambiguity when there are many classes,
 - make model construction more explicit.
-
-As a game builder, this detail is mostly internal.
-You mainly care that:
-
-- models implement your base class,
-- the orchestrator is able to instantiate them,
-- the ModelRunner can call them.

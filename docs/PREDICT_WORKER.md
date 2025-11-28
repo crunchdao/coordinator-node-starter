@@ -12,7 +12,7 @@ The Predict worker must:
 1. Connect to the Model Orchestrator through the ModelRunner library.
 2. Keep its internal list of models **synchronised**.
 3. Periodically fetch or receive new market data.
-4. Call `on_tick` on models to send that data.
+4. Call `tick` on models to send that data.
 5. Call `predict` on models to collect predictions.
 6. Store predictions in your storage (DB, parquet, files, ...).
 
@@ -30,18 +30,20 @@ A typical setup looks like:
 
 ```python
 runner = ModelRunnerClient(
-    timeout=1.0,
+    timeout=50,
     crunch_id="your-crunch-id",
     host="localhost",
-    port=5000,
-    max_consecutive_failures=3,
+    port=9091,
+    max_consecutive_failures=10,
+    max_consecutive_timeouts=10
 )
 ```
 
-- `timeout`: maximum time to wait for all models on a call.
+- `timeout`: maximum time in second to wait for all models on a call.
 - `crunch_id`: on-chain identity of the coordinator.
 - `host` / `port`: location of the orchestrator (local or remote).
 - `max_consecutive_failures`: after this many failures, the model is disconnected.
+- `max_consecutive_timeouts`: after this many timed out, the model is disconnected.
 
 Then, in your async service:
 
@@ -60,9 +62,15 @@ Example:
 
 ```python
 await runner.call(
-    method="on_tick",
+    method="tick",
     arguments=[
-        ModelArgument(position=0, type="json", value=price_payload)
+        Argument(
+            position=1,
+            data=Variant(
+                type=VariantType.JSON,
+                value=encode_data(VariantType.JSON, prices),
+            ),
+        )
     ],
 )
 ```
@@ -86,9 +94,9 @@ Example:
 results = await runner.call(
     method="predict",
     arguments=[
-        ModelArgument(position=0, type="string", value=asset),
-        ModelArgument(position=1, type="int", value=horizon),
-        ModelArgument(position=2, type="int", value=step),
+        Argument(position=1, data=Variant(type=VariantType.STRING, value=encode_data(VariantType.STRING, asset_code))),
+        Argument(position=2, data=Variant(type=VariantType.INT, value=encode_data(VariantType.INT, horizon))),
+        Argument(position=3, data=Variant(type=VariantType.INT, value=encode_data(VariantType.INT, step))),
     ],
 )
 ```
@@ -98,7 +106,7 @@ Each `result` in `results` typically contains:
 - model identifier,
 - status (`SUCCESS`, `FAILURE`, `TIMEOUT`),
 - payload (for Condor, a JSON distribution),
-- optional error information.
+- time the model takes to predict in microseconds
 
 You then:
 
@@ -107,29 +115,55 @@ You then:
 
 ---
 
+## Maintaining and Storing Models Joining the Game
+
+To score models, track their performance, and rank them on the leaderboard in Scoring Worker, the Predict Worker stores a local representation of each model participating in the game.
+
+When a model connects, the Predict Worker extracts its metadata from the `ModelRunner` object provided by the ModelRunner client library.  
+This metadata includes, for example:
+
+- `model_id` — unique identifier of the model  
+- `model_name` — user-defined model name  
+- `cruncher_name` — name of the user (cruncher)  
+- `cruncher_id` — unique identifier of the cruncher  
+- `deployment_id` — identifier of the deployed version of the model  
+
+It is recommended to keep these fields up to date, as crunchers may change their model name or their profile name at any time.  
+Keeping this metadata current ensures that the leaderboard and the reporting remain accurate.
+
+> **Note:** `deployment_id` is useful to detect when a cruncher deploys a new version of their model.  
+This allows you to trigger any specific behavior you may need, such as resetting metrics or handling version-specific logic.
+
+Internally, the service maintains a list of all known models.  
+The `model_id` is used to determine whether a model is new or already registered.
+
+For example, in the Condor game, when a model joins for the first time, the system replays the prices of the previous 30 days and sends them as `tick` events to initialize the model properly.  
+You can refer to the game service code for an example of how this initialization is handled.
+
+---
+
 ## Storing predictions
 
-We recommend using a dedicated repository interface, for example:
+Predictions are stored through a dedicated repository layer.
+The `PredictionRepository` defines the interface used by the Predict Worker:
 
 ```python
-class PredictionRepository(Protocol):
-    async def save(self, prediction: Prediction) -> None:
+class PredictionRepository(ABC):
+    @abstractmethod
+    def save_all(self, prediction: Iterable[Prediction]):
         ...
 ```
 
-Your Predict worker only calls:
+The actual implementation is:
 
+- DbPredictionRepository — the concrete class responsible for writing predictions to PostgreSQL.
+
+From the Predict Worker, storing the predictions is done through a single call:
 ```python
-await prediction_repository.save(prediction)
+await prediction_repository.save_all(prediction)
 ```
 
-The concrete implementation decides:
-
-- whether this goes to PostgreSQL,
-- or to parquet,
-- or to a message queue.
-
-This keeps the Predict worker clean.
+The Predict Worker does not handle database logic directly; all persistence operations are implemented inside `infrastructure/db` and the interfaces `services/interfaces`
 
 ---
 
