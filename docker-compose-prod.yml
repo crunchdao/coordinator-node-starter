@@ -13,7 +13,7 @@ services:
       TOURNAMENT_API_BASE_URL: ${TOURNAMENT_API_BASE_URL:-https://api.hub.crunchdao.com}
       TOURNAMENT_API_KEY: ${TOURNAMENT_API_KEY:?error}
     volumes:
-      - ./deployment/.config/solana/:/root/.config/solana/
+      - ./deployment/solana/config:/root/.config/solana/
 
   model-orchestrator:
     build:
