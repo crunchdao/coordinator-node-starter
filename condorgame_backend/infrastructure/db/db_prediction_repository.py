@@ -69,7 +69,7 @@ class DbPredictionRepository(PredictionRepository):
                     WHERE resolvable_at >= NOW() - INTERVAL '1 second' * :anchor_seconds
                 ) AS mean_anchor
             FROM predictions
-            WHERE resolvable_at >= NOW() - INTERVAL '1 second' * :anchor_seconds and score_scored_at is not null
+            WHERE resolvable_at >= NOW() - (INTERVAL '1 second' * :min_resolvable_date) and score_scored_at is not null
             GROUP BY model_id, asset, horizon, step;
         """)
 
@@ -79,6 +79,9 @@ class DbPredictionRepository(PredictionRepository):
                 "recent_seconds": ModelScore.WINDOW_RECENT.total_seconds(),
                 "steady_seconds": ModelScore.WINDOW_STEADY.total_seconds(),
                 "anchor_seconds": ModelScore.WINDOW_ANCHOR.total_seconds(),
+                # Used for performance purposes. We don't need to go much later than the rollover WINDOW_ANCHOR.
+                # To account for possible overlaps, a 1-day buffer is added for additional security.
+                "min_resolvable_date": (ModelScore.WINDOW_ANCHOR + timedelta(days=1)).total_seconds(),  
             }
         )  # type: ignore
 
