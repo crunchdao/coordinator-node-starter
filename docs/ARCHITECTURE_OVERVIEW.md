@@ -134,7 +134,7 @@ The Report worker:
 - is fully **decentralised**: nothing is stored by CrunchDAO,
   the coordinator (you) answers all requests.
 
-The CrunchDAO UI or any custom UI calls this worker directly.
+The CrunchDAO UI calls this worker directly, and in local deployment, you can access it at: [http://localhost:3000](http://localhost:3000)
 
 ---
 

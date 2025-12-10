@@ -81,7 +81,8 @@ Returns:
 
 The CrunchDAO hub, calls these endpoints.
 
-> **Note:** We are actively working towards enabling local front-end connectivity with your endpoints for a seamless integration experience.
+> **Note:** You can access local front-end connectivity with your endpoints at [http://localhost:3000](http://localhost:3000) when deploying the project locally. For more details, refer
+> to [Reports UI](RUNNING_LOCALLY.md#reports-ui).
 
 The UI is configurable:
 

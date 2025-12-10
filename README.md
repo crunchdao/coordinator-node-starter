@@ -1,60 +1,57 @@
 # Condor Game Backend
 
-**Documentation:** Available in the `docs` directory (Markdown format) or accessible via **[http://localhost:8080](http://localhost:8080)** after running everything locally using `make deploy`.
+This repository contains the backend services and workers used to run the Condor Game.
 
-## Deployement 
-This project supports three distinct modes of operation. Use the **Makefile** to manage and launch the application in these modes.
+This README focuses on running the project in **local mode**.  
+All concepts, architecture details, and advanced usage are documented in the [documentation](#-documentation)
+
+---
+
+## 📚 Documentation
+
+Full documentation is available in the `docs` directory (Markdown format)  
+and as a [MkDocs site](http://localhost:8080).
+
+- Source files: `./docs`
+- Local docs site (served by MkDocs): http://localhost:8080  
+  ➜ available after running the stack with `make deploy`.
 
 ---
 
-## **Modes Overview**
+## 🚀 Run locally (local mode)
 
-1. **Production**  
-   For deploying the application in a remote cluster with dependencies such as `webto3` and `model orchestrator`.
-    - Uses: `.production.env`
+The local stack is designed to let you:
 
-2. **Local**  
-   For testing and demonstrating the application locally with minimal dependencies.
-    - Uses: `.local.env`
+- run the backend and workers with Docker,
+- generate scores,
+- and explore the leaderboard / reports UI.
 
-3. **Development**  
-   For active development and debugging, where services are run manually or via the IDE.
-    - Uses: `.dev.env`
-    - Launch your IDE with `.dev.env` to ensure proper connection to dependent services
-   
----
+### 1. Start the local stack
 
-### **Commands**
+From the root of the repository:
 
-Run the following commands based on your current mode:
+```bash
+make deploy
+```
 
-### General Commands:
+To learn more about the available commands, please refer to [Commands Overview](docs/DEPLOYMENT.md#commands-overview).
 
-- **Deploy Services**:
-  ```bash
-  make deploy           # Local mode
-  make dev deploy       # Development mode
-  make production deploy  # Production mode   all?
-  ```
-- **Restart Services**:
-  ```bash
-  make restart
-  ```
-- **Stop Services**:
-  ```bash
-  make stop
-  ```
-- **Follow Logs**:
-  ```bash
-  make logs
-  ```
-- **Shutdown**:
-  ```bash
-  make down
-  ```
-- **Build Only**:
-  ```bash
-  make build
-  ```
+### 2. 📊 Reports UI (leaderboard & metrics)
 
----
+Once the stack is up, you can access the reports UI at:
+
+👉 http://localhost:3000
+
+From this UI you can see:
+
+- the leaderboard,
+- the metrics returned by the report-worker.
+
+⏳ Important: scoring delay
+
+Scoring is not instant.
+
+- The scoring requires time to process sufficient data.
+- Scores and metrics may take at least 1 hour to appear in the UI. (The prediction horizon is 1 hour, so scoring starts after the resolution period.)
+
+If you open the UI immediately after starting the stack, it is normal to see no scores yet.

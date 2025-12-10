@@ -5,6 +5,7 @@ You can run **the whole game locally**:
 - orchestrator,
 - worker processes (Predict / Score / Report),
 - your development models.
+- Reports UI (leaderboard & metrics)
 
 This is the recommended way to understand and test everything.
 
@@ -35,13 +36,21 @@ This will:
 - start Predict worker,
 - start Score worker,
 - start Report worker.
+- start Reports UI (leaderboard & metrics)
 
-You can then inspect logs:
+#### Reports UI
 
-```bash
-make logs
-```
+Once the local stack is running, you can open the Reports UI:
 
+- URL: [http://localhost:3000](http://localhost:3000)  
+- Content:
+    - Leaderboard
+    - Metrics produced by the Report worker
+
+> ⏱️ **Scoring delay**  
+> The scoring requires time to process sufficient data.  
+> Expect to wait **at least 1 hour** before scores and metrics appear in the UI.
+> 
 ---
 
 ### Dev mode (run workers from your IDE)
