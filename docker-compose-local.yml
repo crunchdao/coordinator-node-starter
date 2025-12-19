@@ -19,7 +19,7 @@ services:
 
   report-ui:
     build:
-      context: https://github.com/crunchdao/coordinator-webapp.git
+      context: https://github.com/crunchdao/coordinator-webapp.git#feat/models
       args:
         NEXT_PUBLIC_API_URL: "http://report-worker:8000"
         #NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR: "http://model-orchestrator:8001"
