@@ -58,7 +58,7 @@ class ModelEntryReponse(BaseModel):
     model_name: str
     cruncher_name: str
     cruncher_id: str
-    deployment_identifier: str
+    deployment_id: str
 
 
 class LeaderboardEntryResponse(BaseModel):
@@ -124,7 +124,7 @@ def get_models(
             model_name=model.name,
             cruncher_name=model.player.name,
             cruncher_id=model.player.crunch_identifier,
-            deployment_identifier=model.deployment_identifier,
+            deployment_id=model.deployment_identifier,
         )
         for model in models.values()
     ]
