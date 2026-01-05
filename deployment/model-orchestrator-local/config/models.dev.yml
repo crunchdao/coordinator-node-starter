@@ -1,8 +1,5 @@
 models:
-- id: '12311'
-
-    # name of the model, can be anything
-  name: benchmarktracker
+- id: '1'
 
     # submission code id, it is the code used to run the model
     # the corresponding directory must exist in the storage
@@ -14,4 +11,6 @@ models:
     # which desired state this model must be in: "RUNNING", "STOPPED"
   desired_state: RUNNING
 
-  cruncher_id: cruncher_id_1
+  model_name: light
+  cruncher_name: degu
+  cruncher_id: AHgm2bE4rcyiD1skgvWaujXyyzcfouiq8JXdMKvPhFFR

@@ -53,6 +53,14 @@ def get_prediction_repository(
 # Pydantic Schemas
 # ------------------------------------------------------------------------------
 
+class ModelEntryReponse(BaseModel):
+    model_id: str
+    model_name: str
+    cruncher_name: str
+    cruncher_id: str
+    deployment_id: str
+
+
 class LeaderboardEntryResponse(BaseModel):
     created_at: datetime
     model_id: str
@@ -60,6 +68,8 @@ class LeaderboardEntryResponse(BaseModel):
     score_steady: Optional[float]
     score_anchor: Optional[float]
     rank: int
+    model_name: str
+    cruncher_name: str
 
 
 class GlobalMetricsResponse(BaseModel):
@@ -95,10 +105,30 @@ class PredictionScoreResponse(BaseModel):
     performed_at: datetime
 
 
-
 # ------------------------------------------------------------------------------
 # Routes
 # ------------------------------------------------------------------------------
+
+@app.get("/reports/models", response_model=List[ModelEntryReponse])
+def get_models(
+    model_repo: Annotated[ModelRepository, Depends(get_model_repository)]
+) -> List[ModelEntryReponse]:
+    """
+    Fetch and return a list of all available models.
+    """
+    models = model_repo.fetch_all()
+
+    return [
+        ModelEntryReponse(
+            model_id=model.crunch_identifier,
+            model_name=model.name,
+            cruncher_name=model.player.name,
+            cruncher_id=model.player.crunch_identifier,
+            deployment_id=model.deployment_identifier,
+        )
+        for model in models.values()
+    ]
+
 
 @app.get("/reports/leaderboard", response_model=List[LeaderboardEntryResponse])
 def get_leaderboard(
@@ -120,6 +150,8 @@ def get_leaderboard(
             score_steady=entry.score.steady,
             score_anchor=entry.score.anchor,
             rank=entry.rank,
+            model_name=entry.model_name,
+            cruncher_name=entry.player_name
         )
         for entry in entries_sorted
     ]

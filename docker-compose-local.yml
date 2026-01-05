@@ -2,7 +2,7 @@ services:
   webto3: {} # not required for local
   model-orchestrator:
     build:
-      context: https://github.com/crunchdao/model-orchestrator.git
+      context: https://github.com/crunchdao/model-orchestrator.git#feat/local-deployment-http-service
     container_name: model-orchestrator-local
     environment:
       DOCKER_NETWORK_NAME: ${MODEL_ORCHESTRATOR_NETWORK-condornet}
@@ -11,14 +11,23 @@ services:
       - ./deployment/model-orchestrator-local/config/:/app/config/
       - /var/run/docker.sock:/var/run/docker.sock # for local runner
     privileged: true # for local runner
-    entrypoint: [ "/app/config/docker-entrypoint.sh" ]
-    command: [ "model-orchestrator", "dev", "--configuration-file", "/app/config/orchestrator.dev.yml", "--rebuild", "if-code-modified"]
+    entrypoint: ["/app/config/docker-entrypoint.sh"]
+    command:
+      [
+        "model-orchestrator",
+        "dev",
+        "--configuration-file",
+        "/app/config/orchestrator.dev.yml",
+        "--rebuild",
+        "if-code-modified"
+      ]
 
   report-ui:
     build:
       context: https://github.com/crunchdao/coordinator-webapp.git
       args:
         NEXT_PUBLIC_API_URL: "http://report-worker:8000"
+        NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR: "http://model-orchestrator:8001"
     container_name: report-ui
     ports:
       - "3000:3000"
@@ -27,5 +36,4 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - report-worker
-    networks: [ condornet ]
-
+    networks: [condornet]

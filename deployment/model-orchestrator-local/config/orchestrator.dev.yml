@@ -39,7 +39,7 @@ infrastructure:
 watcher:
 
   # Check interval, in seconds
-  interval: 10
+  interval: 1
 
   # Configure the local yaml file model state poller (only one)
   poller:

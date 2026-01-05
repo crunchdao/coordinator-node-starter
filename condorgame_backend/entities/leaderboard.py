@@ -1,6 +1,6 @@
 from pydantic.dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterable
+from typing import Iterable, Optional
 
 from condorgame_backend.entities.model import Model, ModelScore
 
@@ -10,6 +10,8 @@ class LeaderboardEntry:
     rank: int
     model_id: str
     score: ModelScore
+    model_name: Optional[str] = None
+    player_name: Optional[str] = None
 
 
 @dataclass
@@ -45,7 +47,7 @@ class Leaderboard:
 
         # Generate leaderboard entries with ranks
         entries = [
-            LeaderboardEntry(rank=index + 1, model_id=model.crunch_identifier, score=model.overall_score)
+            LeaderboardEntry(rank=index + 1, model_id=model.crunch_identifier, score=model.overall_score, model_name=model.name, player_name=model.player.name)
             for index, model in enumerate(sorted_models)
         ]
 
