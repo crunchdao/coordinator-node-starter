@@ -48,7 +48,7 @@ CRPS_BOUNDS = {
 
 
 # ------------------------------------------------------------------
-def crps_integral(density_dict, x, t_min=-4000, t_max=4000, num_points=2000):
+def crps_integral(density_dict, x, t_min=-4000, t_max=4000, num_points=256):
     """
     CRPS score (Integrated Quadratic Score) using:
     - single PDF evaluation per grid point

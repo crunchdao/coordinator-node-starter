@@ -9,7 +9,7 @@ from condorgame_backend.entities.model import Model, ModelScore
 class LeaderboardEntry:
     rank: int
     model_id: str
-    score: ModelScore
+    score: ModelScore | None
     model_name: Optional[str] = None
     player_name: Optional[str] = None
 

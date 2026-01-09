@@ -148,9 +148,9 @@ def get_leaderboard(
         LeaderboardEntryResponse(
             created_at=leaderboard.created_at,
             model_id=entry.model_id,
-            score_recent=entry.score.recent,
-            score_steady=entry.score.steady,
-            score_anchor=entry.score.anchor,
+            score_recent=entry.score.recent if entry.score else None,
+            score_steady=entry.score.steady if entry.score else None,
+            score_anchor=entry.score.anchor if entry.score else None,
             rank=entry.rank,
             model_name=entry.model_name,
             cruncher_name=entry.player_name
