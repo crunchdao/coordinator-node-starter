@@ -61,6 +61,7 @@ class DbModelRepository(ModelRepository):
 
         if not hasattr(model, "__meta_row__"):
             row = self._domain_to_row(model)
+            self._attach_meta(model, row)
             self._session.add(row)
             if commit:
                 self._session.commit()
