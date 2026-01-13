@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, Iterable, Optional
 
-from condorgame_backend.entities.prediction import Prediction, PredictionConfig
+from condorgame_backend.entities.prediction import Prediction, PredictionConfig, PredictionParams
 
 
 @dataclass
@@ -58,4 +58,8 @@ class PredictionRepository(ABC):
     @abstractmethod
     # Will remove all the predictions scored and who has more than 10 days
     def prune(self):
+        pass
+
+    @abstractmethod
+    def get_latest_prediction_params_execution_time(self) -> list[(PredictionParams, datetime)]:
         pass

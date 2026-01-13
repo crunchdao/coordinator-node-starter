@@ -94,8 +94,26 @@ class PredictService:
 
             next_predict_time = datetime.max.replace(tzinfo=timezone.utc)
             for scheduler in self.asset_group_schedulers:
-                if scheduler.should_run(now):
-                    await self._predict(scheduler.next_code(now), scheduler.horizon, scheduler.steps)
+                asset_code = scheduler.peek_asset()
+                ts, _ = self.prices_cache.get_last_price(asset_code)
+
+                params = scheduler.next(now, latest_info_dt=datetime.fromtimestamp(ts, timezone.utc))
+
+                if params is not None:
+                    await self._predict(params.asset, params.horizon, params.steps)
+                    scheduler.mark_executed(asset_code, now)
+                else:
+                    # Optional: log only when due (avoid noisy logs)
+                    if now >= scheduler.next_run:
+                        self.logger.debug(
+                            "Skipping prediction for %s: no new prices since last execution",
+                            asset_code,
+                        )
+                        # event when we skip we mark like executed
+                        scheduler.mark_executed(asset_code, now)
+
+
+
                 next_predict_time = min(next_predict_time, scheduler.next_run)
 
             end_time = datetime.now(timezone.utc)
@@ -266,3 +284,7 @@ class PredictService:
         self.asset_configs = self.prediction_repository.fetch_active_configs()
         self.asset_group_schedulers = GroupScheduler.create_group_schedulers(self.asset_configs)
         self.asset_codes = PredictionConfig.get_active_assets(self.asset_configs)
+
+        latest_predictions_exec_times = self.prediction_repository.get_latest_prediction_params_execution_time()
+        for scheduler in self.asset_group_schedulers:
+            scheduler.set_last_executions(latest_predictions_exec_times)

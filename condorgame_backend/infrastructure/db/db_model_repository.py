@@ -53,35 +53,35 @@ class DbModelRepository(ModelRepository):
 
         return self._row_to_domain(row)
 
-    def save(self, model: Model) -> None:
+    def _save(self, model: Model, commit=True) -> None:
         """
         Upsert a model row entirely.
         Scores-by-param are stored in JSONB, so no sync required.
         """
 
-        existing = self._session.get(ModelRow, model.crunch_identifier)
-        row = self._domain_to_row(model)
-
-        if existing is None:
-            # Insert new row
+        if not hasattr(model, "__meta_row__"):
+            row = self._domain_to_row(model)
             self._session.add(row)
-        else:
-            # Update existing
-            existing.name = row.name
-            existing.deployment_identifier = row.deployment_identifier
-            existing.runner_id = row.runner_id
-            existing.player_crunch_identifier = row.player_crunch_identifier
-            existing.player_name = row.player_name
-            existing.overall_score_recent = row.overall_score_recent
-            existing.overall_score_steady = row.overall_score_steady
-            existing.overall_score_anchor = row.overall_score_anchor
-            existing.scores_by_param = row.scores_by_param
+            if commit:
+                self._session.commit()
+            return
 
-        self._session.commit()
+        # EXISTING Model → update without SELECT
+        row: ModelRow = getattr(model, "__meta_row__")
+        new_row = self._domain_to_row(model)
+
+        for field in ModelRow.model_fields.keys():
+            if field != "crunch_identifier":
+                setattr(row, field, getattr(new_row, field))
+        if commit:
+            self._session.commit()
+
+    def save(self, models: Model) -> None:
+        return self._save(models, commit=True)
 
     def save_all(self, models: Iterable[Model]) -> None:
         for model in models:
-            self.save(model)
+            self._save(model)
 
     def snapshot_model_scores(self, model_score_snapshots: Iterable[ModelScoreSnapshot]):
         """
@@ -174,6 +174,8 @@ class DbModelRepository(ModelRepository):
             for entry in row.scores_by_param or []
         ]
 
+        self._attach_meta(model, row)
+
         return model
 
     def _domain_to_row(self, model: Model) -> ModelRow:
@@ -192,8 +194,21 @@ class DbModelRepository(ModelRepository):
             overall_score_recent=model.overall_score.recent if model.overall_score else None,
             overall_score_steady=model.overall_score.steady if model.overall_score else None,
             overall_score_anchor=model.overall_score.anchor if model.overall_score else None,
-            scores_by_param=scores,
+            scores_by_param=[
+                {
+                    **entry,
+                    "param": {
+                        **(entry.get("param") or {}),
+                        "steps": list((entry.get("param") or {}).get("steps") or []), # tuple create trouble to detect dirty update
+                    },
+                }
+                for entry in scores
+            ],
         )
+
+    def _attach_meta(self, domain: any, row: any):
+        # bypass __slots__ and attach metadata dynamically
+        object.__setattr__(domain, "__meta_row__", row)
 
     def _snapshot_row_to_domain(self, row: ModelScoreSnapshotRow) -> ModelScoreSnapshot:
         return ModelScoreSnapshot(

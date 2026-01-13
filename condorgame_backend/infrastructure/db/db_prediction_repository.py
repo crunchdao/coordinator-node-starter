@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, Dict, List, Optional
 
-from sqlmodel import Session, select, delete, text
+from sqlmodel import Session, select, delete, text, func
 
 from condorgame_backend.entities.model import ModelScore
 from condorgame_backend.entities.prediction import Prediction, PredictionConfig, PredictionParams, PredictionScore, PredictionStatus
@@ -278,6 +278,29 @@ class DbPredictionRepository(PredictionRepository):
 
         if commit:
             self._session.commit()
+
+    def get_latest_prediction_params_execution_time(self) -> list[(PredictionParams, datetime)]:
+        stmt = (
+            select(
+                PredictionRow.asset,
+                PredictionRow.horizon,
+                PredictionRow.steps,
+                func.max(PredictionRow.performed_at).label("latest_execution_time")
+            )
+            .group_by(PredictionRow.asset, PredictionRow.horizon, PredictionRow.steps)
+            .order_by(PredictionRow.asset, PredictionRow.horizon, PredictionRow.steps)
+        )
+        rows = self._session.exec(stmt).all()
+
+        return [
+            (PredictionParams(
+                asset=row.asset,
+                horizon=row.horizon,
+                steps=row.steps
+            ), row.latest_execution_time.replace(tzinfo=timezone.utc)
+            )
+            for row in rows
+        ]
 
     def save_config(self, config: PredictionConfig) -> None:
         return self._save_config(config, commit=True)

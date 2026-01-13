@@ -17,3 +17,8 @@ dependencies = [
 ]
 [tool.setuptools.packages.find]
 include=["condorgame_backend"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
