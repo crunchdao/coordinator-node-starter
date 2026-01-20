@@ -259,10 +259,10 @@ class PredictService:
     def _init_model_runner(self):
         self.model_concurrent_runner = DynamicSubclassModelConcurrentRunner(
             self.MODEL_RUNNER_TIMEOUT,
-            "condorgame",
+            "synth",
             self.MODEL_RUNNER_NODE_HOST,
             self.MODEL_RUNNER_NODE_PORT,
-            "condorgame.tracker.TrackerBase",
+            "crunch_synth.tracker.TrackerBase",
             max_consecutive_failures=100,
             max_consecutive_timeouts=100
         )
