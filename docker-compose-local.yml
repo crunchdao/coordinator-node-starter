@@ -2,7 +2,7 @@ services:
   webto3: {} # not required for local
   model-orchestrator:
     build:
-      context: https://github.com/crunchdao/model-orchestrator.git#feat/local-deployment-http-service
+      context: https://github.com/crunchdao/model-orchestrator.git
     container_name: model-orchestrator-local
     environment:
       DOCKER_NETWORK_NAME: ${MODEL_ORCHESTRATOR_NETWORK-condornet}
