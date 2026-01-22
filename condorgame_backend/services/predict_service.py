@@ -5,6 +5,7 @@ import signal
 
 from model_runner_client.grpc.generated.commons_pb2 import Argument, Variant, VariantType
 from model_runner_client.model_concurrent_runners.model_concurrent_runner import ModelPredictResult
+from model_runner_client.security.credentials import SecureCredentials
 from model_runner_client.utils.datatype_transformer import encode_data
 
 from condorgame_backend.entities.model import Model
@@ -232,6 +233,17 @@ class PredictService:
         self.prediction_repository.save_all(predictions.values())
 
     def _init_model_runner(self):
+        # For testnet/mainnet deployment, configure TLS certificates + signed message to secure the connection
+        # to the model-orchestrator:
+        #   1. Generate certificates using: https://pypi.org/project/crunch-certificate/
+        #   2. Store them securely (restrict access)
+        #   3. Set the directory path below and uncomment the secure_credentials parameter
+        #      in DynamicSubclassModelConcurrentRunner
+
+        # secure_credentials = SecureCredentials.from_directory(
+        #     path="../../issued-certificate"
+        # )
+
         self.model_concurrent_runner = DynamicSubclassModelConcurrentRunner(
             self.MODEL_RUNNER_TIMEOUT,
             "condorgame",
@@ -239,7 +251,8 @@ class PredictService:
             self.MODEL_RUNNER_NODE_PORT,
             "condorgame.tracker.TrackerBase",
             max_consecutive_failures=100,
-            max_consecutive_timeouts=100
+            max_consecutive_timeouts=100,
+            # secure_credentials=secure_credentials,
         )
 
         return self.model_concurrent_runner
