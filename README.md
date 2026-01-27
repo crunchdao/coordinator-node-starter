@@ -1,13 +1,19 @@
-# Condor Game Backend
+# Coordinator Node Starter
 
-This repository contains the backend services and workers used to run the Condor Game.
+This repository contains everything to instantiate a coordinator node 
+and model nodes it communicates with locally. W
 
-This README focuses on running the project in **local mode**.  
+As an example we will use one of the competition we delevloped interally: Condor Game - is a real-time probabilistic forecasting challenge for BTC, ETH, SOL and XAU.
+
+Within minutes you will have a full environment running that you can then adapt to your purposes. 
+
+This README focuses on running the project locally and in **local mode** - with this we mean that the model nodes are also running on your machine.  
+
 All concepts, architecture details, and advanced usage are documented in the [documentation](#-documentation)
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 Full documentation is available in the `docs` directory (Markdown format)  
 and as a [MkDocs site](http://localhost:8080).
@@ -18,7 +24,7 @@ and as a [MkDocs site](http://localhost:8080).
 
 ---
 
-## 🚀 Run locally (local mode)
+## Run locally
 
 The local stack is designed to let you:
 
@@ -36,20 +42,23 @@ make deploy
 
 To learn more about the available commands, please refer to [Commands Overview](docs/DEPLOYMENT.md#commands-overview).
 
-### 2. 📊 Reports UI (leaderboard & metrics)
+### 2. Coordinator Platform UI 
 
-Once the stack is up, you can access the reports UI at:
+Once the stack is up, you can access the Coordinator Platform UI at:
 
-👉 http://localhost:3000
+http://localhost:3000
 
 From this UI you can see:
 
-- the leaderboard,
-- the metrics returned by the report-worker.
+- The leaderboard,
+- The metrics returned by the report-worker.
 
-⏳ Important: scoring delay
+once you have a good setup locally this platform will also help you to: 
 
-Scoring is not instant.
+- Register as a coordinator
+- Push your Crunch to Testnet and Mainnet
+
+Important: there is a scoring delay, so the leaderboard will only show up delayed.
 
 - The scoring requires time to process sufficient data.
 - Scores and metrics may take at least 1 hour to appear in the UI. (The prediction horizon is 1 hour, so scoring starts after the resolution period.)
