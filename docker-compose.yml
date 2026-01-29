@@ -16,6 +16,7 @@ services:
     image: postgres:15
     environment:
       <<: *common-db-env
+      READONLY_USER_PASSWORD: ${READONLY_USER_PASSWORD:-readonly}
     container_name: condor-postgres
     restart: always
     ports:
@@ -28,6 +29,7 @@ services:
       start_period: 10s
     volumes:
       - ./deployment/postgres/data:/var/lib/postgresql/data
+      - ./deployment/postgres/init-scripts:/docker-entrypoint-initdb.d
     networks: [ condornet ]
 
   init-db:
@@ -87,7 +89,7 @@ services:
     ports:
       - "3000:3000"
     networks: [ condornet ]
-    profiles: [ production]
+    profiles: [ production ]
 
   model-orchestrator:
     container_name: model-orchestrator
