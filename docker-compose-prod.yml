@@ -33,6 +33,7 @@ services:
     image: tiredofit/db-backup:latest
     restart: always
     environment:
+      - CONTAINER_ENABLE_MONITORING=FALSE
       # --- DB01: YOUR POSTGRES DB ---
       - DB01_TYPE=pgsql
       - DB01_HOST=postgres              # Must match your postgres service name
