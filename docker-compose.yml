@@ -6,6 +6,15 @@ x-common-env:
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-condorgame}
     POSTGRES_DB: ${POSTGRES_DB:-condorgame}
 
+x-newrelic-env: &newrelic-env
+  NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
+  NEW_RELIC_APP_NAME: ${NEW_RELIC_APP_NAME:-${COMPOSE_PROJECT_NAME}}
+  NEW_RELIC_LOG: stdout
+  NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
+
+x-worker-env: &worker-env
+  <<: [*common-db-env, *newrelic-env]
+
 x-common-build: &common-build
   build:
     context: ${PROJECT_DIR:-./}
@@ -17,7 +26,6 @@ services:
     environment:
       <<: *common-db-env
       READONLY_USER_PASSWORD: ${READONLY_USER_PASSWORD:-readonly}
-    container_name: condor-postgres
     restart: always
     ports:
       - "5432:5432"
@@ -46,7 +54,8 @@ services:
   predict-worker:
     <<: *common-build
     environment:
-      <<: *common-db-env
+      <<: *worker-env
+      NEW_RELIC_APP_NAME: "${NEW_RELIC_APP_NAME:-${COMPOSE_PROJECT_NAME}} (Predict Worker)"
       MODEL_RUNNER_NODE_HOST: ${MODEL_RUNNER_NODE_HOST:-model-orchestrator}
       MODEL_RUNNER_NODE_PORT: ${MODEL_RUNNER_NODE_PORT:-9091}
     restart: always
@@ -61,7 +70,8 @@ services:
   score-worker:
     <<: *common-build
     environment:
-      <<: *common-db-env
+      <<: *worker-env
+      NEW_RELIC_APP_NAME: "${NEW_RELIC_APP_NAME:-${COMPOSE_PROJECT_NAME}} (Score Worker)"
     restart: always
     command: [ "python", "-m", "condorgame_backend.workers.score_worker" ]
     depends_on:
@@ -72,7 +82,8 @@ services:
   report-worker:
     <<: *common-build
     environment:
-      <<: *common-db-env
+      <<: *worker-env
+      NEW_RELIC_APP_NAME: "${NEW_RELIC_APP_NAME:-${COMPOSE_PROJECT_NAME}} (Report Worker)"
     restart: always
     command: [ "python", "-m", "condorgame_backend.workers.report_worker" ]
     ports:
@@ -82,17 +93,7 @@ services:
         condition: service_completed_successfully
     networks: [ condornet ]
 
-  # required only for production environment
-  webto3:
-    container_name: webto3
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    networks: [ condornet ]
-    profiles: [ production ]
-
   model-orchestrator:
-    container_name: model-orchestrator
     restart: unless-stopped
     init: true
     ports:

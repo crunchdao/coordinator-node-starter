@@ -9,6 +9,7 @@ dependencies = [
     "fastapi>=0.121.3",
     #"model-runner-client>=0.9.0",
     "model-runner-client @ git+https://github.com/crunchdao/model-runner-client.git@feat/timeout-per-call",
+    "newrelic>=10.0.0",
     "numpy>=2.3.4",
     "psycopg2-binary>=2.9.11",
     "requests>=2.32.5",

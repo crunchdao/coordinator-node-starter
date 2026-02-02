@@ -16,8 +16,15 @@ RUN uv sync
 ENV VIRTUAL_ENV=/app/.venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
+# Copy entrypoint script
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+
 # Copy the application code
 COPY condorgame_backend ./condorgame_backend
+
+# Entrypoint conditionally enables NewRelic if license key is provided
+ENTRYPOINT ["./entrypoint.sh"]
 
 # Default command — overridden in docker compose for each worker
 CMD ["python", "-m", "condorgame_backend"]

@@ -5,3 +5,6 @@
 # Except model-orchestrator-local
 !model-orchestrator-local
 !postgres/init-scripts/
+
+!newrelic/alerts.tf
+!newrelic/apply.sh

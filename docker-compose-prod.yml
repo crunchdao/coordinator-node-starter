@@ -4,7 +4,6 @@ services:
 
   webto3:
     image: 728958649654.dkr.ecr.eu-west-1.amazonaws.com/webto3
-    container_name: webto3
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -14,6 +13,7 @@ services:
       TOURNAMENT_API_KEY: ${TOURNAMENT_API_KEY:?error}
     volumes:
       - ./deployment/solana/config:/root/.config/solana/
+    networks: [ condornet ]
 
   model-orchestrator:
     build:
@@ -28,6 +28,44 @@ services:
     command: [ "--configuration-file", "/app/config/orchestrator.yml" ]
     depends_on:
       - webto3
+
+  # NewRelic Alerts - applies Terraform configuration for alerts
+  newrelic-alerts:
+    image: hashicorp/terraform:latest
+    working_dir: /workspace
+    volumes:
+      - ./deployment/newrelic:/workspace
+    environment:
+      TF_VAR_project_name: ${COMPOSE_PROJECT_NAME}
+      TF_VAR_newrelic_account_id: ${NEW_RELIC_ACCOUNT_ID:-}
+      TF_VAR_newrelic_api_key: ${NEW_RELIC_API_KEY:-}
+      TF_VAR_newrelic_region: ${NEW_RELIC_REGION:-EU}
+      TF_VAR_notification_email: ${NEW_RELIC_NOTIFICATION_EMAIL:-}
+      TF_VAR_slack_webhook_url: ${NEW_RELIC_SLACK_WEBHOOK_URL:-}
+      TF_VAR_slack_channel: ${NEW_RELIC_SLACK_CHANNEL:-#alerts}
+      TF_VAR_infra_host_name: ${COMPOSE_PROJECT_NAME}-host
+    entrypoint: ["/bin/sh", "/workspace/apply.sh"]
+
+  # NewRelic Infrastructure Agent - monitors host metrics, containers, and forwards logs
+  newrelic-infra:
+    image: newrelic/infrastructure:latest
+    container_name: newrelic-infra
+    restart: always
+    privileged: true
+    pid: host
+    network_mode: host
+    cap_add:
+      - SYS_PTRACE
+    environment:
+      NRIA_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
+      NRIA_DISPLAY_NAME: ${COMPOSE_PROJECT_NAME}-host
+      NRIA_VERBOSE: 0
+    volumes:
+      - /:/host:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    configs:
+      - source: newrelic-logging
+        target: /etc/newrelic-infra/logging.d/logging.yml
 
   db-backup:
     image: tiredofit/db-backup:latest
@@ -53,3 +91,12 @@ services:
       - DB01_S3_KEY_SECRET=${AWS_SECRET_ACCESS_KEY:?error}
 
     networks: [ condornet ]
+
+configs:
+  newrelic-logging:
+    content: |
+      logs:
+        - name: condorgame-containers
+          docker:
+            match:
+              name: "${COMPOSE_PROJECT_NAME}*"
