@@ -5,6 +5,7 @@ import traceback
 from datetime import datetime, timedelta, timezone
 import logging
 
+import newrelic.agent
 import numpy
 import numpy as np
 from densitypdf import density_pdf
@@ -54,7 +55,7 @@ __spec__: Optional[ModuleSpec]
 # Check `crps_integral` in tracker_evaluator.py for more information
 CRPS_BOUNDS = {
     "base_step": 300,
-    "t":{
+    "t": {
         "BTC": 1500,
         "SOL": 4,
         "ETH": 80,
@@ -143,6 +144,7 @@ class ScoreService:
         for asset in self.asset_codes:
             self.prices_cache.add_prices(asset, self.prices_repository.fetch_historical_prices(asset, from_date, dt, self.PRICE_RESOLUTION))
 
+    @newrelic.agent.background_task()
     def _update_prices(self):
         prices_updated = {}
         now = datetime.now(timezone.utc)
@@ -164,6 +166,7 @@ class ScoreService:
     def _refresh_models(self):
         self.models = self.model_repository.fetch_all()
 
+    @newrelic.agent.background_task()
     def score_predictions(self) -> bool:
         """
         Loop over cached predictions and score them using the `density_pdf` function.
@@ -322,6 +325,7 @@ class ScoreService:
 
         return PredictionScore(float(total_score), True, None)
 
+    @newrelic.agent.background_task()
     def score_models(self):
 
         # for now, use SQL to optimize the model score compute
@@ -358,6 +362,7 @@ class ScoreService:
         ])
         self.model_repository.prune_snapshots()
 
+    @newrelic.agent.background_task()
     def compute_leaderboard(self):
         leaderboard = Leaderboard.create(self.models.values())
 

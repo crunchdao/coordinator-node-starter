@@ -1,7 +1,6 @@
 import asyncio
 import logging
 
-import newrelic.agent
 from sqlmodel import Session
 
 from condorgame_backend.infrastructure.db.init_db import engine
@@ -18,7 +17,6 @@ def parse_arguments():
     return parser.parse_args()
 
 
-@newrelic.agent.background_task()
 async def main(prediction_id: str):
     setup_logging()
     logging.getLogger("condorgame_backend").setLevel(logging.DEBUG)

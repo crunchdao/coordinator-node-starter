@@ -3,6 +3,7 @@ import logging
 import os
 import signal
 
+import newrelic.agent
 from model_runner_client.grpc.generated.commons_pb2 import Argument, Variant, VariantType
 from model_runner_client.model_concurrent_runners.model_concurrent_runner import ModelPredictResult
 from model_runner_client.utils.datatype_transformer import encode_data
@@ -144,6 +145,7 @@ class PredictService:
 
         self._is_shutdown = True
 
+    @newrelic.agent.background_task()
     async def _tick(self, prices, initial=False):
         if self.logger.isEnabledFor(logging.DEBUG):
             self.logger.debug("Tick with prices (%d values) %s", sum(len(v) for v in prices.values()), "" if initial else prices)
@@ -208,6 +210,7 @@ class PredictService:
 
         return new_model_joining, model_changed_deployment
 
+    @newrelic.agent.background_task()
     def _update_prices(self):
         prices_updated = {}
         now = datetime.now(timezone.utc)
@@ -226,6 +229,7 @@ class PredictService:
 
         return prices_updated
 
+    @newrelic.agent.background_task()
     async def _predict(self, asset_code: str, horizon: int, steps: Sequence[int]):
         self.logger.info(f"Predicting [{PredictionParams.label(asset_code, horizon, steps)}]")
         prediction_dt = datetime.now(timezone.utc)
