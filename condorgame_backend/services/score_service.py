@@ -399,14 +399,13 @@ class ScoreService:
         self.logger.info("ScoreService completed.")
 
     async def _run(self):
-        force_scoring = True
         while not self.stop_event.is_set():
             now = datetime.now(timezone.utc)
             # Fetch updated models to ensure the leaderboard contains new models joined since the last execution
             self._refresh_models()
             self._update_prices()
 
-            if self.score_predictions() or force_scoring:
+            if self.score_predictions():
                 self.score_models()
                 self.compute_leaderboard()
 
