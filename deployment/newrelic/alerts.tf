@@ -1,18 +1,13 @@
 # ---------------------------------------------------------------------------
-# NewRelic Alert Configuration
+# NewRelic Alert Configuration (2026 Generic Standard)
 # ---------------------------------------------------------------------------
-# This Terraform configuration sets up alerts for:
-# - High CPU usage
-# - High Memory usage
-# - Docker container crashes/restarts
-# - Application errors
-#
-# Usage:
-#   1. Set environment variables:
-#      export TF_VAR_newrelic_api_key="your-api-key"
-#      export TF_VAR_newrelic_account_id="your-account-id"
-#      export TF_VAR_project_name="condorgame-backend"  # or use COMPOSE_PROJECT_NAME
-#   2. Run: terraform init && terraform apply
+# This implementation covers the 6 Golden Rules:
+# 1. APM Errors (Static > 0)
+# 2. APM Latency (Anomaly 3.0 SD)
+# 3. Service Heartbeat (Static < 1 - Loss of Signal Heartbeat)
+# 4. Host CPU Saturation (Static 90%)
+# 5. Host Memory Saturation (Static 90%)
+# 6. Host Disk Saturation (Static 85%)
 # ---------------------------------------------------------------------------
 
 terraform {
@@ -33,82 +28,51 @@ provider "newrelic" {
 # ---------------------------------------------------------------------------
 # Variables
 # ---------------------------------------------------------------------------
-
-variable "project_name" {
-  description = "Project name (matches COMPOSE_PROJECT_NAME)"
-  type        = string
-}
-
-variable "newrelic_account_id" {
-  description = "NewRelic Account ID"
-  type        = string
-}
-
+variable "project_name" { type = string }
+variable "newrelic_account_id" { type = string }
 variable "newrelic_api_key" {
-  description = "NewRelic User API Key"
-  type        = string
-  sensitive   = true
+  type      = string
+  sensitive = true
 }
-
 variable "newrelic_region" {
-  description = "NewRelic region (US or EU)"
-  type        = string
-  default     = "EU"
+  type    = string
+  default = "EU"
 }
-
 variable "notification_email" {
-  description = "Email address for alert notifications (optional)"
-  type        = string
-  default     = ""
+  type    = string
+  default = ""
 }
-
 variable "slack_webhook_url" {
-  description = "Slack webhook URL for alert notifications (optional)"
-  type        = string
-  default     = ""
-  sensitive   = true
+  type      = string
+  default   = ""
+  sensitive = true
 }
-
 variable "slack_channel" {
-  description = "Slack channel name for notifications (e.g. #alerts)"
-  type        = string
-  default     = "#alerts"
+  type    = string
+  default = "#alerts"
 }
-
 variable "infra_host_name" {
-  description = "Infrastructure host display name (defaults to project_name-host)"
-  type        = string
-  default     = ""
+  type    = string
+  default = ""
 }
 
-# CPU/Memory thresholds
+# Smart Sensitivity & Saturation thresholds
+variable "latency_std_dev" {
+  type    = number
+  default = 3.0
+}
 variable "cpu_critical_threshold" {
-  description = "CPU usage percentage to trigger critical alert"
-  type        = number
-  default     = 90
+  type    = number
+  default = 90
 }
-
-variable "cpu_warning_threshold" {
-  description = "CPU usage percentage to trigger warning alert"
-  type        = number
-  default     = 80
-}
-
 variable "memory_critical_threshold" {
-  description = "Memory usage percentage to trigger critical alert"
-  type        = number
-  default     = 90
+  type    = number
+  default = 90
 }
-
-variable "memory_warning_threshold" {
-  description = "Memory usage percentage to trigger warning alert"
-  type        = number
-  default     = 80
+variable "disk_critical_threshold" {
+  type    = number
+  default = 85
 }
-
-# ---------------------------------------------------------------------------
-# Locals
-# ---------------------------------------------------------------------------
 
 locals {
   infra_host_name = var.infra_host_name != "" ? var.infra_host_name : "${var.project_name}-host"
@@ -117,21 +81,18 @@ locals {
 # ---------------------------------------------------------------------------
 # Alert Policy
 # ---------------------------------------------------------------------------
-
 resource "newrelic_alert_policy" "main" {
-  name                = "${var.project_name} Alerts"
+  name                = "${var.project_name} Standard Alerts"
   incident_preference = "PER_CONDITION"
 }
 
 # ---------------------------------------------------------------------------
-# Notification Channel (Email) - Optional
+# Notification Destinations & Workflows
 # ---------------------------------------------------------------------------
-
 resource "newrelic_notification_destination" "email" {
   count = var.notification_email != "" ? 1 : 0
   name  = "${var.project_name} Email Destination"
   type  = "EMAIL"
-
   property {
     key   = "email"
     value = var.notification_email
@@ -144,52 +105,16 @@ resource "newrelic_notification_channel" "email_channel" {
   type           = "EMAIL"
   destination_id = newrelic_notification_destination.email[0].id
   product        = "IINT"
-
   property {
     key   = "subject"
     value = "${var.project_name} Alert: {{issueTitle}}"
   }
 }
 
-resource "newrelic_workflow" "main" {
-  name                  = "${var.project_name} Alert Workflow"
-  muting_rules_handling = "NOTIFY_ALL_ISSUES"
-
-  issues_filter {
-    name = "${var.project_name}-filter"
-    type = "FILTER"
-
-    predicate {
-      attribute = "labels.policyIds"
-      operator  = "EXACTLY_MATCHES"
-      values    = [newrelic_alert_policy.main.id]
-    }
-  }
-
-  dynamic "destination" {
-    for_each = var.notification_email != "" ? [1] : []
-    content {
-      channel_id = newrelic_notification_channel.email_channel[0].id
-    }
-  }
-
-  dynamic "destination" {
-    for_each = var.slack_webhook_url != "" ? [1] : []
-    content {
-      channel_id = newrelic_notification_channel.slack_channel[0].id
-    }
-  }
-}
-
-# ---------------------------------------------------------------------------
-# Notification Channel (Slack) - Optional
-# ---------------------------------------------------------------------------
-
 resource "newrelic_notification_destination" "slack" {
   count = var.slack_webhook_url != "" ? 1 : 0
   name  = "${var.project_name} Slack Destination"
   type  = "WEBHOOK"
-
   property {
     key   = "url"
     value = var.slack_webhook_url
@@ -202,221 +127,172 @@ resource "newrelic_notification_channel" "slack_channel" {
   type           = "WEBHOOK"
   destination_id = newrelic_notification_destination.slack[0].id
   product        = "IINT"
-
   property {
     key   = "payload"
     value = jsonencode({
       channel = var.slack_channel
-      text    = "🚨 *${var.project_name} Alert*"
-      attachments = [
-        {
-          color = "danger"
-          fields = [
-            {
-              title = "Issue"
-              value = "{{issueTitle}}"
-              short = false
-            },
-            {
-              title = "Priority"
-              value = "{{priority}}"
-              short = true
-            },
-            {
-              title = "State"
-              value = "{{state}}"
-              short = true
-            }
-          ]
-          actions = [
-            {
-              type = "button"
-              text = "View in NewRelic"
-              url  = "{{issuePageUrl}}"
-            }
-          ]
-        }
-      ]
+      text    = "🚨 *${var.project_name} Alert* - {{state}}"
+      attachments = [{
+        color = "{{#eq state 'CLOSED'}}good{{else}}danger{{/eq}}"
+        title = "{{issueTitle}}"
+        text  = "{{#each accumulations.conditionDescription}}{{this}}\n{{/each}}"
+        fields = [
+          { title = "Condition", value = "{{#each accumulations.conditionName}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}", short = false },
+          { title = "Priority", value = "{{priority}}", short = true },
+          { title = "State", value = "{{state}}", short = true }
+        ]
+        actions = [{ type = "button", text = "View in NewRelic", url = "{{issuePageUrl}}" }]
+      }]
     })
   }
 }
 
-# ---------------------------------------------------------------------------
-# CPU Alert Condition
-# ---------------------------------------------------------------------------
-
-resource "newrelic_nrql_alert_condition" "high_cpu" {
-  account_id                   = var.newrelic_account_id
-  policy_id                    = newrelic_alert_policy.main.id
-  name                         = "High CPU Usage"
-  description                  = "Alert when CPU usage exceeds threshold"
-  enabled                      = true
-  violation_time_limit_seconds = 259200
-
-  nrql {
-    query = "SELECT average(cpuPercent) FROM SystemSample WHERE displayName = '${local.infra_host_name}'"
+resource "newrelic_workflow" "main" {
+  name                  = "${var.project_name} Alert Workflow"
+  muting_rules_handling = "NOTIFY_ALL_ISSUES"
+  issues_filter {
+    name = "${var.project_name}-filter"
+    type = "FILTER"
+    predicate {
+      attribute = "labels.policyIds"
+      operator  = "EXACTLY_MATCHES"
+      values    = [newrelic_alert_policy.main.id]
+    }
   }
-
-  critical {
-    operator              = "above"
-    threshold             = var.cpu_critical_threshold
-    threshold_duration    = 300
-    threshold_occurrences = "all"
+  dynamic "destination" {
+    for_each = var.notification_email != "" ? [1] : []
+    content { channel_id = newrelic_notification_channel.email_channel[0].id }
   }
-
-  warning {
-    operator              = "above"
-    threshold             = var.cpu_warning_threshold
-    threshold_duration    = 300
-    threshold_occurrences = "all"
+  dynamic "destination" {
+    for_each = var.slack_webhook_url != "" ? [1] : []
+    content { channel_id = newrelic_notification_channel.slack_channel[0].id }
   }
-
-  fill_option        = "none"
-  aggregation_window = 60
-  aggregation_method = "event_flow"
-  aggregation_delay  = 120
 }
 
 # ---------------------------------------------------------------------------
-# Memory Alert Condition
+# 1. ERROR RATE: Dimensional Metric (Static > 0%)
 # ---------------------------------------------------------------------------
-
-resource "newrelic_nrql_alert_condition" "high_memory" {
-  account_id                   = var.newrelic_account_id
-  policy_id                    = newrelic_alert_policy.main.id
-  name                         = "High Memory Usage"
-  description                  = "Alert when memory usage exceeds threshold"
-  enabled                      = true
-  violation_time_limit_seconds = 259200
-
+resource "newrelic_nrql_alert_condition" "apm_errors" {
+  account_id = var.newrelic_account_id
+  policy_id  = newrelic_alert_policy.main.id
+  type       = "static"
+  name       = "APM Error Rate Spike"
+  enabled    = true
   nrql {
-    query = "SELECT average(memoryUsedPercent) FROM SystemSample WHERE displayName = '${local.infra_host_name}'"
+    query = "SELECT (count(apm.service.error.count) / count(apm.service.transaction.duration)) * 100 FROM Metric WHERE appName LIKE '${var.project_name}%' FACET appName"
   }
-
-  critical {
-    operator              = "above"
-    threshold             = var.memory_critical_threshold
-    threshold_duration    = 300
-    threshold_occurrences = "all"
-  }
-
-  warning {
-    operator              = "above"
-    threshold             = var.memory_warning_threshold
-    threshold_duration    = 300
-    threshold_occurrences = "all"
-  }
-
-  fill_option        = "none"
-  aggregation_window = 60
-  aggregation_method = "event_flow"
-  aggregation_delay  = 120
-}
-
-# ---------------------------------------------------------------------------
-# Docker Container Restart Alert
-# ---------------------------------------------------------------------------
-
-resource "newrelic_nrql_alert_condition" "container_restart" {
-  account_id                   = var.newrelic_account_id
-  policy_id                    = newrelic_alert_policy.main.id
-  name                         = "Docker Container Restarted"
-  description                  = "Alert when a Docker container restarts (possible crash)"
-  enabled                      = true
-  violation_time_limit_seconds = 259200
-
-  nrql {
-    query = "SELECT count(*) FROM ContainerSample WHERE restartCount > 0 AND name LIKE '${var.project_name}%'"
-  }
-
   critical {
     operator              = "above"
     threshold             = 0
     threshold_duration    = 60
     threshold_occurrences = "at_least_once"
   }
-
-  fill_option        = "none"
-  aggregation_window = 60
-  aggregation_method = "event_flow"
-  aggregation_delay  = 120
+  fill_option = "last_value"
 }
 
 # ---------------------------------------------------------------------------
-# Docker Container Not Running Alert
+# 2. RESPONSE TIME: Dimensional Metric (Anomaly 3.0 SD)
 # ---------------------------------------------------------------------------
-
-resource "newrelic_nrql_alert_condition" "container_not_running" {
-  account_id                   = var.newrelic_account_id
-  policy_id                    = newrelic_alert_policy.main.id
-  name                         = "Docker Container Not Running"
-  description                  = "Alert when expected Docker containers are not running"
-  enabled                      = true
-  violation_time_limit_seconds = 259200
-
+resource "newrelic_nrql_alert_condition" "smart_latency" {
+  account_id         = var.newrelic_account_id
+  policy_id          = newrelic_alert_policy.main.id
+  type               = "baseline"
+  name               = "APM Response Time Anomaly"
+  baseline_direction = "upper_only"
+  enabled            = true
   nrql {
-    query = "SELECT uniqueCount(name) FROM ContainerSample WHERE status = 'running' AND name LIKE '${var.project_name}%'"
+    query = "SELECT average(apm.service.transaction.duration) * 1000 FROM Metric WHERE appName LIKE '${var.project_name}%' FACET appName"
   }
+  critical {
+    operator              = "above"
+    threshold             = var.latency_std_dev
+    threshold_duration    = 300
+    threshold_occurrences = "all"
+  }
+}
 
+# ---------------------------------------------------------------------------
+# 3. SERVICE HEARTBEAT: The "Dead Process" Alert
+# ---------------------------------------------------------------------------
+resource "newrelic_nrql_alert_condition" "service_heartbeat" {
+  account_id  = var.newrelic_account_id
+  policy_id   = newrelic_alert_policy.main.id
+  type        = "static"
+  name        = "Service Heartbeat Missing"
+  description = "Alerts if the internal pulse or transaction stream stops"
+  enabled     = true
+  nrql {
+    # Watches for your custom HeartbeatPulse transaction
+    query = "SELECT count(*) FROM Transaction WHERE appName LIKE '${var.project_name}%' AND name LIKE '%HeartbeatPulse%' FACET appName"
+  }
   critical {
     operator              = "below"
-    threshold             = 3
-    threshold_duration    = 300
+    threshold             = 1
+    threshold_duration    = 180 # 3 minutes
     threshold_occurrences = "all"
   }
-
-  fill_option        = "none"
-  aggregation_window = 60
-  aggregation_method = "event_flow"
-  aggregation_delay  = 120
+  # Ensures the alert fires even if data vanishes completely
+  expiration_duration            = 600
+  open_violation_on_expiration   = true
+  close_violations_on_expiration = true
 }
 
 # ---------------------------------------------------------------------------
-# Log Error Alert (for catching error logs)
+# 4. HOST CPU: System Sample (Static 90%)
 # ---------------------------------------------------------------------------
-
-resource "newrelic_nrql_alert_condition" "log_errors" {
-  account_id                   = var.newrelic_account_id
-  policy_id                    = newrelic_alert_policy.main.id
-  name                         = "Error Logs Detected"
-  description                  = "Alert when ERROR level logs are detected"
-  enabled                      = true
-  violation_time_limit_seconds = 259200
-
+resource "newrelic_nrql_alert_condition" "host_cpu" {
+  account_id = var.newrelic_account_id
+  policy_id  = newrelic_alert_policy.main.id
+  type       = "static"
+  name       = "Host CPU Saturation"
   nrql {
-    query = "SELECT count(*) FROM Log WHERE level = 'ERROR' AND container_name LIKE '${var.project_name}%'"
+    query = "SELECT average(cpuPercent) FROM SystemSample WHERE displayName = '${local.infra_host_name}'"
   }
-
   critical {
     operator              = "above"
-    threshold             = 5
+    threshold             = var.cpu_critical_threshold
     threshold_duration    = 300
     threshold_occurrences = "all"
   }
+}
 
-  warning {
-    operator              = "above"
-    threshold             = 1
-    threshold_duration    = 300
-    threshold_occurrences = "at_least_once"
+# ---------------------------------------------------------------------------
+# 5. HOST MEMORY: System Sample (Static 90%)
+# ---------------------------------------------------------------------------
+resource "newrelic_nrql_alert_condition" "host_memory" {
+  account_id = var.newrelic_account_id
+  policy_id  = newrelic_alert_policy.main.id
+  type       = "static"
+  name       = "Host Memory Saturation"
+  nrql {
+    query = "SELECT average(memoryUsedPercent) FROM SystemSample WHERE displayName = '${local.infra_host_name}'"
   }
-
-  fill_option        = "none"
-  aggregation_window = 60
-  aggregation_method = "event_flow"
-  aggregation_delay  = 120
+  critical {
+    operator              = "above"
+    threshold             = var.memory_critical_threshold
+    threshold_duration    = 300
+    threshold_occurrences = "all"
+  }
 }
 
 # ---------------------------------------------------------------------------
-# Outputs
+# 6. HOST DISK: Storage Sample (Static 85%)
 # ---------------------------------------------------------------------------
-
-output "alert_policy_id" {
-  value       = newrelic_alert_policy.main.id
-  description = "The ID of the created alert policy"
+resource "newrelic_nrql_alert_condition" "host_disk" {
+  account_id = var.newrelic_account_id
+  policy_id  = newrelic_alert_policy.main.id
+  type       = "static"
+  name       = "Host Disk Space Saturation"
+  nrql {
+    query = "SELECT max(diskUsedPercent) FROM StorageSample WHERE displayName = '${local.infra_host_name}'"
+  }
+  critical {
+    operator              = "above"
+    threshold             = var.disk_critical_threshold
+    threshold_duration    = 300
+    threshold_occurrences = "all"
+  }
 }
 
-output "workflow_id" {
-  value       = newrelic_workflow.main.id
-  description = "The ID of the created workflow"
-}
+output "alert_policy_id" { value = newrelic_alert_policy.main.id }
+output "workflow_id" { value = newrelic_workflow.main.id }

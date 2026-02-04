@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 from typing import Annotated, Generator, Any, List, Optional
 from datetime import datetime
 
@@ -15,12 +17,21 @@ from condorgame_backend.services.interfaces.leaderboard_repository import Leader
 from condorgame_backend.services.interfaces.model_repository import ModelRepository
 from condorgame_backend.services.interfaces.prediction_repository import PredictionRepository
 from condorgame_backend.utils.logging_config import setup_logging
+from condorgame_backend.utils.telemetry import start_pulse
+
 
 # ------------------------------------------------------------------------------
 # FastAPI App
 # ------------------------------------------------------------------------------
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(start_pulse())
+    yield
+    task.cancel()
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 # ------------------------------------------------------------------------------
