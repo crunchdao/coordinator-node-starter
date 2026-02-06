@@ -152,6 +152,45 @@ class DbPredictionRepository(PredictionRepository):
         )
         rows = self._session.exec(stmt).all()
         return [self._row_to_domain(row) for row in rows]
+    
+    def fetch_predictions_one_day(
+        self,
+        day: datetime,
+        asset: Optional[str] = None,
+        horizon: Optional[int] = None,
+        status: Optional[PredictionStatus] = None,
+    ) -> list[Prediction]:
+        """
+        Fetch all predictions resolvable within a given day.
+
+        :param day: Any datetime within the target day.
+        :param asset: Optional asset filter.
+        :param horizon: Optional horizon filter.
+        :param status: Optional prediction status filter.
+        """
+
+        # Normalize to day boundaries (UTC)
+        day_start = datetime( year=day.year, month=day.month, day=day.day, tzinfo=timezone.utc)
+        day_end = day_start + timedelta(days=1)
+
+        stmt = select(PredictionRow).where(
+            PredictionRow.resolvable_at >= day_start,
+            PredictionRow.resolvable_at < day_end,
+        )
+
+        if asset is not None:
+            stmt = stmt.where(PredictionRow.asset == asset)
+
+        if horizon is not None:
+            stmt = stmt.where(PredictionRow.horizon == horizon)
+
+        if status is not None:
+            stmt = stmt.where(PredictionRow.status == status.value)
+
+        stmt = stmt.order_by(PredictionRow.resolvable_at.asc())
+
+        rows = self._session.exec(stmt).all()
+        return [row.model_dump() for row in rows]
 
     def _save(self, prediction: Prediction, commit=True) -> None:
 

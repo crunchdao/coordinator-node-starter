@@ -25,6 +25,7 @@ services:
   report-ui:
     build:
       context: https://github.com/crunchdao/coordinator-webapp.git
+      dockerfile: apps/starter/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: "http://report-worker:8000"
         NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR: "http://model-orchestrator:8001"

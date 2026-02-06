@@ -22,9 +22,12 @@ class DbModelRepository(ModelRepository):
     def __init__(self, session: Session):
         self._session = session
 
-    def fetch_all(self) -> Dict[str, Model]:
+    def fetch_all(self, apply_row_to_domain: bool = True) -> Dict[str, Model]:
         stmt = select(ModelRow)
         rows = self._session.exec(stmt).all()
+
+        if not apply_row_to_domain:
+            return [m.model_dump() for m in rows]
 
         result: Dict[str, Model] = {}
 

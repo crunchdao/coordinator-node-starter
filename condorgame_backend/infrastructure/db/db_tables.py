@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional
 
 from sqlmodel import SQLModel, Field, Index, Column, JSON, ARRAY, Integer
@@ -47,6 +47,18 @@ class LeaderboardRow(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     created_at: datetime = Field(index=True)
+    entries: list[dict] = Field(
+        default_factory=list,
+        sa_column=Column(JSON)
+    )
+
+
+class DailySynthLeaderboardRow(SQLModel, table=True):
+    __tablename__ = "daily_synth_leaderboards"
+
+    id: str = Field(primary_key=True)
+    created_at: datetime = Field(index=True)
+    day: date = Field(index=True)
     entries: list[dict] = Field(
         default_factory=list,
         sa_column=Column(JSON)

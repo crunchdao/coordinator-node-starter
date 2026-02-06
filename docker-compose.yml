@@ -67,6 +67,17 @@ services:
         condition: service_completed_successfully
     networks: [ condornet ]
 
+  daily-synth-score-worker:
+    <<: *common-build
+    environment:
+      <<: *common-db-env
+    restart: always
+    command: [ "python", "-m", "condorgame_backend.workers.daily_synth_score_worker" ]
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [ condornet ]
+
   report-worker:
     <<: *common-build
     environment:

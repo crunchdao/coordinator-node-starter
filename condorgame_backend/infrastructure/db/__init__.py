@@ -1,3 +1,4 @@
 from .db_leaderboard_repository import DBLeaderboardRepository
 from .db_prediction_repository import DbPredictionRepository
 from .db_model_repository import DbModelRepository
+from .db_daily_synth_leaderboard_repository import DBDailySynthLeaderboardRepository

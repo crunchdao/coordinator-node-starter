@@ -1,4 +1,4 @@
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from typing import TypeAlias
@@ -153,6 +153,37 @@ class PriceStore:
             return ts[before], prices[before]
         else:
             return ts[after], prices[after]
+
+    def get_price_history(
+        self,
+        asset: str,
+        from_: datetime,
+        to: datetime,
+    ) -> list[PriceEntry]:
+        """
+        Retrieve all (timestamp, price) pairs for an asset between [from_, to).
+
+        Timestamps are expected to be stored as int UNIX timestamps (seconds).
+        Datetimes must be timezone-aware (UTC).
+        """
+        d = self.data.get(asset)
+        if not d or not d["ts"]:
+            return []
+
+        ts = d["ts"]
+        prices = d["price"]
+
+        from_ts = int(from_.timestamp())
+        to_ts = int(to.timestamp())
+
+        # Find slice boundaries
+        start_idx = bisect_left(ts, from_ts)
+        end_idx = bisect_right(ts, to_ts)
+
+        if start_idx >= end_idx:
+            return []
+
+        return list(zip(ts[start_idx:end_idx], prices[start_idx:end_idx]))
 
 
     def empty(self):

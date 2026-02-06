@@ -9,9 +9,10 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from condorgame_backend.entities.prediction import PredictionParams
-from condorgame_backend.infrastructure.db import DbModelRepository, DBLeaderboardRepository, DbPredictionRepository
+from condorgame_backend.infrastructure.db import DbModelRepository, DBLeaderboardRepository, DbPredictionRepository, DBDailySynthLeaderboardRepository
 from condorgame_backend.infrastructure.db.init_db import engine, init_db
 from condorgame_backend.services.interfaces.leaderboard_repository import LeaderboardRepository
+from condorgame_backend.services.interfaces.daily_synth_leaderboard_repository import SynthLeaderboardRepository
 from condorgame_backend.services.interfaces.model_repository import ModelRepository
 from condorgame_backend.services.interfaces.prediction_repository import PredictionRepository
 from condorgame_backend.utils.logging_config import setup_logging
@@ -44,6 +45,12 @@ def get_leaderboard_repository(
     return DBLeaderboardRepository(session_db)
 
 
+def get_daily_synth_leaderboard_repository(
+    session_db: Annotated[Session, Depends(get_db_session)]
+) -> SynthLeaderboardRepository:
+    return DBDailySynthLeaderboardRepository(session_db)
+
+
 def get_prediction_repository(
     session_db: Annotated[Session, Depends(get_db_session)]
 ) -> DbPredictionRepository:
@@ -63,6 +70,17 @@ class ModelEntryReponse(BaseModel):
 
 
 class LeaderboardEntryResponse(BaseModel):
+    created_at: datetime
+    model_id: str
+    score_recent: Optional[float]
+    score_steady: Optional[float]
+    score_anchor: Optional[float]
+    rank: int
+    model_name: str
+    cruncher_name: str
+
+
+class DailySynthLeaderboardEntryResponse(BaseModel):
     created_at: datetime
     model_id: str
     score_recent: Optional[float]
@@ -146,6 +164,33 @@ def get_leaderboard(
 
     return [
         LeaderboardEntryResponse(
+            created_at=leaderboard.created_at,
+            model_id=entry.model_id,
+            score_recent=entry.score.recent if entry.score else None,
+            score_steady=entry.score.steady if entry.score else None,
+            score_anchor=entry.score.anchor if entry.score else None,
+            rank=entry.rank,
+            model_name=entry.model_name,
+            cruncher_name=entry.player_name
+        )
+        for entry in entries_sorted
+    ]
+
+
+@app.get("/reports/daily_synth_leaderboard", response_model=List[DailySynthLeaderboardEntryResponse])
+def get_daily_synth_leaderboard(
+    leaderboard_repo: Annotated[
+        SynthLeaderboardRepository, Depends(get_daily_synth_leaderboard_repository)
+    ]
+):
+    leaderboard = leaderboard_repo.get_latest()
+    if leaderboard is None:
+        return []
+
+    entries_sorted = sorted(leaderboard.entries, key=lambda x: x.rank)
+
+    return [
+        DailySynthLeaderboardEntryResponse(
             created_at=leaderboard.created_at,
             model_id=entry.model_id,
             score_recent=entry.score.recent if entry.score else None,
