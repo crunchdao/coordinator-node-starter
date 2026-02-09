@@ -5,7 +5,7 @@ description: Use when working with Crunch competition infrastructure - debugging
 
 # Coordinator Node Starter
 
-Backend for CrunchDAO competitions. Predict/Score/Report workers receive predictions from participant models, score them, and expose leaderboards.
+Backend for Crunch Competitions, running on Coordinator Nodes. Predict/Score/Report workers receive predictions from participant models, score them, and expose leaderboards.
 
 ## Architecture
 
@@ -29,6 +29,175 @@ Price Sources (CrunchDAO/Pyth)     Model Orchestrator (gRPC)
         │  /reports/leaderboard, /models, etc.    │
         └─────────────────────────────────────────┘
 ```
+
+## Defining Your Game's Base Class
+
+Participants inherit from a base class you define. Start locally, publish to PyPI when ready.
+
+### Step 1: Create Local Package (Prototyping)
+
+Create the base class in this repo first:
+
+```
+game_package/
+  __init__.py
+  tracker.py
+```
+
+```python
+# game_package/tracker.py
+from abc import ABC, abstractmethod
+
+class TrackerBase(ABC):
+    """Base class that all participant models must inherit from."""
+    
+    @abstractmethod
+    def tick(self, data: dict) -> None:
+        """
+        Receive latest market data.
+        Called every time new data is available.
+        
+        Args:
+            data: Dict of asset -> list of (timestamp, price) tuples
+        """
+        pass
+    
+    @abstractmethod
+    def predict(self, asset: str, horizon: int, step: int) -> list:
+        """
+        Return predictions for the given asset.
+        
+        Args:
+            asset: Asset code (e.g., "BTC")
+            horizon: Total prediction window in seconds
+            step: Interval between predictions in seconds
+        
+        Returns:
+            List of predictions, one per step (length = horizon / step)
+        """
+        pass
+```
+
+```python
+# game_package/__init__.py
+from .tracker import TrackerBase
+
+__all__ = ["TrackerBase"]
+```
+
+### Step 2: Configure Model Runner
+
+Update `predict_service.py` to use your local base class:
+
+```python
+self.model_concurrent_runner = DynamicSubclassModelConcurrentRunner(
+    # ...
+    base_classname="game_package.tracker.TrackerBase",  # Your local package
+    # ...
+)
+```
+
+### Step 3: Test Locally
+
+```bash
+make deploy
+# Create a test model in deployment/model-orchestrator-local/data/submissions/
+# Check logs to verify tick/predict calls work
+make logs SERVICES=model-orchestrator
+```
+
+### Step 4: Publish to PyPI (When Ready)
+
+Once your prototype works, publish so participants can install it.
+
+#### 4a. Create PyPI Account
+
+1. Go to https://pypi.org/account/register/
+2. Verify your email
+3. Enable 2FA (required for publishing)
+4. Create an API token: Account Settings → API tokens → Add API token
+   - Scope: "Entire account" (first time) or specific project
+   - **Save the token** - you won't see it again
+
+#### 4b. Prepare Package for Publishing
+
+Create a **new public GitHub repo** for your package (separate from this coordinator repo):
+
+```
+my-game-package/
+  my_game/
+    __init__.py
+    tracker.py
+  pyproject.toml
+  README.md
+  LICENSE
+```
+
+```toml
+# pyproject.toml
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "my-game-package"
+version = "0.1.0"
+description = "Base class for My Game competition"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Your Name", email = "you@example.com"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourorg/my-game-package"
+```
+
+#### 4c. Build and Upload
+
+```bash
+# Install build tools
+pip install build twine
+
+# Build the package
+python -m build
+
+# Upload to PyPI (will prompt for token)
+python -m twine upload dist/*
+# Username: __token__
+# Password: <paste your API token>
+```
+
+#### 4d. Update Coordinator to Use Published Package
+
+Once published, update `predict_service.py`:
+
+```python
+self.model_concurrent_runner = DynamicSubclassModelConcurrentRunner(
+    # ...
+    base_classname="my_game.tracker.TrackerBase",  # Published package name
+    # ...
+)
+```
+
+Add to your `requirements.txt` or `pyproject.toml`:
+```
+my-game-package>=0.1.0
+```
+
+### PyPI Tips
+
+| Task | Command |
+|------|---------|
+| Test upload first | Use TestPyPI: `twine upload --repository testpypi dist/*` |
+| Install from TestPyPI | `pip install --index-url https://test.pypi.org/simple/ my-game-package` |
+| Update version | Change version in `pyproject.toml`, rebuild, re-upload |
+| Check package | `pip install my-game-package && python -c "from my_game import TrackerBase"` |
 
 ## Quick Commands
 
