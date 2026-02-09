@@ -205,3 +205,86 @@ When you need to customize specific components, read the relevant sub-skill:
 | `condorgame_backend/services/` | Business logic |
 | `condorgame_backend/entities/` | Domain models |
 | `condorgame_backend/infrastructure/` | DB, HTTP, caching |
+
+## Prerequisites & Installation
+
+### Required: Docker
+
+Docker runs all services (workers, database, orchestrator). Install Docker Desktop:
+
+| OS | Installation |
+|----|--------------|
+| **macOS** | `brew install --cask docker` or [Docker Desktop](https://docs.docker.com/desktop/install/mac-install/) |
+| **Windows** | [Docker Desktop](https://docs.docker.com/desktop/install/windows-install/) (requires WSL2) |
+| **Linux** | `curl -fsSL https://get.docker.com | sh` or [Docker Engine](https://docs.docker.com/engine/install/) |
+
+**Verify installation:**
+```bash
+docker --version
+docker compose version
+```
+
+**Start Docker** (if not running):
+- macOS/Windows: Open Docker Desktop app
+- Linux: `sudo systemctl start docker`
+
+### Required: Make
+
+Most systems have `make` pre-installed. If not:
+
+| OS | Installation |
+|----|--------------|
+| **macOS** | `xcode-select --install` |
+| **Windows** | Install via [chocolatey](https://chocolatey.org/): `choco install make` |
+| **Ubuntu/Debian** | `sudo apt install build-essential` |
+
+### Optional: Python (for local development)
+
+Only needed if running workers outside Docker (`make deploy dev`):
+
+```bash
+# Check Python version (3.11+ recommended)
+python --version
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Optional: jq (for JSON formatting)
+
+Useful for inspecting API responses:
+
+| OS | Installation |
+|----|--------------|
+| **macOS** | `brew install jq` |
+| **Ubuntu/Debian** | `sudo apt install jq` |
+| **Windows** | `choco install jq` |
+
+### Quick Start After Installation
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/crunchdao/coordinator-node-starter
+cd coordinator-node-starter
+
+# 2. Start everything
+make deploy
+
+# 3. Verify services are running
+docker compose ps
+
+# 4. Check the UIs
+# Reports/Leaderboard: http://localhost:3000
+# Documentation:       http://localhost:8080
+# API:                 http://localhost:8000/docs
+```
+
+### Troubleshooting Installation
+
+| Problem | Solution |
+|---------|----------|
+| `docker: command not found` | Install Docker, ensure it's in PATH |
+| `Cannot connect to Docker daemon` | Start Docker Desktop or `sudo systemctl start docker` |
+| `make: command not found` | Install make (see above) |
+| `port already in use` | Stop conflicting service or change ports in `.local.env` |
+| Permission denied on Linux | Add user to docker group: `sudo usermod -aG docker $USER` (then logout/login) |
