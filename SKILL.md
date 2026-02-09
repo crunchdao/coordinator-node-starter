@@ -1,34 +1,171 @@
 ---
 name: coordinator-node-starter
-description: Use when working with Crunch competition infrastructure - debugging workers, customizing data sources, scoring, predictions, or leaderboards. Load this first, then sub-skills as needed. ALWAYS run post-deployment verification after ANY code change.
+description: Use when setting up a new Crunch competition or customizing coordinator infrastructure. Guides through competition design decisions and implementation. ALWAYS run post-deployment verification after ANY code change.
 ---
 
 # Coordinator Node Starter
 
-Backend for Crunch Competitions, running on Coordinator Nodes. Predict/Score/Report workers receive predictions from participant models, score them, and expose leaderboards.
+Self-contained backend for running Crunch Competitions. The system receives predictions from participant models, scores them against ground truth, and exposes leaderboards via API. **No downstream services required** - this is the complete competition infrastructure.
 
 ## Architecture
 
 ```
-Price Sources (CrunchDAO/Pyth)     Model Orchestrator (gRPC)
-              ↓                            ↓
-        ┌─────────────────────────────────────────┐
-        │           Predict Worker                │
-        │  fetch prices → tick() → predict()     │
-        │            → store predictions          │
-        └─────────────────┬───────────────────────┘
-                          ↓
-        ┌─────────────────────────────────────────┐
-        │            Score Worker                 │
-        │  load predictions → score vs actual     │
-        │     → rolling windows → leaderboard     │
-        └─────────────────┬───────────────────────┘
-                          ↓
-        ┌─────────────────────────────────────────┐
-        │           Report Worker (FastAPI)       │
-        │  /reports/leaderboard, /models, etc.    │
-        └─────────────────────────────────────────┘
+     Data Source (API/Files/DB)          Model Orchestrator (gRPC)
+              ↓                                    ↓
+        ┌─────────────────────────────────────────────────────┐
+        │                  Predict Worker                     │
+        │    fetch data → tick(data) → predict() → store      │
+        └─────────────────────────┬───────────────────────────┘
+                                  ↓
+        ┌─────────────────────────────────────────────────────┐
+        │                   Score Worker                      │
+        │    load predictions → compare to ground truth       │
+        │         → compute scores → update leaderboard       │
+        └─────────────────────────┬───────────────────────────┘
+                                  ↓
+        ┌─────────────────────────────────────────────────────┐
+        │                Report Worker (FastAPI)              │
+        │       /reports/leaderboard, /models, /scores        │
+        └─────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Competition Design Checklist
+
+**When the user proposes a competition goal or target, work out a proposal for each of these decisions and present it for their validation:**
+
+### 1. Data Source
+
+**Ask the user:**
+> "Where does your input data come from? Options include:
+> - **REST API** (e.g., price feeds, weather data, sports stats)
+> - **WebSocket** (real-time streaming)
+> - **Database** (historical data, batch updates)
+> - **Files** (CSV, Parquet uploaded periodically)
+> - **Custom** (describe your data source)"
+
+**Current implementation:** `condorgame_backend/infrastructure/http/` - fetches from REST APIs
+
+**Propose:** Based on their answer, suggest adapting the data fetcher or creating a new one.
+
+---
+
+### 2. Input Data Shape
+
+**Ask the user:**
+> "What is the structure of your raw input data?
+> - What fields/columns does it have?
+> - What is the frequency (per-second, per-minute, daily)?
+> - Is it time-series, tabular, images, text?
+> - Example: `{timestamp, asset, price, volume}` or `{date, features[], target}`"
+
+**Propose:** Suggest a data model that captures their domain:
+```python
+@dataclass
+class InputData:
+    timestamp: datetime
+    # ... fields based on their answer
+```
+
+---
+
+### 3. Data Pushed to Models
+
+**Ask the user:**
+> "What data should participant models receive? This may differ from raw input:
+> - **Same as input** - pass through directly
+> - **Transformed** - normalized, windowed, aggregated
+> - **Subset** - only certain fields (hide target/future data)
+> - **Enriched** - add computed features"
+
+**Current implementation:** `predict_service.py` calls `tick(data)` with processed data
+
+**Propose:** Based on their answer, define the `tick()` payload structure.
+
+---
+
+### 4. Model Interface
+
+**Ask the user:**
+> "What should participant models do?
+> - **Input:** What does `tick(data)` receive?
+> - **Output:** What does `predict()` return?
+> - **State:** Can models maintain internal state between ticks?
+> - **Constraints:** Time limits? Memory limits? Allowed libraries?"
+
+**Propose:** A base class definition:
+```python
+class CompetitionModel(ABC):
+    @abstractmethod
+    def tick(self, data: YourDataType) -> None:
+        """Receive new data. Update internal state."""
+        pass
+    
+    @abstractmethod  
+    def predict(self, **params) -> YourPredictionType:
+        """Return prediction based on current state."""
+        pass
+```
+
+---
+
+### 5. Scoring Function
+
+**Ask the user:**
+> "How should predictions be scored?
+> - **Metric:** MSE, MAE, accuracy, log-loss, custom?
+> - **Timing:** When is ground truth available? (immediately, after delay, end of period)
+> - **Aggregation:** Per-prediction, rolling window, cumulative?
+> - **Penalties:** Late submissions, invalid formats?"
+
+**Current implementation:** `condorgame_backend/services/score_service.py`
+
+**Propose:** A scoring approach:
+```python
+def score_prediction(prediction: Prediction, ground_truth: GroundTruth) -> float:
+    # Based on their metric choice
+    return metric(prediction.value, ground_truth.value)
+```
+
+---
+
+### 6. Leaderboard Design
+
+**Ask the user:**
+> "How should the leaderboard work?
+> - **Ranking:** By total score, recent performance, weighted combination?
+> - **Display:** What info to show? (rank, score, model name, trend)
+> - **Updates:** Real-time, hourly, daily?
+> - **Tiebreakers:** Earlier submission wins? Secondary metric?"
+
+**Current implementation:** `condorgame_backend/entities/leaderboard.py`
+
+**Propose:** Leaderboard structure:
+```python
+@dataclass
+class LeaderboardEntry:
+    rank: int
+    model_id: str
+    model_name: str
+    score: float  # or composite score object
+    # Additional fields based on their needs
+```
+
+---
+
+### Implementation Workflow
+
+After gathering requirements:
+
+1. **Create data models** → `condorgame_backend/entities/`
+2. **Implement data fetcher** → `condorgame_backend/infrastructure/http/`
+3. **Define model interface** → `game_package/` (local) or publish to PyPI
+4. **Implement scoring** → `condorgame_backend/services/score_service.py`
+5. **Configure leaderboard** → `condorgame_backend/entities/leaderboard.py`
+6. **Test end-to-end** → `make deploy && make logs`
+
+---
 
 ## Defining Your Game's Base Class
 
