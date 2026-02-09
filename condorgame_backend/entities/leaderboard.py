@@ -34,13 +34,14 @@ class Leaderboard:
         Leaderboard entries are then created with ranks corresponding to
         their position in the sorted list.
         """
-        # Filter and sort models based on the ranking logic
+        # Filter models that have scores and sort based on the ranking logic
+        models_with_scores = [m for m in models if m.overall_score is not None]
         sorted_models = sorted(
-            models,
+            models_with_scores,
             key=lambda model: (
-                model.overall_score.anchor if model.overall_score and model.overall_score.anchor is not None else float('-inf'),
-                model.overall_score.steady if model.overall_score and model.overall_score.steady else float('-inf'),
-                model.overall_score.recent if model.overall_score and model.overall_score.recent else float('-inf'),
+                model.overall_score.anchor if model.overall_score.anchor is not None else float('-inf'),
+                model.overall_score.steady if model.overall_score.steady else float('-inf'),
+                model.overall_score.recent if model.overall_score.recent else float('-inf'),
             ),
             reverse=True  # Sort in descending order
         )
