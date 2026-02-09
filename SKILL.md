@@ -35,6 +35,42 @@ Self-contained backend for running Crunch Competitions. The system receives pred
 
 **When the user proposes a competition goal or target, work out a proposal for each of these decisions and present it for their validation:**
 
+### 0. Project Name (REQUIRED FIRST)
+
+**Ask the user:**
+> "What should we call this project? This name will be used for:
+> - Backend package: `<name>_backend`
+> - Model package: `<name>_model` (what participants install from PyPI)"
+
+**Action:** Rename the codebase:
+```bash
+# Rename backend package
+mv condorgame_backend <name>_backend
+
+# Update all imports
+find . -type f -name "*.py" -exec sed -i '' 's/condorgame_backend/<name>_backend/g' {} +
+find . -type f -name "*.yml" -exec sed -i '' 's/condorgame_backend/<name>_backend/g' {} +
+find . -type f -name "Dockerfile" -exec sed -i '' 's/condorgame_backend/<name>_backend/g' {} +
+
+# Update pyproject.toml
+sed -i '' 's/condorgame/<name>/g' pyproject.toml
+```
+
+**⚠️ CRITICAL: After ANY code change, you MUST verify the NEW code is running in Docker:**
+```bash
+# Rebuild and restart
+make deploy
+
+# Verify the new package is loaded (not the old one)
+docker compose logs score-worker 2>&1 | grep -i "<name>_backend"
+
+# If you see "condorgame_backend" instead of "<name>_backend", the deployment FAILED
+```
+
+**This verification is mandatory. If the old code runs instead of your changes, the implementation has failed.**
+
+---
+
 ### 1. Data Source
 
 **Ask the user:**
