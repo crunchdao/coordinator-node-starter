@@ -1,6 +1,6 @@
 ---
 name: coordinator-node-starter
-description: Use when working with Crunch competition infrastructure - debugging workers, customizing data sources, scoring, predictions, or leaderboards. Load this first, then sub-skills as needed.
+description: Use when working with Crunch competition infrastructure - debugging workers, customizing data sources, scoring, predictions, or leaderboards. Load this first, then sub-skills as needed. ALWAYS run post-deployment verification after ANY code change.
 ---
 
 # Coordinator Node Starter
@@ -210,6 +210,35 @@ my-game-package>=0.1.0
 | `make restart` | Restart all |
 | `make down` | Stop and remove |
 | `docker compose ps` | Check service status |
+
+## Post-Deployment Verification (REQUIRED)
+
+**After ANY code change or deployment, ALWAYS run these checks:**
+
+```bash
+# 1. Wait for services to stabilize (5-10 seconds)
+sleep 5
+
+# 2. Check for errors in ALL workers
+make logs SERVICES="score-worker predict-worker report-worker" 2>&1 | grep -i "error\|exception\|traceback\|failed\|validation" | tail -20
+
+# 3. Verify services are running (no restarts)
+docker compose ps
+
+# 4. Quick health check - look for normal operation logs
+make logs SERVICES=score-worker 2>&1 | tail -10
+```
+
+**If ANY errors appear, investigate and fix before considering deployment complete.**
+
+### Error Patterns to Watch For
+
+| Error Pattern | Likely Cause |
+|---------------|--------------|
+| `ValidationError` / `pydantic` | Data model mismatch (None where value expected, wrong type) |
+| `Connection refused` | Wrong host config (localhost vs service name in Docker) |
+| `KeyError` / `AttributeError` | Missing data, None checks needed |
+| `TimeoutError` | External service slow/down |
 
 ## Debugging Playbook
 
