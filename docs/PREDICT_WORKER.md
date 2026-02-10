@@ -11,9 +11,8 @@ The Predict worker must:
 
 1. Connect to the Model Orchestrator through the ModelRunner library.
 2. Keep its internal list of models **synchronised**.
-3. Periodically fetch or receive new market data.
-4. Call `tick` on models to send that data.
-5. Call `predict` on models to collect predictions.
+3. Periodically fetch or streams new data.
+4. Call any function of the Base Model defined in this package
 6. Store predictions in your storage (DB, parquet, files, ...).
 
 It must be:

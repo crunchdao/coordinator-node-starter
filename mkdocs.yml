@@ -12,7 +12,6 @@ nav:
   - Home: index.md
   - Getting Started:
       - Introduction: INTRODUCTION.md
-      - Architecture Overview: ARCHITECTURE_OVERVIEW.md
       - Running Locally: RUNNING_LOCALLY.md
 
   - Core Mechanics:
