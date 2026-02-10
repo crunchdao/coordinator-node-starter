@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import logging
 import unittest
 
 from node_template.infrastructure.db.init_db import default_prediction_configs, tables_to_reset
@@ -38,6 +39,13 @@ class TestNodeTemplateRuntimeWiring(unittest.TestCase):
 
     def test_predict_worker_build_service_callable(self):
         self.assertTrue(callable(predict_worker.build_service))
+
+    def test_workers_configure_info_logging(self):
+        predict_worker.configure_logging()
+        self.assertTrue(logging.getLogger("node_template.workers.predict_worker").isEnabledFor(logging.INFO))
+
+        score_worker.configure_logging()
+        self.assertTrue(logging.getLogger("node_template.workers.score_worker").isEnabledFor(logging.INFO))
 
 
 if __name__ == "__main__":

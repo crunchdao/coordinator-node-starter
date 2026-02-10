@@ -89,8 +89,12 @@ class PredictService:
         self._save_models_from_responses(tick_responses)
 
         created_predictions: list[PredictionRecord] = []
+        active_configs = self._fetch_active_configs()
 
-        for config in self._fetch_active_configs():
+        if not active_configs:
+            self.logger.info("No active prediction configs found")
+
+        for config in active_configs:
             if not config.get("active", True):
                 continue
 
@@ -110,6 +114,7 @@ class PredictService:
             self.logger.info("Saved %d predictions", len(created_predictions))
             return True
 
+        self.logger.info("No predictions produced in this cycle")
         return False
 
     async def shutdown(self) -> None:

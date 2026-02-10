@@ -90,6 +90,11 @@ class InMemoryPredictionRepository:
         ]
 
 
+class NoConfigPredictionRepository(InMemoryPredictionRepository):
+    def fetch_active_configs(self):
+        return []
+
+
 class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
     async def test_run_once_generates_prediction_rows(self):
         model_repo = InMemoryModelRepository()
@@ -134,6 +139,27 @@ class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
         wrapped = prediction_repo.saved_predictions[0].inference_input["wrapped"]
         self.assertEqual(wrapped["source"], "provider")
         self.assertEqual(wrapped["ts"], now.isoformat())
+
+    async def test_run_once_logs_when_no_active_configs(self):
+        model_repo = InMemoryModelRepository()
+        prediction_repo = NoConfigPredictionRepository()
+
+        service = PredictService(
+            checkpoint_interval_seconds=60,
+            raw_input_provider=None,
+            inference_input_builder=lambda raw_input: {"wrapped": raw_input},
+            inference_output_validator=None,
+            model_repository=model_repo,
+            prediction_repository=prediction_repo,
+            runner=FakeRunner(),
+        )
+
+        with self.assertLogs("node_template.services.predict_service", level="INFO") as logs:
+            changed = await service.run_once(raw_input={"x": 1}, now=datetime.now(timezone.utc))
+
+        self.assertFalse(changed)
+        self.assertEqual(len(prediction_repo.saved_predictions), 0)
+        self.assertTrue(any("No active prediction configs" in line for line in logs.output))
 
 
 if __name__ == "__main__":

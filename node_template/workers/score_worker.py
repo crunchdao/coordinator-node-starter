@@ -16,6 +16,14 @@ from node_template.infrastructure.db import (
 from node_template.services.score_service import ScoreService
 
 
+def configure_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+        force=True,
+    )
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Node-template score worker")
     parser.add_argument("--prediction-id", required=False)
@@ -58,6 +66,7 @@ def build_service() -> ScoreService:
 
 
 async def main(prediction_id: str | None = None) -> None:
+    configure_logging()
     logging.getLogger(__name__).info("node_template score worker bootstrap")
 
     if prediction_id is not None:

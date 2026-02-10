@@ -166,6 +166,28 @@ class TestNodeTemplateScoreService(unittest.TestCase):
         self.assertEqual(len(prediction_repo.saved_predictions), 0)
         self.assertIsNone(leaderboard_repo.latest)
 
+    def test_run_once_logs_when_no_predictions_ready(self):
+        prediction_repo = InMemoryPredictionRepository([])
+        model_repo = InMemoryModelRepository()
+        leaderboard_repo = InMemoryLeaderboardRepository()
+
+        service = ScoreService(
+            checkpoint_interval_seconds=60,
+            scoring_function=lambda prediction, ground_truth: {"value": 0.5, "success": True, "failed_reason": None},
+            prediction_repository=prediction_repo,
+            model_repository=model_repo,
+            leaderboard_repository=leaderboard_repo,
+            model_score_aggregator=lambda scored_predictions, models: [],
+            leaderboard_ranker=lambda entries: entries,
+            ground_truth_resolver=lambda prediction: {"y_up": True},
+        )
+
+        with self.assertLogs("node_template.services.score_service", level="INFO") as logs:
+            changed = service.run_once()
+
+        self.assertFalse(changed)
+        self.assertTrue(any("No predictions ready to score" in line for line in logs.output))
+
 
 if __name__ == "__main__":
     unittest.main()

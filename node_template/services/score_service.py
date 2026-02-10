@@ -51,6 +51,7 @@ class ScoreService:
     def run_once(self) -> bool:
         predictions = list(self.prediction_repository.fetch_ready_to_score())
         if not predictions:
+            self.logger.info("No predictions ready to score")
             return False
 
         now = datetime.now(timezone.utc)
@@ -72,9 +73,11 @@ class ScoreService:
             scored_predictions.append(prediction)
 
         if not scored_predictions:
+            self.logger.info("No predictions were scored in this cycle")
             return False
 
         self.prediction_repository.save_all(scored_predictions)
+        self.logger.info("Scored %d predictions", len(scored_predictions))
         self._rebuild_leaderboard(recent_predictions=scored_predictions)
         return True
 
