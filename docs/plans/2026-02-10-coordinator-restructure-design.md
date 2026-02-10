@@ -157,3 +157,12 @@ To launch a new crunch:
 2. Create **`crunch-node-<name>`** (private): node implementation, config paths, deployment
 
 This repository acts as the standardized coordinator base and template source.
+
+## 10) Deferred Items (Explicitly Parked)
+
+- Implement persisted checkpoint execution loop in `node_template` services
+  - Write/read `checkpoints` and `emission_checkpoints` as part of worker runtime
+  - Keep `CHECKPOINT_INTERVAL_SECONDS` as the config source of truth
+  - Add tests for checkpoint persistence and emission cadence
+
+Status: deferred by stakeholder decision (do later).
