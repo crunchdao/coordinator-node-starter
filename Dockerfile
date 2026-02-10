@@ -15,8 +15,10 @@ RUN uv sync
 ENV VIRTUAL_ENV=/app/.venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# Copy the application code
+# Copy runtime packages (transition period keeps legacy package available)
+COPY coordinator_core ./coordinator_core
+COPY node_template ./node_template
 COPY condorgame_backend ./condorgame_backend
 
 # Default command — overridden in docker compose for each worker
-CMD ["python", "-m", "condorgame_backend"]
+CMD ["python", "-m", "node_template"]

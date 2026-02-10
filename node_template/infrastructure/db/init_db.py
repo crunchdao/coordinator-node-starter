@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import text
 from sqlmodel import SQLModel, delete
 
 from coordinator_core.infrastructure.db.db_tables import PredictionConfigRow
@@ -10,6 +11,18 @@ from node_template.infrastructure.db.session import create_session, engine
 HOUR = 60 * 60
 MINUTE = 60
 DAY = 24 * HOUR
+
+
+def tables_to_reset() -> list[str]:
+    return [
+        "emission_checkpoints",
+        "checkpoints",
+        "leaderboards",
+        "model_scores",
+        "predictions",
+        "prediction_configs",
+        "models",
+    ]
 
 
 def default_prediction_configs() -> list[dict[str, Any]]:
@@ -26,7 +39,12 @@ def default_prediction_configs() -> list[dict[str, Any]]:
 
 
 def init_db() -> None:
-    print("➡️  Creating coordinator core tables if they do not exist...")
+    print("➡️  Resetting canonical tables...")
+    with engine.begin() as conn:
+        for table in tables_to_reset():
+            conn.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE"))
+
+    print("➡️  Creating coordinator core tables...")
     SQLModel.metadata.create_all(engine)
 
     with create_session() as session:

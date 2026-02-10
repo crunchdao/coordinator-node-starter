@@ -37,7 +37,7 @@ services:
     environment:
       <<: *common-db-env
     # todo improve and handle migration
-    command: [ "python", "-m", "condorgame_backend.infrastructure.db.init_db" ]
+    command: [ "python", "-m", "node_template.infrastructure.db.init_db" ]
     depends_on:
       postgres:
         condition: service_healthy
@@ -50,7 +50,7 @@ services:
       MODEL_RUNNER_NODE_HOST: ${MODEL_RUNNER_NODE_HOST:-model-orchestrator}
       MODEL_RUNNER_NODE_PORT: ${MODEL_RUNNER_NODE_PORT:-9091}
     restart: always
-    command: [ "python", "-m", "condorgame_backend.workers.predict_worker" ]
+    command: [ "python", "-m", "node_template.workers.predict_worker" ]
     depends_on:
       init-db:
         condition: service_completed_successfully
@@ -63,7 +63,7 @@ services:
     environment:
       <<: *common-db-env
     restart: always
-    command: [ "python", "-m", "condorgame_backend.workers.score_worker" ]
+    command: [ "python", "-m", "node_template.workers.score_worker" ]
     depends_on:
       init-db:
         condition: service_completed_successfully
@@ -74,7 +74,7 @@ services:
     environment:
       <<: *common-db-env
     restart: always
-    command: [ "python", "-m", "condorgame_backend.workers.report_worker" ]
+    command: [ "python", "-m", "node_template.workers.report_worker" ]
     ports:
       - "8000:8000"
     depends_on:

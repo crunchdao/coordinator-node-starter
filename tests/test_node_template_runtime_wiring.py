@@ -2,7 +2,7 @@ import asyncio
 import inspect
 import unittest
 
-from node_template.infrastructure.db.init_db import default_prediction_configs
+from node_template.infrastructure.db.init_db import default_prediction_configs, tables_to_reset
 from node_template.workers import predict_worker, report_worker, score_worker
 
 
@@ -18,6 +18,13 @@ class TestNodeTemplateRuntimeWiring(unittest.TestCase):
         self.assertIn("prediction_interval", sample)
         self.assertIn("active", sample)
         self.assertIn("order", sample)
+
+    def test_init_db_resets_canonical_tables(self):
+        tables = set(tables_to_reset())
+        self.assertIn("models", tables)
+        self.assertIn("predictions", tables)
+        self.assertIn("model_scores", tables)
+        self.assertIn("leaderboards", tables)
 
     def test_worker_entrypoints_expose_async_main(self):
         self.assertTrue(inspect.iscoroutinefunction(predict_worker.main))
