@@ -30,6 +30,14 @@ def build_service() -> ScoreService:
         extension_settings.scoring_function,
         required_params=("prediction", "ground_truth"),
     )
+    model_score_aggregator = resolve_callable(
+        extension_settings.model_score_aggregator,
+        required_params=("scored_predictions", "models"),
+    )
+    leaderboard_ranker = resolve_callable(
+        extension_settings.leaderboard_ranker,
+        required_params=("entries",),
+    )
 
     session = create_session()
 
@@ -39,6 +47,8 @@ def build_service() -> ScoreService:
         prediction_repository=DBPredictionRepository(session),
         model_repository=DBModelRepository(session),
         leaderboard_repository=DBLeaderboardRepository(session),
+        model_score_aggregator=model_score_aggregator,
+        leaderboard_ranker=leaderboard_ranker,
     )
 
 

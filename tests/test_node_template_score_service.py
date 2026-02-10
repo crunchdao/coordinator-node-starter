@@ -86,12 +86,37 @@ class TestNodeTemplateScoreService(unittest.TestCase):
         model_repo = InMemoryModelRepository()
         leaderboard_repo = InMemoryLeaderboardRepository()
 
+        def model_score_aggregator(scored_predictions, models):
+            self.assertEqual(len(scored_predictions), 1)
+            self.assertIn("m1", models)
+            return [
+                {
+                    "model_id": "m1",
+                    "score_recent": 123.0,
+                    "score_steady": 123.0,
+                    "score_anchor": 123.0,
+                    "model_name": "model-one",
+                    "cruncher_name": "alice",
+                }
+            ]
+
+        def leaderboard_ranker(entries):
+            return [
+                {
+                    **entry,
+                    "rank": 7,
+                }
+                for entry in entries
+            ]
+
         service = ScoreService(
             checkpoint_interval_seconds=60,
             scoring_function=lambda prediction, ground_truth: {"value": 0.5, "success": True, "failed_reason": None},
             prediction_repository=prediction_repo,
             model_repository=model_repo,
             leaderboard_repository=leaderboard_repo,
+            model_score_aggregator=model_score_aggregator,
+            leaderboard_ranker=leaderboard_ranker,
         )
 
         changed = service.run_once()
@@ -101,6 +126,8 @@ class TestNodeTemplateScoreService(unittest.TestCase):
         self.assertIsNotNone(prediction_repo.saved_predictions[0].score)
         self.assertIsNotNone(leaderboard_repo.latest)
         self.assertEqual(leaderboard_repo.latest["entries"][0]["model_id"], "m1")
+        self.assertEqual(leaderboard_repo.latest["entries"][0]["rank"], 7)
+        self.assertEqual(leaderboard_repo.latest["entries"][0]["score_anchor"], 123.0)
 
 
 if __name__ == "__main__":

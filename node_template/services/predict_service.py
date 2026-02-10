@@ -26,6 +26,7 @@ class PredictService:
         self,
         checkpoint_interval_seconds: int,
         inference_input_builder: Callable[[dict[str, Any]], dict[str, Any]],
+        inference_output_validator: Callable[[dict[str, Any]], dict[str, Any]] | None,
         model_repository,
         prediction_repository,
         runner=None,
@@ -37,6 +38,7 @@ class PredictService:
     ):
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
         self.inference_input_builder = inference_input_builder
+        self.inference_output_validator = inference_output_validator
         self.model_repository = model_repository
         self.prediction_repository = prediction_repository
 
@@ -160,6 +162,13 @@ class PredictService:
             status = self._to_status(prediction_res)
             inference_output = self._normalize_output(getattr(prediction_res, "result", {}))
 
+            validation_error: str | None = None
+            try:
+                inference_output = self._validate_inference_output(inference_output)
+            except Exception as exc:
+                validation_error = str(exc)
+                status = "FAILED"
+
             inference_input_payload = dict(inference_input)
             inference_input_payload["_context"] = {
                 "asset": asset,
@@ -176,7 +185,11 @@ class PredictService:
                 status=status,
                 exec_time_ms=float(getattr(prediction_res, "exec_time_us", 0.0)),
                 inference_input=inference_input_payload,
-                inference_output=inference_output,
+                inference_output=(
+                    {"_validation_error": validation_error, "raw_output": inference_output}
+                    if validation_error
+                    else inference_output
+                ),
                 performed_at=now,
                 resolvable_at=now + timedelta(seconds=horizon),
             )
@@ -254,6 +267,17 @@ class PredictService:
         if isinstance(output, dict):
             return output
         return {"result": output}
+
+    def _validate_inference_output(self, inference_output: dict[str, Any]) -> dict[str, Any]:
+        if self.inference_output_validator is None:
+            return inference_output
+
+        validated = self.inference_output_validator(inference_output)
+        if validated is None:
+            return inference_output
+        if not isinstance(validated, dict):
+            raise ValueError("inference_output_validator must return a dictionary")
+        return validated
 
     @staticmethod
     def _prediction_id(model_id: str, now: datetime, asset: str, horizon: int, step: int, absent: bool = False) -> str:

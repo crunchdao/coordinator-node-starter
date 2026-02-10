@@ -16,12 +16,16 @@ class ScoreService:
         prediction_repository,
         model_repository,
         leaderboard_repository,
+        model_score_aggregator: Callable[[list[Any], dict[str, Any]], list[dict[str, Any]]] | None,
+        leaderboard_ranker: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None,
     ):
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
         self.scoring_function = scoring_function
         self.prediction_repository = prediction_repository
         self.model_repository = model_repository
         self.leaderboard_repository = leaderboard_repository
+        self.model_score_aggregator = model_score_aggregator
+        self.leaderboard_ranker = leaderboard_ranker
 
         self.logger = logging.getLogger(__name__)
         self.stop_event = asyncio.Event()
@@ -68,6 +72,19 @@ class ScoreService:
 
     def _rebuild_leaderboard(self, recent_predictions) -> None:
         scored_predictions = self._collect_scored_predictions(recent_predictions)
+        models = self.model_repository.fetch_all()
+
+        aggregated_entries = self._aggregate_model_scores(scored_predictions, models)
+        ranked_entries = self._rank_leaderboard(aggregated_entries)
+
+        self.leaderboard_repository.save(
+            ranked_entries,
+            meta={"generated_by": "node_template.score_service"},
+        )
+
+    def _aggregate_model_scores(self, scored_predictions, models) -> list[dict[str, Any]]:
+        if self.model_score_aggregator is not None:
+            return list(self.model_score_aggregator(scored_predictions, models))
 
         by_model: dict[str, list[float]] = {}
         for prediction in scored_predictions:
@@ -80,9 +97,7 @@ class ScoreService:
 
             by_model.setdefault(prediction.model_id, []).append(float(prediction.score.value))
 
-        models = self.model_repository.fetch_all()
-
-        ranked_entries: list[dict[str, Any]] = []
+        entries: list[dict[str, Any]] = []
         for model_id, scores in by_model.items():
             if not scores:
                 continue
@@ -90,7 +105,7 @@ class ScoreService:
             avg_score = sum(scores) / len(scores)
             model = models.get(model_id)
 
-            ranked_entries.append(
+            entries.append(
                 {
                     "model_id": model_id,
                     "score_recent": avg_score,
@@ -101,14 +116,16 @@ class ScoreService:
                 }
             )
 
-        ranked_entries.sort(key=lambda entry: entry["score_anchor"], reverse=True)
+        return entries
+
+    def _rank_leaderboard(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if self.leaderboard_ranker is not None:
+            return list(self.leaderboard_ranker(entries))
+
+        ranked_entries = sorted(entries, key=lambda entry: entry["score_anchor"], reverse=True)
         for idx, entry in enumerate(ranked_entries, start=1):
             entry["rank"] = idx
-
-        self.leaderboard_repository.save(
-            ranked_entries,
-            meta={"generated_by": "node_template.score_service"},
-        )
+        return ranked_entries
 
     def _collect_scored_predictions(self, recent_predictions):
         if hasattr(self.prediction_repository, "fetch_scored_predictions"):

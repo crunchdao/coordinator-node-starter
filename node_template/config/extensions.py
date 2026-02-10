@@ -23,7 +23,16 @@ class ExtensionSettings:
                 "INFERENCE_INPUT_BUILDER",
                 "node_template.extensions.default_callables:default_build_inference_input",
             ),
-            inference_output_validator=os.getenv("INFERENCE_OUTPUT_VALIDATOR"),
-            model_score_aggregator=os.getenv("MODEL_SCORE_AGGREGATOR"),
-            leaderboard_ranker=os.getenv("LEADERBOARD_RANKER"),
+            inference_output_validator=os.getenv(
+                "INFERENCE_OUTPUT_VALIDATOR",
+                "node_template.extensions.default_callables:default_validate_inference_output",
+            ),
+            model_score_aggregator=os.getenv(
+                "MODEL_SCORE_AGGREGATOR",
+                "node_template.extensions.default_callables:default_aggregate_model_scores",
+            ),
+            leaderboard_ranker=os.getenv(
+                "LEADERBOARD_RANKER",
+                "node_template.extensions.default_callables:default_rank_leaderboard",
+            ),
         )

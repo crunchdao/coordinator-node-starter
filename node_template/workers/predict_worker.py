@@ -18,12 +18,17 @@ def build_service() -> PredictService:
         extension_settings.inference_input_builder,
         required_params=("raw_input",),
     )
+    inference_output_validator = resolve_callable(
+        extension_settings.inference_output_validator,
+        required_params=("inference_output",),
+    )
 
     session = create_session()
 
     return PredictService(
         checkpoint_interval_seconds=runtime_settings.checkpoint_interval_seconds,
         inference_input_builder=inference_input_builder,
+        inference_output_validator=inference_output_validator,
         model_repository=DBModelRepository(session),
         prediction_repository=DBPredictionRepository(session),
         model_runner_node_host=runtime_settings.model_runner_node_host,
