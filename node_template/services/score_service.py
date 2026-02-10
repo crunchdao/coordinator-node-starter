@@ -42,6 +42,7 @@ class ScoreService:
                 raise
             except Exception as exc:
                 self.logger.exception("score loop error: %s", exc)
+                self._rollback_repositories()
 
             try:
                 await asyncio.wait_for(self.stop_event.wait(), timeout=self.checkpoint_interval_seconds)
@@ -156,6 +157,23 @@ class ScoreService:
         if hasattr(self.prediction_repository, "fetch_scored_predictions"):
             return list(self.prediction_repository.fetch_scored_predictions())
         return list(recent_predictions)
+
+    def _rollback_repositories(self) -> None:
+        repositories = [
+            ("prediction", self.prediction_repository),
+            ("model", self.model_repository),
+            ("leaderboard", self.leaderboard_repository),
+        ]
+
+        for repo_name, repository in repositories:
+            rollback = getattr(repository, "rollback", None)
+            if not callable(rollback):
+                continue
+
+            try:
+                rollback()
+            except Exception as exc:
+                self.logger.warning("Rollback failed for %s repository: %s", repo_name, exc)
 
     @staticmethod
     def _to_float(value: Any) -> float | None:

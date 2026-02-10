@@ -22,6 +22,9 @@ class DBModelRepository(ModelRepository):
     def __init__(self, session: Session):
         self._session = session
 
+    def rollback(self) -> None:
+        self._session.rollback()
+
     def fetch_all(self) -> dict[str, Model]:
         rows = self._session.exec(select(ModelRow)).all()
         return {row.id: self._row_to_domain(row) for row in rows}
@@ -108,6 +111,9 @@ class DBModelRepository(ModelRepository):
 class DBPredictionRepository(PredictionRepository):
     def __init__(self, session: Session):
         self._session = session
+
+    def rollback(self) -> None:
+        self._session.rollback()
 
     def save(self, prediction: PredictionRecord) -> None:
         existing = self._session.get(PredictionRow, prediction.id)
@@ -249,6 +255,9 @@ class DBPredictionRepository(PredictionRepository):
 class DBLeaderboardRepository(LeaderboardRepository):
     def __init__(self, session: Session):
         self._session = session
+
+    def rollback(self) -> None:
+        self._session.rollback()
 
     def save(self, leaderboard_entries: list[dict[str, Any]], meta: dict[str, Any] | None = None) -> None:
         row = LeaderboardRow(

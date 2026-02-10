@@ -66,6 +66,33 @@ class InMemoryLeaderboardRepository:
         return self.latest
 
 
+class RollbackPredictionRepository(InMemoryPredictionRepository):
+    def __init__(self):
+        super().__init__(predictions=[])
+        self.rollback_calls = 0
+
+    def rollback(self):
+        self.rollback_calls += 1
+
+
+class RollbackModelRepository(InMemoryModelRepository):
+    def __init__(self):
+        super().__init__()
+        self.rollback_calls = 0
+
+    def rollback(self):
+        self.rollback_calls += 1
+
+
+class RollbackLeaderboardRepository(InMemoryLeaderboardRepository):
+    def __init__(self):
+        super().__init__()
+        self.rollback_calls = 0
+
+    def rollback(self):
+        self.rollback_calls += 1
+
+
 class TestNodeTemplateScoreService(unittest.TestCase):
     def test_run_once_scores_and_builds_leaderboard(self):
         prediction = PredictionRecord(
@@ -187,6 +214,37 @@ class TestNodeTemplateScoreService(unittest.TestCase):
 
         self.assertFalse(changed)
         self.assertTrue(any("No predictions ready to score" in line for line in logs.output))
+
+
+class TestNodeTemplateScoreServiceRunLoop(unittest.IsolatedAsyncioTestCase):
+    async def test_run_rolls_back_repositories_after_loop_exception(self):
+        prediction_repo = RollbackPredictionRepository()
+        model_repo = RollbackModelRepository()
+        leaderboard_repo = RollbackLeaderboardRepository()
+
+        service = ScoreService(
+            checkpoint_interval_seconds=60,
+            scoring_function=lambda prediction, ground_truth: {"value": 0.5, "success": True, "failed_reason": None},
+            prediction_repository=prediction_repo,
+            model_repository=model_repo,
+            leaderboard_repository=leaderboard_repo,
+            model_score_aggregator=lambda scored_predictions, models: [],
+            leaderboard_ranker=lambda entries: entries,
+            ground_truth_resolver=lambda prediction: {"y_up": True},
+        )
+
+        def boom_once():
+            service.stop_event.set()
+            raise RuntimeError("boom")
+
+        service.run_once = boom_once  # type: ignore[method-assign]
+
+        with self.assertLogs("node_template.services.score_service", level="ERROR"):
+            await service.run()
+
+        self.assertEqual(prediction_repo.rollback_calls, 1)
+        self.assertEqual(model_repo.rollback_calls, 1)
+        self.assertEqual(leaderboard_repo.rollback_calls, 1)
 
 
 if __name__ == "__main__":
