@@ -5,7 +5,9 @@ import asyncio
 import logging
 
 from node_template.config.extensions import ExtensionSettings
+from node_template.config.runtime import RuntimeSettings
 from node_template.extensions.callable_resolver import resolve_callable
+from node_template.services.score_service import ScoreService
 
 
 def parse_arguments():
@@ -14,18 +16,30 @@ def parse_arguments():
     return parser.parse_args()
 
 
+def build_service() -> ScoreService:
+    extension_settings = ExtensionSettings.from_env()
+    runtime_settings = RuntimeSettings.from_env()
+
+    scoring_function = resolve_callable(
+        extension_settings.scoring_function,
+        required_params=("prediction", "ground_truth"),
+    )
+
+    return ScoreService(
+        checkpoint_interval_seconds=runtime_settings.checkpoint_interval_seconds,
+        scoring_function=scoring_function,
+    )
+
+
 async def main(prediction_id: str | None = None) -> None:
     logging.getLogger(__name__).info("node_template score worker bootstrap")
-    settings = ExtensionSettings.from_env()
-    resolve_callable(settings.scoring_function, required_params=("prediction", "ground_truth"))
 
     if prediction_id is not None:
         logging.getLogger(__name__).info("single prediction scoring not implemented yet")
         return
 
-    # Placeholder: this worker will be connected to node_template ScoreService during migration.
-    while True:
-        await asyncio.sleep(60)
+    service = build_service()
+    await service.run()
 
 
 if __name__ == "__main__":
