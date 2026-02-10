@@ -112,6 +112,10 @@ Output required:
 - `node_template/config/runtime.py`
 - `node_template/extensions/default_callables.py`
 
+Current operational defaults in this template:
+- `predict-worker` and `score-worker` configure INFO logging and emit lifecycle/idle logs.
+- `ScoreService` attempts repository rollbacks on loop exceptions (where `rollback()` is available).
+
 ### Crunch-specific extension points
 Set callable paths in env/config:
 - `INFERENCE_INPUT_BUILDER`
@@ -144,6 +148,10 @@ docker compose -f docker-compose.yml -f docker-compose-local.yml --env-file .loc
 curl -s http://localhost:8000/healthz
 curl -s http://localhost:8000/reports/models
 curl -s http://localhost:8000/reports/leaderboard
+
+# 5) Confirm worker lifecycle logs exist (for UI Logs tab visibility)
+docker logs --since 2m coordinator-node-starter-score-worker-1 | tail -n 20
+docker logs --since 2m coordinator-node-starter-predict-worker-1 | tail -n 20
 ```
 
 Do not declare completion if verification fails.

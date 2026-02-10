@@ -66,6 +66,16 @@ Useful endpoints:
 - UI: http://localhost:3000
 - Docs: http://localhost:8080
 
+## Runtime notes (current defaults)
+
+- `predict-worker` and `score-worker` configure INFO logging on startup and emit lifecycle/idle log lines.
+  - This keeps the UI Logs tabs useful even when the system is otherwise idle.
+- `ScoreService` performs repository rollback attempts after loop exceptions.
+  - `DBPredictionRepository`, `DBModelRepository`, and `DBLeaderboardRepository` expose `rollback()` for this recovery path.
+- Local `report-ui` mounts config to both:
+  - `/app/config`
+  - `/app/apps/starter/config`
+
 ## Documentation
 
 See `docs/` for concise architecture and bootstrap instructions.

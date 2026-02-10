@@ -21,6 +21,7 @@ Help the user define and implement:
 - `node_template/config/extensions.py`
 - `node_template/config/runtime.py`
 - `node_template/extensions/default_callables.py`
+- `node_template/infrastructure/db/repositories.py` (rollback contract used by `ScoreService` exception recovery)
 - `coordinator_core/infrastructure/db/db_tables.py` (`model_scores`, `score_payload_jsonb`)
 
 ## Required decisions to collect
@@ -47,6 +48,7 @@ CHECKPOINT_INTERVAL_SECONDS=900
 - [ ] ModelScore representation documented for crunch implementers
 - [ ] ranking behavior deterministic and tested
 - [ ] cadence configured and justified for cost/latency tradeoff
+- [ ] score-loop exception path preserves recoverability (repository rollback support or equivalent)
 
 ## Verification
 
