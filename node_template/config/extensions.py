@@ -19,7 +19,7 @@ class ExtensionSettings:
         return cls(
             scoring_function=os.getenv(
                 "SCORING_FUNCTION",
-                "node_template.extensions.default_callables:default_score_prediction",
+                "node_template.plugins.pyth_updown_btc:score_brier_probability_up",
             ),
             inference_input_builder=os.getenv(
                 "INFERENCE_INPUT_BUILDER",
@@ -27,7 +27,7 @@ class ExtensionSettings:
             ),
             inference_output_validator=os.getenv(
                 "INFERENCE_OUTPUT_VALIDATOR",
-                "node_template.extensions.default_callables:default_validate_inference_output",
+                "node_template.plugins.pyth_updown_btc:validate_probability_up_output",
             ),
             model_score_aggregator=os.getenv(
                 "MODEL_SCORE_AGGREGATOR",
@@ -39,10 +39,10 @@ class ExtensionSettings:
             ),
             raw_input_provider=os.getenv(
                 "RAW_INPUT_PROVIDER",
-                "node_template.extensions.default_callables:default_provide_raw_input",
+                "node_template.plugins.pyth_updown_btc:build_raw_input_from_pyth",
             ),
             ground_truth_resolver=os.getenv(
                 "GROUND_TRUTH_RESOLVER",
-                "node_template.extensions.default_callables:default_resolve_ground_truth",
+                "node_template.plugins.pyth_updown_btc:resolve_ground_truth_from_pyth",
             ),
         )

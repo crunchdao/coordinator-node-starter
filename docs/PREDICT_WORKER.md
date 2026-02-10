@@ -8,7 +8,8 @@ Main service:
 
 Responsibilities:
 - load active prediction configs
+- fetch raw input via `RAW_INPUT_PROVIDER`
 - build inference input via configured callable
 - call model runner (`tick` / `predict`)
-- validate output (optional callable)
+- validate output
 - persist predictions and model metadata

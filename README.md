@@ -37,33 +37,28 @@ Define these in your Crunch repos (not in this template):
 - Define checkpoint interval  
   `crunch-node-<name>/node_template/config/runtime.py` (`CHECKPOINT_INTERVAL_SECONDS`)
 
-## Built-in starter plugin: BTC up/down with Pyth
+## Built-in starter profile (enabled by default)
 
-The template now includes a reusable plugin at:
+Out of the box, local mode uses:
 
 - `node_template/plugins/pyth_updown_btc.py`
+- BTC-only fast prediction config (`1m` horizon / `1m` interval)
 
-This gives you:
+This starter profile provides:
 
-- raw input from Pyth (BTC/USD latest price)
-- inference output validation for `{"p_up": float}`
-- Brier-based scoring (`score = 1 - (p_up - y)^2`)
-- ground-truth resolution (`y_up` from latest vs entry price)
+- Pyth BTC price input
+- output validation (`p_up` or density payload)
+- Brier scoring
+- Pyth-based ground-truth resolution
 
-To enable it in `crunch-node-<name>`:
-
-```bash
-RAW_INPUT_PROVIDER=node_template.plugins.pyth_updown_btc:build_raw_input_from_pyth
-INFERENCE_OUTPUT_VALIDATOR=node_template.plugins.pyth_updown_btc:validate_probability_up_output
-SCORING_FUNCTION=node_template.plugins.pyth_updown_btc:score_brier_probability_up
-GROUND_TRUTH_RESOLVER=node_template.plugins.pyth_updown_btc:resolve_ground_truth_from_pyth
-```
-
-## Run local template stack
+## Run local template stack (end-to-end)
 
 ```bash
 make deploy
+make verify-e2e
 ```
+
+`make verify-e2e` waits until scored predictions and leaderboard entries are available.
 
 Useful endpoints:
 

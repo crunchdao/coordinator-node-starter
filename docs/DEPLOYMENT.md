@@ -4,6 +4,7 @@
 
 ```bash
 make deploy
+make verify-e2e
 ```
 
 ## Common commands
@@ -13,6 +14,7 @@ make logs
 make logs SERVICES="predict-worker score-worker report-worker"
 make restart
 make down
+make verify-e2e
 ```
 
 ## Required verification after changes

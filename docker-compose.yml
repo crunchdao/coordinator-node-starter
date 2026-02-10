@@ -49,6 +49,15 @@ services:
       <<: *common-db-env
       MODEL_RUNNER_NODE_HOST: ${MODEL_RUNNER_NODE_HOST:-model-orchestrator}
       MODEL_RUNNER_NODE_PORT: ${MODEL_RUNNER_NODE_PORT:-9091}
+      MODEL_RUNNER_TIMEOUT_SECONDS: ${MODEL_RUNNER_TIMEOUT_SECONDS:-60}
+      CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-60}
+      CRUNCH_ID: ${CRUNCH_ID:-condorgame}
+      MODEL_BASE_CLASSNAME: ${MODEL_BASE_CLASSNAME:-condorgame.tracker.TrackerBase}
+      INFERENCE_INPUT_BUILDER: ${INFERENCE_INPUT_BUILDER:-node_template.extensions.default_callables:default_build_inference_input}
+      INFERENCE_OUTPUT_VALIDATOR: ${INFERENCE_OUTPUT_VALIDATOR:-node_template.plugins.pyth_updown_btc:validate_probability_up_output}
+      RAW_INPUT_PROVIDER: ${RAW_INPUT_PROVIDER:-node_template.plugins.pyth_updown_btc:build_raw_input_from_pyth}
+      PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
+      PYTH_TIMEOUT_SECONDS: ${PYTH_TIMEOUT_SECONDS:-5}
     restart: always
     command: [ "python", "-m", "node_template.workers.predict_worker" ]
     depends_on:
@@ -62,6 +71,13 @@ services:
     <<: *common-build
     environment:
       <<: *common-db-env
+      CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-60}
+      SCORING_FUNCTION: ${SCORING_FUNCTION:-node_template.plugins.pyth_updown_btc:score_brier_probability_up}
+      MODEL_SCORE_AGGREGATOR: ${MODEL_SCORE_AGGREGATOR:-node_template.extensions.default_callables:default_aggregate_model_scores}
+      LEADERBOARD_RANKER: ${LEADERBOARD_RANKER:-node_template.extensions.default_callables:default_rank_leaderboard}
+      GROUND_TRUTH_RESOLVER: ${GROUND_TRUTH_RESOLVER:-node_template.plugins.pyth_updown_btc:resolve_ground_truth_from_pyth}
+      PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
+      PYTH_TIMEOUT_SECONDS: ${PYTH_TIMEOUT_SECONDS:-5}
     restart: always
     command: [ "python", "-m", "node_template.workers.score_worker" ]
     depends_on:

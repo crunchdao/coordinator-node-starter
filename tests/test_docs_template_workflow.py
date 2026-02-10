@@ -18,6 +18,7 @@ class TestDocsTemplateWorkflow(unittest.TestCase):
         self.assertIn("node_template", readme)
         self.assertIn("crunch-<name>", readme)
         self.assertIn("crunch-node-<name>", readme)
+        self.assertIn("make verify-e2e", readme)
 
     def test_build_guide_lists_required_definition_points(self):
         guide = Path("docs/BUILD_YOUR_OWN_CHALLENGE.md").read_text()

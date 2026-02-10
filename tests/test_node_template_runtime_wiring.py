@@ -19,6 +19,9 @@ class TestNodeTemplateRuntimeWiring(unittest.TestCase):
         self.assertIn("active", sample)
         self.assertIn("order", sample)
 
+        self.assertTrue(all(config["asset"] == "BTC" for config in configs))
+        self.assertTrue(any(config["horizon"] <= 300 for config in configs))
+
     def test_init_db_resets_canonical_tables(self):
         tables = set(tables_to_reset())
         self.assertIn("models", tables)

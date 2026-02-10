@@ -8,9 +8,7 @@ from sqlmodel import SQLModel, delete
 from coordinator_core.infrastructure.db.db_tables import PredictionConfigRow
 from node_template.infrastructure.db.session import create_session, engine
 
-HOUR = 60 * 60
 MINUTE = 60
-DAY = 24 * HOUR
 
 
 def tables_to_reset() -> list[str]:
@@ -26,15 +24,9 @@ def tables_to_reset() -> list[str]:
 
 
 def default_prediction_configs() -> list[dict[str, Any]]:
+    # Starter profile: BTC-only, quick horizon for fast local end-to-end feedback.
     return [
-        {"asset": "BTC", "horizon": 1 * DAY, "step": 5 * MINUTE, "prediction_interval": 1 * HOUR, "active": True, "order": 1},
-        {"asset": "BTC", "horizon": 1 * HOUR, "step": 1 * MINUTE, "prediction_interval": 12 * MINUTE, "active": True, "order": 2},
-        {"asset": "ETH", "horizon": 1 * DAY, "step": 5 * MINUTE, "prediction_interval": 1 * HOUR, "active": True, "order": 3},
-        {"asset": "ETH", "horizon": 1 * HOUR, "step": 1 * MINUTE, "prediction_interval": 12 * MINUTE, "active": True, "order": 4},
-        {"asset": "XAU", "horizon": 1 * DAY, "step": 5 * MINUTE, "prediction_interval": 1 * HOUR, "active": True, "order": 5},
-        {"asset": "XAU", "horizon": 1 * HOUR, "step": 1 * MINUTE, "prediction_interval": 12 * MINUTE, "active": True, "order": 6},
-        {"asset": "SOL", "horizon": 1 * DAY, "step": 5 * MINUTE, "prediction_interval": 1 * HOUR, "active": True, "order": 7},
-        {"asset": "SOL", "horizon": 1 * HOUR, "step": 1 * MINUTE, "prediction_interval": 12 * MINUTE, "active": True, "order": 8},
+        {"asset": "BTC", "horizon": 1 * MINUTE, "step": 1 * MINUTE, "prediction_interval": 1 * MINUTE, "active": True, "order": 1},
     ]
 
 

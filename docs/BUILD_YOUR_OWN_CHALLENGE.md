@@ -33,7 +33,7 @@ GROUND_TRUTH_RESOLVER=crunch_<name>.truth:resolve_ground_truth
 CHECKPOINT_INTERVAL_SECONDS=900
 ```
 
-Optional built-in starter (BTC + Pyth):
+Built-in starter (BTC + Pyth, enabled by default in local mode):
 
 ```bash
 RAW_INPUT_PROVIDER=node_template.plugins.pyth_updown_btc:build_raw_input_from_pyth

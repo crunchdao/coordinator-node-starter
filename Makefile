@@ -92,10 +92,14 @@ else
 	docker compose $(COMPOSE_FILES) build
 endif
 
+## Verify local end-to-end starter workflow
+verify-e2e:
+	uv run python scripts/verify_e2e.py
+
 # ---------------------------------------------------------
 # Tell make "all" is not a target, it's an argument
 # ---------------------------------------------------------
-.PHONY: deploy restart stop logs down build all dev production
+.PHONY: deploy restart stop logs down build verify-e2e all dev production
 
 all:
 	@true   # do nothing
