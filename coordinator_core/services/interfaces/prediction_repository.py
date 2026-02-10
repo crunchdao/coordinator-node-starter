@@ -18,3 +18,9 @@ class PredictionRepository(ABC):
     @abstractmethod
     def fetch_ready_to_score(self) -> list[PredictionRecord]:
         raise NotImplementedError
+
+    def fetch_active_configs(self) -> list[dict]:
+        return []
+
+    def fetch_scored_predictions(self) -> list[PredictionRecord]:
+        return []

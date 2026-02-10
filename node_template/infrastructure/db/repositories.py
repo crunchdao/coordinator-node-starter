@@ -10,6 +10,7 @@ from coordinator_core.entities.prediction import PredictionRecord, PredictionSco
 from coordinator_core.infrastructure.db.db_tables import (
     LeaderboardRow,
     ModelRow,
+    PredictionConfigRow,
     PredictionRow,
 )
 from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
@@ -137,6 +138,33 @@ class DBPredictionRepository(PredictionRepository):
             select(PredictionRow)
             .where(PredictionRow.score_scored_at.is_(None))
             .where(PredictionRow.resolvable_at <= now)
+        ).all()
+        return [self._row_to_domain(row) for row in rows]
+
+    def fetch_active_configs(self) -> list[dict]:
+        rows = self._session.exec(
+            select(PredictionConfigRow)
+            .where(PredictionConfigRow.active.is_(True))
+            .order_by(PredictionConfigRow.order.asc())
+        ).all()
+
+        return [
+            {
+                "id": row.id,
+                "asset": row.asset,
+                "horizon": row.horizon,
+                "step": row.step,
+                "prediction_interval": row.prediction_interval,
+                "active": row.active,
+                "order": row.order,
+                "meta": row.meta_jsonb or {},
+            }
+            for row in rows
+        ]
+
+    def fetch_scored_predictions(self) -> list[PredictionRecord]:
+        rows = self._session.exec(
+            select(PredictionRow).where(PredictionRow.score_scored_at.is_not(None))
         ).all()
         return [self._row_to_domain(row) for row in rows]
 

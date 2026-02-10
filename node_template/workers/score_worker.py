@@ -7,6 +7,12 @@ import logging
 from node_template.config.extensions import ExtensionSettings
 from node_template.config.runtime import RuntimeSettings
 from node_template.extensions.callable_resolver import resolve_callable
+from node_template.infrastructure.db import (
+    DBLeaderboardRepository,
+    DBModelRepository,
+    DBPredictionRepository,
+    create_session,
+)
 from node_template.services.score_service import ScoreService
 
 
@@ -25,9 +31,14 @@ def build_service() -> ScoreService:
         required_params=("prediction", "ground_truth"),
     )
 
+    session = create_session()
+
     return ScoreService(
         checkpoint_interval_seconds=runtime_settings.checkpoint_interval_seconds,
         scoring_function=scoring_function,
+        prediction_repository=DBPredictionRepository(session),
+        model_repository=DBModelRepository(session),
+        leaderboard_repository=DBLeaderboardRepository(session),
     )
 
 
