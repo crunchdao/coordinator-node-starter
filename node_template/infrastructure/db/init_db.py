@@ -24,9 +24,18 @@ def tables_to_reset() -> list[str]:
 
 
 def default_prediction_configs() -> list[dict[str, Any]]:
-    # Starter profile: BTC-only, quick horizon for fast local end-to-end feedback.
+    # Starter profile: generic scope + schedule for quick local end-to-end feedback.
     return [
-        {"asset": "BTC", "horizon": 1 * MINUTE, "step": 1 * MINUTE, "prediction_interval": 1 * MINUTE, "active": True, "order": 1},
+        {
+            "scope_key": "BTC-60-60",
+            "scope_template": {"asset": "BTC", "horizon": 1 * MINUTE, "step": 1 * MINUTE},
+            "schedule": {
+                "prediction_interval_seconds": 1 * MINUTE,
+                "resolve_after_seconds": 1 * MINUTE,
+            },
+            "active": True,
+            "order": 1,
+        },
     ]
 
 
@@ -45,10 +54,9 @@ def init_db() -> None:
             session.add(
                 PredictionConfigRow(
                     id=f"CFG_{idx:03d}",
-                    asset=config["asset"],
-                    horizon=config["horizon"],
-                    step=config["step"],
-                    prediction_interval=config["prediction_interval"],
+                    scope_key=config["scope_key"],
+                    scope_template_jsonb=config["scope_template"],
+                    schedule_jsonb=config["schedule"],
                     active=config["active"],
                     order=config["order"],
                     meta_jsonb={},

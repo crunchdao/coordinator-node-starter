@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 
@@ -33,8 +33,54 @@ def default_score_prediction(prediction: dict[str, Any], ground_truth: dict[str,
     }
 
 
+def default_build_prediction_scope(config: dict[str, Any], inference_input: dict[str, Any]) -> dict[str, Any]:
+    """Build generic prediction scope from config template."""
+    scope = dict(config.get("scope_template") or {})
+    return {
+        "scope_key": str(config.get("scope_key") or "default-scope"),
+        "scope": scope,
+    }
+
+
+def default_build_predict_call(config: dict[str, Any], inference_input: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
+    """Build model predict invocation args from generic scope.
+
+    Default keeps backward compatibility with starter tracker signatures: predict(asset, horizon, step).
+    """
+    scope_payload = scope.get("scope") if isinstance(scope, dict) else {}
+    if not isinstance(scope_payload, dict):
+        scope_payload = {}
+
+    asset = scope_payload.get("asset", "BTC")
+    horizon = int(scope_payload.get("horizon", scope_payload.get("horizon_seconds", 60)))
+    step = int(scope_payload.get("step", scope_payload.get("step_seconds", horizon)))
+
+    return {
+        "args": [asset, horizon, step],
+        "kwargs": {},
+    }
+
+
+def default_resolve_resolvable_at(config: dict[str, Any], now: datetime, scope: dict[str, Any]) -> datetime:
+    schedule = config.get("schedule") if isinstance(config, dict) else None
+    schedule = schedule if isinstance(schedule, dict) else {}
+
+    resolve_after_seconds = schedule.get("resolve_after_seconds")
+    if resolve_after_seconds is None:
+        scope_payload = scope.get("scope") if isinstance(scope, dict) else {}
+        if isinstance(scope_payload, dict):
+            resolve_after_seconds = scope_payload.get("horizon", scope_payload.get("horizon_seconds", 0))
+
+    try:
+        seconds = int(resolve_after_seconds or 0)
+    except Exception:
+        seconds = 0
+
+    return now + timedelta(seconds=max(0, seconds))
+
+
 def default_aggregate_model_scores(scored_predictions: list[Any], models: dict[str, Any]) -> list[dict[str, Any]]:
-    """Default aggregator: compute per-model average score and expose rankable entries."""
+    """Default aggregator: compute per-model average score and expose generic score envelopes."""
     by_model: dict[str, list[float]] = {}
 
     for prediction in scored_predictions:
@@ -60,9 +106,15 @@ def default_aggregate_model_scores(scored_predictions: list[Any], models: dict[s
         entries.append(
             {
                 "model_id": model_id,
-                "score_recent": average,
-                "score_steady": average,
-                "score_anchor": average,
+                "score": {
+                    "windows": {
+                        "recent": average,
+                        "steady": average,
+                        "anchor": average,
+                    },
+                    "rank_key": average,
+                    "payload": {},
+                },
                 "model_name": getattr(model, "name", None),
                 "cruncher_name": getattr(model, "player_name", None),
             }
@@ -72,8 +124,35 @@ def default_aggregate_model_scores(scored_predictions: list[Any], models: dict[s
 
 
 def default_rank_leaderboard(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Default ranker: descending by score_anchor and assign ranks."""
-    sorted_entries = sorted(entries, key=lambda entry: float(entry.get("score_anchor", float("-inf"))), reverse=True)
+    """Default ranker: descending by score.rank_key and assign ranks."""
+
+    def _rank_value(entry: dict[str, Any]) -> float:
+        score = entry.get("score")
+        if isinstance(score, dict):
+            rank_key = score.get("rank_key")
+            if rank_key is not None:
+                try:
+                    return float(rank_key)
+                except Exception:
+                    pass
+            windows = score.get("windows") if isinstance(score.get("windows"), dict) else {}
+            fallback = windows.get("anchor")
+            if fallback is not None:
+                try:
+                    return float(fallback)
+                except Exception:
+                    pass
+
+        fallback = entry.get("score_anchor")
+        if fallback is not None:
+            try:
+                return float(fallback)
+            except Exception:
+                pass
+
+        return float("-inf")
+
+    sorted_entries = sorted(entries, key=_rank_value, reverse=True)
 
     ranked = []
     for idx, entry in enumerate(sorted_entries, start=1):

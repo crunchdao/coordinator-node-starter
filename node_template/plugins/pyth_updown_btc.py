@@ -79,7 +79,12 @@ def validate_probability_up_output(inference_output: dict[str, Any]) -> dict[str
 
 
 def resolve_ground_truth_from_pyth(prediction: Any, client: PythHermesClient | None = None) -> dict[str, Any] | None:
-    if str(getattr(prediction, "asset", "")).upper() != "BTC":
+    prediction_scope = getattr(prediction, "scope", {}) or {}
+    asset = ""
+    if isinstance(prediction_scope, dict):
+        asset = str(prediction_scope.get("asset", ""))
+
+    if asset.upper() != "BTC":
         return None
 
     entry_price = _extract_entry_price(getattr(prediction, "inference_input", {}) or {})

@@ -7,7 +7,7 @@ from node_template.extensions.callable_resolver import resolve_callable
 class TestCallableResolver(unittest.TestCase):
     def test_resolve_callable_with_signature_check(self):
         fn = resolve_callable(
-            "node_template.plugins.pyth_updown_btc:score_brier_probability_up",
+            "node_template.extensions.default_callables:default_score_prediction",
             required_params=("prediction", "ground_truth"),
         )
         self.assertTrue(callable(fn))
@@ -23,7 +23,7 @@ class TestCallableResolver(unittest.TestCase):
         settings = ExtensionSettings.from_env()
         self.assertEqual(
             settings.scoring_function,
-            "node_template.plugins.pyth_updown_btc:score_brier_probability_up",
+            "node_template.extensions.default_callables:default_score_prediction",
         )
         self.assertEqual(
             settings.inference_input_builder,
@@ -31,7 +31,7 @@ class TestCallableResolver(unittest.TestCase):
         )
         self.assertEqual(
             settings.inference_output_validator,
-            "node_template.plugins.pyth_updown_btc:validate_probability_up_output",
+            "node_template.extensions.default_callables:default_validate_inference_output",
         )
         self.assertEqual(
             settings.model_score_aggregator,
@@ -43,11 +43,11 @@ class TestCallableResolver(unittest.TestCase):
         )
         self.assertEqual(
             settings.raw_input_provider,
-            "node_template.plugins.pyth_updown_btc:build_raw_input_from_pyth",
+            "node_template.extensions.default_callables:default_provide_raw_input",
         )
         self.assertEqual(
             settings.ground_truth_resolver,
-            "node_template.plugins.pyth_updown_btc:resolve_ground_truth_from_pyth",
+            "node_template.extensions.default_callables:default_resolve_ground_truth",
         )
 
     def test_default_inference_builder_callable_is_resolvable(self):

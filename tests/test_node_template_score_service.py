@@ -98,9 +98,9 @@ class TestNodeTemplateScoreService(unittest.TestCase):
         prediction = PredictionRecord(
             id="pre-1",
             model_id="m1",
-            asset="BTC",
-            horizon=60,
-            step=60,
+            prediction_config_id="CFG_1",
+            scope_key="BTC-60",
+            scope={"asset": "BTC", "horizon": 60, "step": 60},
             status="SUCCESS",
             exec_time_ms=10.0,
             inference_input={"x": 1},
@@ -119,9 +119,11 @@ class TestNodeTemplateScoreService(unittest.TestCase):
             return [
                 {
                     "model_id": "m1",
-                    "score_recent": 123.0,
-                    "score_steady": 123.0,
-                    "score_anchor": 123.0,
+                    "score": {
+                        "windows": {"recent": 123.0, "steady": 123.0, "anchor": 123.0},
+                        "rank_key": 123.0,
+                        "payload": {},
+                    },
                     "model_name": "model-one",
                     "cruncher_name": "alice",
                 }
@@ -155,15 +157,15 @@ class TestNodeTemplateScoreService(unittest.TestCase):
         self.assertIsNotNone(leaderboard_repo.latest)
         self.assertEqual(leaderboard_repo.latest["entries"][0]["model_id"], "m1")
         self.assertEqual(leaderboard_repo.latest["entries"][0]["rank"], 7)
-        self.assertEqual(leaderboard_repo.latest["entries"][0]["score_anchor"], 123.0)
+        self.assertEqual(leaderboard_repo.latest["entries"][0]["score"]["rank_key"], 123.0)
 
     def test_run_once_skips_predictions_without_ground_truth(self):
         prediction = PredictionRecord(
             id="pre-1",
             model_id="m1",
-            asset="BTC",
-            horizon=60,
-            step=60,
+            prediction_config_id="CFG_1",
+            scope_key="BTC-60",
+            scope={"asset": "BTC", "horizon": 60, "step": 60},
             status="SUCCESS",
             exec_time_ms=10.0,
             inference_input={"x": 1},

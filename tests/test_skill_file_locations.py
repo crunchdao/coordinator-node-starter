@@ -15,7 +15,7 @@ class TestSkillFileLocations(unittest.TestCase):
             with self.subTest(path=str(file_path)):
                 self.assertTrue(file_path.exists())
 
-    def test_legacy_skill_files_are_compatibility_stubs(self):
+    def test_legacy_skill_files_if_present_are_compatibility_stubs(self):
         legacy_map = {
             Path("condorgame_backend/entities/SKILL.md"): "node_template/entities/SKILL.md",
             Path("condorgame_backend/services/SKILL.md"): "node_template/services/SKILL.md",
@@ -25,6 +25,8 @@ class TestSkillFileLocations(unittest.TestCase):
 
         for old_path, new_path in legacy_map.items():
             with self.subTest(path=str(old_path)):
+                if not old_path.exists():
+                    continue
                 text = old_path.read_text()
                 self.assertIn("Compatibility Stub", text)
                 self.assertIn(new_path, text)

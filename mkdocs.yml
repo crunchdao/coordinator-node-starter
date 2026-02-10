@@ -17,6 +17,7 @@ nav:
   - Architecture:
       - Core Concepts: CORE_CONCEPTS.md
       - Entities: ENTITIES.md
+      - Database Schema: DATABASE_SCHEMA.md
       - Predict Worker: PREDICT_WORKER.md
       - Score Worker: SCORE_WORKER.md
       - Report Worker: REPORT_WORKER.md

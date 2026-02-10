@@ -22,10 +22,13 @@ class TestCoordinatorCoreSchema(unittest.TestCase):
         self.assertEqual(PredictionConfigRow.__tablename__, "prediction_configs")
 
     def test_jsonb_extension_fields_exist(self):
+        self.assertIn("overall_score_jsonb", ModelRow.model_fields)
+        self.assertIn("scores_by_scope_jsonb", ModelRow.model_fields)
         self.assertIn("meta_jsonb", ModelRow.model_fields)
 
         self.assertIn("inference_input_jsonb", PredictionRow.model_fields)
         self.assertIn("inference_output_jsonb", PredictionRow.model_fields)
+        self.assertIn("scope_jsonb", PredictionRow.model_fields)
         self.assertIn("meta_jsonb", PredictionRow.model_fields)
 
         self.assertIn("score_payload_jsonb", ModelScoreRow.model_fields)
@@ -34,15 +37,18 @@ class TestCoordinatorCoreSchema(unittest.TestCase):
 
         self.assertIn("meta_jsonb", CheckpointRow.model_fields)
         self.assertIn("payload_jsonb", EmissionCheckpointRow.model_fields)
+
+        self.assertIn("scope_template_jsonb", PredictionConfigRow.model_fields)
+        self.assertIn("schedule_jsonb", PredictionConfigRow.model_fields)
         self.assertIn("meta_jsonb", PredictionConfigRow.model_fields)
 
     def test_prediction_protocol_columns_exist(self):
         required_prediction_fields = {
             "id",
             "model_id",
-            "asset",
-            "horizon",
-            "step",
+            "prediction_config_id",
+            "scope_key",
+            "scope_jsonb",
             "status",
             "performed_at",
             "resolvable_at",

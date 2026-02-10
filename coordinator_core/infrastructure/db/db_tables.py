@@ -21,11 +21,11 @@ class ModelRow(SQLModel, table=True):
     player_id: str = Field(index=True)
     player_name: str
 
-    overall_score_recent: Optional[float] = None
-    overall_score_steady: Optional[float] = None
-    overall_score_anchor: Optional[float] = None
-
-    scores_by_param_jsonb: list[dict[str, Any]] = Field(
+    overall_score_jsonb: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB),
+    )
+    scores_by_scope_jsonb: list[dict[str, Any]] = Field(
         default_factory=list,
         sa_column=Column(JSONB),
     )
@@ -43,10 +43,13 @@ class PredictionRow(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     model_id: str = Field(index=True, foreign_key="models.id")
+    prediction_config_id: Optional[str] = Field(default=None, foreign_key="prediction_configs.id", index=True)
 
-    asset: str = Field(index=True)
-    horizon: int
-    step: int
+    scope_key: str = Field(index=True)
+    scope_jsonb: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB),
+    )
 
     status: str = Field(index=True)
     exec_time_ms: float
@@ -73,7 +76,7 @@ class PredictionRow(SQLModel, table=True):
     score_scored_at: Optional[datetime] = Field(default=None, index=True)
 
     __table_args__ = (
-        Index("idx_predictions_lookup", "model_id", "asset", "horizon", "step"),
+        Index("idx_predictions_lookup", "model_id", "scope_key"),
     )
 
 
@@ -82,10 +85,6 @@ class ModelScoreRow(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     model_id: str = Field(index=True, foreign_key="models.id")
-
-    recent: Optional[float] = None
-    steady: Optional[float] = None
-    anchor: Optional[float] = None
 
     score_payload_jsonb: dict[str, Any] = Field(
         default_factory=dict,
@@ -145,10 +144,15 @@ class PredictionConfigRow(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
 
-    asset: str = Field(index=True)
-    horizon: int
-    step: int
-    prediction_interval: int
+    scope_key: str = Field(index=True)
+    scope_template_jsonb: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB),
+    )
+    schedule_jsonb: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB),
+    )
 
     active: bool = Field(index=True, default=True)
     order: int = Field(default=0)

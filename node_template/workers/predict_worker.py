@@ -34,6 +34,14 @@ def build_service() -> PredictService:
         extension_settings.raw_input_provider,
         required_params=("now",),
     )
+    prediction_scope_builder = resolve_callable(
+        extension_settings.prediction_scope_builder,
+        required_params=("config", "inference_input"),
+    )
+    predict_call_builder = resolve_callable(
+        extension_settings.predict_call_builder,
+        required_params=("config", "inference_input", "scope"),
+    )
 
     session = create_session()
 
@@ -42,6 +50,8 @@ def build_service() -> PredictService:
         raw_input_provider=raw_input_provider,
         inference_input_builder=inference_input_builder,
         inference_output_validator=inference_output_validator,
+        prediction_scope_builder=prediction_scope_builder,
+        predict_call_builder=predict_call_builder,
         model_repository=DBModelRepository(session),
         prediction_repository=DBPredictionRepository(session),
         model_runner_node_host=runtime_settings.model_runner_node_host,

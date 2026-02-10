@@ -106,13 +106,13 @@ class TestPythUpdownBtcPlugin(unittest.TestCase):
         self.assertIn("BTC", payload)
         self.assertEqual(len(payload["BTC"]), 3)
 
-    def test_resolve_ground_truth_returns_none_for_non_btc(self):
+    def test_resolve_ground_truth_returns_none_for_non_btc_scope(self):
         prediction = PredictionRecord(
             id="p1",
             model_id="m1",
-            asset="ETH",
-            horizon=60,
-            step=60,
+            prediction_config_id="CFG_1",
+            scope_key="ETH-60",
+            scope={"asset": "ETH", "horizon": 60, "step": 60},
             status="SUCCESS",
             exec_time_ms=1.0,
             inference_input={"ETH": [(1, 100.0)]},
@@ -128,9 +128,9 @@ class TestPythUpdownBtcPlugin(unittest.TestCase):
         prediction = PredictionRecord(
             id="p1",
             model_id="m1",
-            asset="BTC",
-            horizon=60,
-            step=60,
+            prediction_config_id="CFG_1",
+            scope_key="BTC-60",
+            scope={"asset": "BTC", "horizon": 60, "step": 60},
             status="SUCCESS",
             exec_time_ms=1.0,
             inference_input={"BTC": [(100, 100.0), (160, 100.5)]},
@@ -147,9 +147,9 @@ class TestPythUpdownBtcPlugin(unittest.TestCase):
         prediction = PredictionRecord(
             id="p1",
             model_id="m1",
-            asset="BTC",
-            horizon=60,
-            step=60,
+            prediction_config_id="CFG_1",
+            scope_key="BTC-60",
+            scope={"asset": "BTC", "horizon": 60, "step": 60},
             status="SUCCESS",
             exec_time_ms=1.0,
             inference_input={"BTC": [(100, 100.0), (160, 100.5)]},

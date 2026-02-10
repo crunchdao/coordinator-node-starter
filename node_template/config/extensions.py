@@ -13,13 +13,15 @@ class ExtensionSettings:
     leaderboard_ranker: str | None
     raw_input_provider: str | None
     ground_truth_resolver: str | None
+    prediction_scope_builder: str | None
+    predict_call_builder: str | None
 
     @classmethod
     def from_env(cls) -> "ExtensionSettings":
         return cls(
             scoring_function=os.getenv(
                 "SCORING_FUNCTION",
-                "node_template.plugins.pyth_updown_btc:score_brier_probability_up",
+                "node_template.extensions.default_callables:default_score_prediction",
             ),
             inference_input_builder=os.getenv(
                 "INFERENCE_INPUT_BUILDER",
@@ -27,7 +29,7 @@ class ExtensionSettings:
             ),
             inference_output_validator=os.getenv(
                 "INFERENCE_OUTPUT_VALIDATOR",
-                "node_template.plugins.pyth_updown_btc:validate_probability_up_output",
+                "node_template.extensions.default_callables:default_validate_inference_output",
             ),
             model_score_aggregator=os.getenv(
                 "MODEL_SCORE_AGGREGATOR",
@@ -39,10 +41,18 @@ class ExtensionSettings:
             ),
             raw_input_provider=os.getenv(
                 "RAW_INPUT_PROVIDER",
-                "node_template.plugins.pyth_updown_btc:build_raw_input_from_pyth",
+                "node_template.extensions.default_callables:default_provide_raw_input",
             ),
             ground_truth_resolver=os.getenv(
                 "GROUND_TRUTH_RESOLVER",
-                "node_template.plugins.pyth_updown_btc:resolve_ground_truth_from_pyth",
+                "node_template.extensions.default_callables:default_resolve_ground_truth",
+            ),
+            prediction_scope_builder=os.getenv(
+                "PREDICTION_SCOPE_BUILDER",
+                "node_template.extensions.default_callables:default_build_prediction_scope",
+            ),
+            predict_call_builder=os.getenv(
+                "PREDICT_CALL_BUILDER",
+                "node_template.extensions.default_callables:default_build_predict_call",
             ),
         )

@@ -83,14 +83,14 @@ class InMemoryPredictionRepository(PredictionRepository):
 
 
 class TestNodeTemplateReportWorker(unittest.TestCase):
-    def _make_prediction(self, model_id: str, asset: str, horizon: int, step: int, score_value: float):
+    def _make_prediction(self, model_id: str, scope_key: str, scope: dict, score_value: float):
         now = datetime.now(timezone.utc)
         prediction = PredictionRecord(
-            id=f"pre-{model_id}-{asset}-{horizon}-{step}",
+            id=f"pre-{model_id}-{scope_key}",
             model_id=model_id,
-            asset=asset,
-            horizon=horizon,
-            step=step,
+            prediction_config_id="CFG_1",
+            scope_key=scope_key,
+            scope=scope,
             status="SUCCESS",
             exec_time_ms=1.0,
             inference_input={},
@@ -132,18 +132,14 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
                 {
                     "rank": 2,
                     "model_id": "m2",
-                    "score_recent": 0.2,
-                    "score_steady": 0.2,
-                    "score_anchor": 0.2,
+                    "score": {"windows": {"anchor": 0.2}, "rank_key": 0.2, "payload": {}},
                     "model_name": "two",
                     "cruncher_name": "bob",
                 },
                 {
                     "rank": 1,
                     "model_id": "m1",
-                    "score_recent": 0.3,
-                    "score_steady": 0.3,
-                    "score_anchor": 0.3,
+                    "score": {"windows": {"anchor": 0.3}, "rank_key": 0.3, "payload": {}},
                     "model_name": "one",
                     "cruncher_name": "alice",
                 },
@@ -155,6 +151,7 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         response = get_leaderboard(repo)
         self.assertEqual([entry["rank"] for entry in response], [1, 2])
         self.assertEqual(response[0]["model_id"], "m1")
+        self.assertEqual(response[0]["score_rank_key"], 0.3)
 
     def test_get_leaderboard_returns_empty_when_missing(self):
         repo = InMemoryLeaderboardRepository(None)
@@ -162,8 +159,8 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
 
     def test_get_models_global_returns_entries(self):
         predictions = [
-            self._make_prediction("m1", "BTC", 60, 60, 0.4),
-            self._make_prediction("m1", "ETH", 60, 60, 0.6),
+            self._make_prediction("m1", "BTC-60", {"asset": "BTC", "horizon": 60}, 0.4),
+            self._make_prediction("m1", "ETH-60", {"asset": "ETH", "horizon": 60}, 0.6),
         ]
         repo = InMemoryPredictionRepository(predictions)
 
@@ -173,13 +170,13 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         response = get_models_global(["m1"], start, end, repo)
         self.assertEqual(len(response), 1)
         self.assertEqual(response[0]["model_id"], "m1")
-        self.assertAlmostEqual(response[0]["score_anchor"], 0.5)
+        self.assertAlmostEqual(response[0]["score_windows"]["anchor"], 0.5)
 
     def test_get_models_params_returns_grouped_entries(self):
         predictions = [
-            self._make_prediction("m1", "BTC", 60, 60, 0.4),
-            self._make_prediction("m1", "BTC", 60, 60, 0.6),
-            self._make_prediction("m1", "ETH", 60, 60, 0.9),
+            self._make_prediction("m1", "BTC-60", {"asset": "BTC", "horizon": 60}, 0.4),
+            self._make_prediction("m1", "BTC-60", {"asset": "BTC", "horizon": 60}, 0.6),
+            self._make_prediction("m1", "ETH-60", {"asset": "ETH", "horizon": 60}, 0.9),
         ]
         repo = InMemoryPredictionRepository(predictions)
 
@@ -188,8 +185,8 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
 
         response = get_models_params(["m1"], start, end, repo)
         self.assertEqual(len(response), 2)
-        btc = next(item for item in response if item["asset"] == "BTC")
-        self.assertAlmostEqual(btc["score_anchor"], 0.5)
+        btc = next(item for item in response if item["scope_key"] == "BTC-60")
+        self.assertAlmostEqual(btc["score_windows"]["anchor"], 0.5)
 
     def test_get_predictions_requires_single_model(self):
         repo = InMemoryPredictionRepository([])
@@ -200,7 +197,7 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
             get_predictions(["m1", "m2"], start, end, repo)
 
     def test_get_predictions_returns_scored_rows(self):
-        predictions = [self._make_prediction("m1", "BTC", 60, 60, 0.4)]
+        predictions = [self._make_prediction("m1", "BTC-60", {"asset": "BTC", "horizon": 60}, 0.4)]
         repo = InMemoryPredictionRepository(predictions)
         start = datetime.now(timezone.utc) - timedelta(hours=1)
         end = datetime.now(timezone.utc)
@@ -208,6 +205,7 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         response = get_predictions(["m1"], start, end, repo)
         self.assertEqual(len(response), 1)
         self.assertEqual(response[0]["model_id"], "m1")
+        self.assertEqual(response[0]["scope_key"], "BTC-60")
         self.assertEqual(response[0]["score_value"], 0.4)
 
 

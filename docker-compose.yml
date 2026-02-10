@@ -54,8 +54,10 @@ services:
       CRUNCH_ID: ${CRUNCH_ID:-condorgame}
       MODEL_BASE_CLASSNAME: ${MODEL_BASE_CLASSNAME:-condorgame.tracker.TrackerBase}
       INFERENCE_INPUT_BUILDER: ${INFERENCE_INPUT_BUILDER:-node_template.extensions.default_callables:default_build_inference_input}
-      INFERENCE_OUTPUT_VALIDATOR: ${INFERENCE_OUTPUT_VALIDATOR:-node_template.plugins.pyth_updown_btc:validate_probability_up_output}
-      RAW_INPUT_PROVIDER: ${RAW_INPUT_PROVIDER:-node_template.plugins.pyth_updown_btc:build_raw_input_from_pyth}
+      INFERENCE_OUTPUT_VALIDATOR: ${INFERENCE_OUTPUT_VALIDATOR:-node_template.extensions.default_callables:default_validate_inference_output}
+      RAW_INPUT_PROVIDER: ${RAW_INPUT_PROVIDER:-node_template.extensions.default_callables:default_provide_raw_input}
+      PREDICTION_SCOPE_BUILDER: ${PREDICTION_SCOPE_BUILDER:-node_template.extensions.default_callables:default_build_prediction_scope}
+      PREDICT_CALL_BUILDER: ${PREDICT_CALL_BUILDER:-node_template.extensions.default_callables:default_build_predict_call}
       PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
       PYTH_TIMEOUT_SECONDS: ${PYTH_TIMEOUT_SECONDS:-5}
     restart: always
@@ -72,10 +74,10 @@ services:
     environment:
       <<: *common-db-env
       CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-60}
-      SCORING_FUNCTION: ${SCORING_FUNCTION:-node_template.plugins.pyth_updown_btc:score_brier_probability_up}
+      SCORING_FUNCTION: ${SCORING_FUNCTION:-node_template.extensions.default_callables:default_score_prediction}
       MODEL_SCORE_AGGREGATOR: ${MODEL_SCORE_AGGREGATOR:-node_template.extensions.default_callables:default_aggregate_model_scores}
       LEADERBOARD_RANKER: ${LEADERBOARD_RANKER:-node_template.extensions.default_callables:default_rank_leaderboard}
-      GROUND_TRUTH_RESOLVER: ${GROUND_TRUTH_RESOLVER:-node_template.plugins.pyth_updown_btc:resolve_ground_truth_from_pyth}
+      GROUND_TRUTH_RESOLVER: ${GROUND_TRUTH_RESOLVER:-node_template.extensions.default_callables:default_resolve_ground_truth}
       PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
       PYTH_TIMEOUT_SECONDS: ${PYTH_TIMEOUT_SECONDS:-5}
     restart: always

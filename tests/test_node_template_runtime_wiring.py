@@ -13,15 +13,14 @@ class TestNodeTemplateRuntimeWiring(unittest.TestCase):
         self.assertGreater(len(configs), 0)
 
         sample = configs[0]
-        self.assertIn("asset", sample)
-        self.assertIn("horizon", sample)
-        self.assertIn("step", sample)
-        self.assertIn("prediction_interval", sample)
+        self.assertIn("scope_key", sample)
+        self.assertIn("scope_template", sample)
+        self.assertIn("schedule", sample)
         self.assertIn("active", sample)
         self.assertIn("order", sample)
 
-        self.assertTrue(all(config["asset"] == "BTC" for config in configs))
-        self.assertTrue(any(config["horizon"] <= 300 for config in configs))
+        self.assertTrue(all(config["scope_key"] for config in configs))
+        self.assertTrue(any(config["schedule"].get("prediction_interval_seconds", 0) <= 300 for config in configs))
 
     def test_init_db_resets_canonical_tables(self):
         tables = set(tables_to_reset())

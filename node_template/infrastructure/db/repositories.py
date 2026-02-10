@@ -50,10 +50,8 @@ class DBModelRepository(ModelRepository):
             existing.deployment_identifier = row.deployment_identifier
             existing.player_id = row.player_id
             existing.player_name = row.player_name
-            existing.overall_score_recent = row.overall_score_recent
-            existing.overall_score_steady = row.overall_score_steady
-            existing.overall_score_anchor = row.overall_score_anchor
-            existing.scores_by_param_jsonb = row.scores_by_param_jsonb
+            existing.overall_score_jsonb = row.overall_score_jsonb
+            existing.scores_by_scope_jsonb = row.scores_by_scope_jsonb
             existing.meta_jsonb = row.meta_jsonb
             existing.updated_at = datetime.now(timezone.utc)
 
@@ -65,17 +63,7 @@ class DBModelRepository(ModelRepository):
 
     @staticmethod
     def _row_to_domain(row: ModelRow) -> Model:
-        score = None
-        if (
-            row.overall_score_recent is not None
-            or row.overall_score_steady is not None
-            or row.overall_score_anchor is not None
-        ):
-            score = ModelScore(
-                recent=row.overall_score_recent,
-                steady=row.overall_score_steady,
-                anchor=row.overall_score_anchor,
-            )
+        score = DBModelRepository._json_to_score(row.overall_score_jsonb or {})
 
         return Model(
             id=row.id,
@@ -84,7 +72,7 @@ class DBModelRepository(ModelRepository):
             player_name=row.player_name,
             deployment_identifier=row.deployment_identifier,
             overall_score=score,
-            scores_by_param=row.scores_by_param_jsonb or [],
+            scores_by_scope=row.scores_by_scope_jsonb or [],
             meta=row.meta_jsonb or {},
             created_at=row.created_at,
             updated_at=row.updated_at,
@@ -98,13 +86,53 @@ class DBModelRepository(ModelRepository):
             deployment_identifier=model.deployment_identifier,
             player_id=model.player_id,
             player_name=model.player_name,
-            overall_score_recent=model.overall_score.recent if model.overall_score else None,
-            overall_score_steady=model.overall_score.steady if model.overall_score else None,
-            overall_score_anchor=model.overall_score.anchor if model.overall_score else None,
-            scores_by_param_jsonb=model.scores_by_param,
+            overall_score_jsonb=DBModelRepository._score_to_json(model.overall_score),
+            scores_by_scope_jsonb=model.scores_by_scope,
             meta_jsonb=model.meta,
             created_at=model.created_at,
             updated_at=datetime.now(timezone.utc),
+        )
+
+    @staticmethod
+    def _score_to_json(score: ModelScore | None) -> dict[str, Any]:
+        if score is None:
+            return {}
+        return {
+            "windows": score.windows,
+            "rank_key": score.rank_key,
+            "payload": score.payload,
+        }
+
+    @staticmethod
+    def _json_to_score(score_payload: dict[str, Any]) -> ModelScore | None:
+        if not score_payload:
+            return None
+
+        windows = score_payload.get("windows") if isinstance(score_payload.get("windows"), dict) else {}
+        rank_key = score_payload.get("rank_key")
+        payload = score_payload.get("payload") if isinstance(score_payload.get("payload"), dict) else {}
+
+        rank_value = None
+        if rank_key is not None:
+            try:
+                rank_value = float(rank_key)
+            except Exception:
+                rank_value = None
+
+        normalized_windows: dict[str, float | None] = {}
+        for key, value in windows.items():
+            if value is None:
+                normalized_windows[str(key)] = None
+                continue
+            try:
+                normalized_windows[str(key)] = float(value)
+            except Exception:
+                normalized_windows[str(key)] = None
+
+        return ModelScore(
+            windows=normalized_windows,
+            rank_key=rank_value,
+            payload=payload,
         )
 
 
@@ -127,6 +155,9 @@ class DBPredictionRepository(PredictionRepository):
             existing.inference_input_jsonb = row.inference_input_jsonb
             existing.inference_output_jsonb = row.inference_output_jsonb
             existing.meta_jsonb = row.meta_jsonb
+            existing.scope_key = row.scope_key
+            existing.scope_jsonb = row.scope_jsonb
+            existing.prediction_config_id = row.prediction_config_id
             existing.score_value = row.score_value
             existing.score_success = row.score_success
             existing.score_failed_reason = row.score_failed_reason
@@ -157,10 +188,9 @@ class DBPredictionRepository(PredictionRepository):
         return [
             {
                 "id": row.id,
-                "asset": row.asset,
-                "horizon": row.horizon,
-                "step": row.step,
-                "prediction_interval": row.prediction_interval,
+                "scope_key": row.scope_key,
+                "scope_template": row.scope_template_jsonb or {},
+                "schedule": row.schedule_jsonb or {},
                 "active": row.active,
                 "order": row.order,
                 "meta": row.meta_jsonb or {},
@@ -208,9 +238,9 @@ class DBPredictionRepository(PredictionRepository):
         return PredictionRow(
             id=prediction.id,
             model_id=prediction.model_id,
-            asset=prediction.asset,
-            horizon=prediction.horizon,
-            step=prediction.step,
+            prediction_config_id=prediction.prediction_config_id,
+            scope_key=prediction.scope_key,
+            scope_jsonb=prediction.scope,
             status=prediction.status,
             exec_time_ms=prediction.exec_time_ms,
             inference_input_jsonb=prediction.inference_input,
@@ -238,9 +268,9 @@ class DBPredictionRepository(PredictionRepository):
         return PredictionRecord(
             id=row.id,
             model_id=row.model_id,
-            asset=row.asset,
-            horizon=row.horizon,
-            step=row.step,
+            prediction_config_id=row.prediction_config_id,
+            scope_key=row.scope_key,
+            scope=row.scope_jsonb or {},
             status=row.status,
             exec_time_ms=row.exec_time_ms,
             inference_input=row.inference_input_jsonb or {},

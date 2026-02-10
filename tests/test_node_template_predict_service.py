@@ -80,10 +80,9 @@ class InMemoryPredictionRepository:
         return [
             {
                 "id": "CFG_1",
-                "asset": "BTC",
-                "horizon": 60,
-                "step": 60,
-                "prediction_interval": 60,
+                "scope_key": "BTC-60-60",
+                "scope_template": {"asset": "BTC", "horizon": 60, "step": 60},
+                "schedule": {"prediction_interval_seconds": 60, "resolve_after_seconds": 60},
                 "active": True,
                 "order": 1,
             }
@@ -114,7 +113,8 @@ class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("m1", model_repo.models)
         self.assertGreaterEqual(len(prediction_repo.saved_predictions), 1)
-        self.assertEqual(prediction_repo.saved_predictions[0].asset, "BTC")
+        self.assertEqual(prediction_repo.saved_predictions[0].scope_key, "BTC-60-60")
+        self.assertEqual(prediction_repo.saved_predictions[0].scope.get("asset"), "BTC")
         self.assertIn("wrapped", prediction_repo.saved_predictions[0].inference_input)
         self.assertTrue(prediction_repo.saved_predictions[0].inference_output.get("validated"))
 

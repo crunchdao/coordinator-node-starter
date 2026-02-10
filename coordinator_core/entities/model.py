@@ -7,9 +7,8 @@ from typing import Any
 
 @dataclass
 class ModelScore:
-    recent: float | None = None
-    steady: float | None = None
-    anchor: float | None = None
+    windows: dict[str, float | None] = field(default_factory=dict)
+    rank_key: float | None = None
     payload: dict[str, Any] = field(default_factory=dict)
 
 
@@ -21,7 +20,7 @@ class Model:
     player_name: str
     deployment_identifier: str
     overall_score: ModelScore | None = None
-    scores_by_param: list[dict[str, Any]] = field(default_factory=list)
+    scores_by_scope: list[dict[str, Any]] = field(default_factory=list)
     meta: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

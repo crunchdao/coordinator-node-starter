@@ -110,7 +110,7 @@ class ScoreService:
 
     def _aggregate_model_scores(self, scored_predictions, models) -> list[dict[str, Any]]:
         if self.model_score_aggregator is not None:
-            return list(self.model_score_aggregator(scored_predictions, models))
+            return [self._normalize_score_entry(entry) for entry in self.model_score_aggregator(scored_predictions, models)]
 
         by_model: dict[str, list[float]] = {}
         for prediction in scored_predictions:
@@ -134,21 +134,27 @@ class ScoreService:
             entries.append(
                 {
                     "model_id": model_id,
-                    "score_recent": avg_score,
-                    "score_steady": avg_score,
-                    "score_anchor": avg_score,
+                    "score": {
+                        "windows": {
+                            "recent": avg_score,
+                            "steady": avg_score,
+                            "anchor": avg_score,
+                        },
+                        "rank_key": avg_score,
+                        "payload": {},
+                    },
                     "model_name": model.name if model else None,
                     "cruncher_name": model.player_name if model else None,
                 }
             )
 
-        return entries
+        return [self._normalize_score_entry(entry) for entry in entries]
 
     def _rank_leaderboard(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if self.leaderboard_ranker is not None:
             return list(self.leaderboard_ranker(entries))
 
-        ranked_entries = sorted(entries, key=lambda entry: entry["score_anchor"], reverse=True)
+        ranked_entries = sorted(entries, key=self._entry_rank_value, reverse=True)
         for idx, entry in enumerate(ranked_entries, start=1):
             entry["rank"] = idx
         return ranked_entries
@@ -174,6 +180,68 @@ class ScoreService:
                 rollback()
             except Exception as exc:
                 self.logger.warning("Rollback failed for %s repository: %s", repo_name, exc)
+
+    @staticmethod
+    def _normalize_score_entry(entry: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(entry, dict):
+            raise ValueError("Model score aggregator entries must be dictionaries")
+
+        score = entry.get("score")
+        if isinstance(score, dict):
+            windows = score.get("windows") if isinstance(score.get("windows"), dict) else {}
+            rank_key = score.get("rank_key")
+            payload = score.get("payload") if isinstance(score.get("payload"), dict) else {}
+            return {
+                **entry,
+                "score": {
+                    "windows": windows,
+                    "rank_key": rank_key,
+                    "payload": payload,
+                },
+            }
+
+        windows = {
+            "recent": entry.get("score_recent"),
+            "steady": entry.get("score_steady"),
+            "anchor": entry.get("score_anchor"),
+        }
+        rank_key = entry.get("rank_key", entry.get("score_anchor"))
+        return {
+            **entry,
+            "score": {
+                "windows": windows,
+                "rank_key": rank_key,
+                "payload": {},
+            },
+        }
+
+    @classmethod
+    def _entry_rank_value(cls, entry: dict[str, Any]) -> float:
+        score = entry.get("score") if isinstance(entry, dict) else None
+        if isinstance(score, dict):
+            rank_key = score.get("rank_key")
+            if rank_key is not None:
+                try:
+                    return float(rank_key)
+                except Exception:
+                    pass
+
+            windows = score.get("windows") if isinstance(score.get("windows"), dict) else {}
+            anchor = windows.get("anchor")
+            if anchor is not None:
+                try:
+                    return float(anchor)
+                except Exception:
+                    pass
+
+        fallback = entry.get("score_anchor") if isinstance(entry, dict) else None
+        if fallback is not None:
+            try:
+                return float(fallback)
+            except Exception:
+                pass
+
+        return float("-inf")
 
     @staticmethod
     def _to_float(value: Any) -> float | None:

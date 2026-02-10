@@ -30,6 +30,8 @@ class PredictService:
         inference_output_validator: Callable[[dict[str, Any]], dict[str, Any]] | None,
         model_repository,
         prediction_repository,
+        prediction_scope_builder: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None,
+        predict_call_builder: Callable[[dict[str, Any], dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None,
         runner=None,
         model_runner_node_host: str = "model-orchestrator",
         model_runner_node_port: int = 9091,
@@ -41,6 +43,8 @@ class PredictService:
         self.raw_input_provider = raw_input_provider
         self.inference_input_builder = inference_input_builder
         self.inference_output_validator = inference_output_validator
+        self.prediction_scope_builder = prediction_scope_builder
+        self.predict_call_builder = predict_call_builder
         self.model_repository = model_repository
         self.prediction_repository = prediction_repository
 
@@ -106,7 +110,8 @@ class PredictService:
             batch_predictions = await self._predict_for_config(config=config, inference_input=inference_input, now=now)
             created_predictions.extend(batch_predictions)
 
-            interval = int(config.get("prediction_interval", self.checkpoint_interval_seconds))
+            schedule = config.get("schedule") if isinstance(config.get("schedule"), dict) else {}
+            interval = int(schedule.get("prediction_interval_seconds", self.checkpoint_interval_seconds))
             self._next_run_by_config_id[config_id] = now + timedelta(seconds=interval)
 
         if created_predictions:
@@ -165,12 +170,14 @@ class PredictService:
         return await self._runner.call("tick", args)
 
     async def _predict_for_config(self, config: dict[str, Any], inference_input: dict[str, Any], now: datetime):
-        asset = str(config["asset"])
-        horizon = int(config["horizon"])
-        step = int(config["step"])
+        scope_object = self._build_scope(config=config, inference_input=inference_input)
+        scope_key = str(scope_object.get("scope_key") or config.get("scope_key") or "default-scope")
 
-        args = self._build_predict_args(asset=asset, horizon=horizon, step=step)
+        call_spec = self._build_predict_call(config=config, inference_input=inference_input, scope=scope_object)
+        args = self._build_predict_args(call_spec)
+
         responses = await self._runner.call("predict", args)
+        resolvable_at = self._resolve_resolvable_at(config=config, now=now, scope=scope_object)
 
         predictions_by_model: dict[str, PredictionRecord] = {}
         for model_run, prediction_res in responses.items():
@@ -189,18 +196,14 @@ class PredictService:
                 status = "FAILED"
 
             inference_input_payload = dict(inference_input)
-            inference_input_payload["_context"] = {
-                "asset": asset,
-                "horizon": horizon,
-                "step": step,
-            }
+            inference_input_payload["_scope"] = scope_object
 
             predictions_by_model[model.id] = PredictionRecord(
-                id=self._prediction_id(model.id, now, asset, horizon, step),
+                id=self._prediction_id(model.id, now, scope_key),
                 model_id=model.id,
-                asset=asset,
-                horizon=horizon,
-                step=step,
+                prediction_config_id=str(config.get("id")) if config.get("id") else None,
+                scope_key=scope_key,
+                scope=dict(scope_object.get("scope") or {}),
                 status=status,
                 exec_time_ms=float(getattr(prediction_res, "exec_time_us", 0.0)),
                 inference_input=inference_input_payload,
@@ -210,33 +213,28 @@ class PredictService:
                     else inference_output
                 ),
                 performed_at=now,
-                resolvable_at=now + timedelta(seconds=horizon),
+                resolvable_at=resolvable_at,
             )
 
-        # Mark absents for known models missing in the response
         for model_id in self._known_models.keys():
             if model_id in predictions_by_model:
                 continue
 
             inference_input_payload = dict(inference_input)
-            inference_input_payload["_context"] = {
-                "asset": asset,
-                "horizon": horizon,
-                "step": step,
-            }
+            inference_input_payload["_scope"] = scope_object
 
             predictions_by_model[model_id] = PredictionRecord(
-                id=self._prediction_id(model_id, now, asset, horizon, step, absent=True),
+                id=self._prediction_id(model_id, now, scope_key, absent=True),
                 model_id=model_id,
-                asset=asset,
-                horizon=horizon,
-                step=step,
+                prediction_config_id=str(config.get("id")) if config.get("id") else None,
+                scope_key=scope_key,
+                scope=dict(scope_object.get("scope") or {}),
                 status="ABSENT",
                 exec_time_ms=0.0,
                 inference_input=inference_input_payload,
                 inference_output={},
                 performed_at=now,
-                resolvable_at=now + timedelta(seconds=horizon),
+                resolvable_at=resolvable_at,
             )
 
         return list(predictions_by_model.values())
@@ -298,14 +296,68 @@ class PredictService:
             raise ValueError("inference_output_validator must return a dictionary")
         return validated
 
+    def _build_scope(self, config: dict[str, Any], inference_input: dict[str, Any]) -> dict[str, Any]:
+        if self.prediction_scope_builder is None:
+            return {
+                "scope_key": str(config.get("scope_key") or "default-scope"),
+                "scope": dict(config.get("scope_template") or {}),
+            }
+
+        scope = self.prediction_scope_builder(config, inference_input)
+        if not isinstance(scope, dict):
+            raise ValueError("prediction_scope_builder must return a dictionary")
+
+        return {
+            "scope_key": str(scope.get("scope_key") or config.get("scope_key") or "default-scope"),
+            "scope": dict(scope.get("scope") or {}),
+        }
+
+    def _build_predict_call(self, config: dict[str, Any], inference_input: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
+        if self.predict_call_builder is None:
+            return {"args": [], "kwargs": {}}
+
+        call_spec = self.predict_call_builder(config, inference_input, scope)
+        if not isinstance(call_spec, dict):
+            raise ValueError("predict_call_builder must return a dictionary")
+
+        args = call_spec.get("args") or []
+        kwargs = call_spec.get("kwargs") or {}
+        if not isinstance(args, (list, tuple)):
+            raise ValueError("predict_call_builder result field 'args' must be a list or tuple")
+        if not isinstance(kwargs, dict):
+            raise ValueError("predict_call_builder result field 'kwargs' must be a dictionary")
+
+        return {"args": list(args), "kwargs": kwargs}
+
     @staticmethod
-    def _prediction_id(model_id: str, now: datetime, asset: str, horizon: int, step: int, absent: bool = False) -> str:
+    def _resolve_resolvable_at(config: dict[str, Any], now: datetime, scope: dict[str, Any]) -> datetime:
+        schedule = config.get("schedule") if isinstance(config.get("schedule"), dict) else {}
+        resolve_after = schedule.get("resolve_after_seconds")
+
+        if resolve_after is None:
+            scope_payload = scope.get("scope") if isinstance(scope, dict) else {}
+            if isinstance(scope_payload, dict):
+                resolve_after = scope_payload.get("horizon", scope_payload.get("horizon_seconds", 0))
+
+        try:
+            seconds = int(resolve_after or 0)
+        except Exception:
+            seconds = 0
+
+        return now + timedelta(seconds=max(0, seconds))
+
+    @staticmethod
+    def _prediction_id(model_id: str, now: datetime, scope_key: str, absent: bool = False) -> str:
         suffix = "ABS" if absent else "PRE"
-        return f"{suffix}_{model_id}_{asset}_{horizon}_{step}_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}"
+        safe_scope_key = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in scope_key)
+        return f"{suffix}_{model_id}_{safe_scope_key}_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}"
 
     @staticmethod
     def _config_identity(config: dict[str, Any]) -> str:
-        return f"{config.get('asset')}-{config.get('horizon')}-{config.get('step')}-{config.get('prediction_interval')}"
+        scope_key = str(config.get("scope_key") or "default-scope")
+        schedule = config.get("schedule") if isinstance(config.get("schedule"), dict) else {}
+        interval = schedule.get("prediction_interval_seconds")
+        return f"{scope_key}-{interval}"
 
     @staticmethod
     def _build_tick_args(inference_input: dict[str, Any]):
@@ -319,12 +371,31 @@ class PredictService:
         return (inference_input,)
 
     @staticmethod
-    def _build_predict_args(asset: str, horizon: int, step: int):
+    def _variant_for_value(value: Any):
+        if isinstance(value, bool):
+            return VariantType.BOOL, encode_data(VariantType.BOOL, value)
+        if isinstance(value, int):
+            return VariantType.INT, encode_data(VariantType.INT, value)
+        if isinstance(value, float):
+            return VariantType.FLOAT, encode_data(VariantType.FLOAT, value)
+        if isinstance(value, str):
+            return VariantType.STRING, encode_data(VariantType.STRING, value)
+        return VariantType.JSON, encode_data(VariantType.JSON, value)
+
+    @classmethod
+    def _build_predict_args(cls, call_spec: dict[str, Any]):
+        args = list(call_spec.get("args") or [])
+
         if MODEL_RUNNER_PROTO_AVAILABLE:
-            asset_arg = Argument(position=1, data=Variant(type=VariantType.STRING, value=encode_data(VariantType.STRING, asset)))
-            horizon_arg = Argument(position=2, data=Variant(type=VariantType.INT, value=encode_data(VariantType.INT, horizon)))
-            step_arg = Argument(position=3, data=Variant(type=VariantType.INT, value=encode_data(VariantType.INT, step)))
-            return ([asset_arg, horizon_arg, step_arg], [])
+            proto_args = []
+            for idx, value in enumerate(args, start=1):
+                variant_type, encoded = cls._variant_for_value(value)
+                proto_args.append(
+                    Argument(
+                        position=idx,
+                        data=Variant(type=variant_type, value=encoded),
+                    )
+                )
+            return (proto_args, [])
 
-        return (asset, horizon, step)
-
+        return tuple(args)

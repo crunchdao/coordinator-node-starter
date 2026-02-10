@@ -17,9 +17,9 @@ class PredictionScore:
 class PredictionRecord:
     id: str
     model_id: str
-    asset: str
-    horizon: int
-    step: int
+    prediction_config_id: str | None
+    scope_key: str
+    scope: dict[str, Any]
     status: str
     exec_time_ms: float
     inference_input: dict[str, Any] = field(default_factory=dict)

@@ -81,14 +81,19 @@ def get_leaderboard(
     normalized_entries = []
     for entry in entries:
         score_obj = entry.get("score", {}) if isinstance(entry.get("score"), dict) else {}
+        windows = score_obj.get("windows", {}) if isinstance(score_obj.get("windows"), dict) else {}
 
         normalized_entries.append(
             {
                 "created_at": created_at,
                 "model_id": entry.get("model_id"),
-                "score_recent": entry.get("score_recent", score_obj.get("recent")),
-                "score_steady": entry.get("score_steady", score_obj.get("steady")),
-                "score_anchor": entry.get("score_anchor", score_obj.get("anchor")),
+                "score_windows": windows,
+                "score_rank_key": score_obj.get("rank_key", entry.get("rank_key")),
+                "score_payload": score_obj.get("payload", {}),
+                # backward-compatible fields
+                "score_recent": entry.get("score_recent", windows.get("recent")),
+                "score_steady": entry.get("score_steady", windows.get("steady")),
+                "score_anchor": entry.get("score_anchor", windows.get("anchor")),
                 "rank": entry.get("rank", 999999),
                 "model_name": entry.get("model_name"),
                 "cruncher_name": entry.get("cruncher_name", entry.get("player_name")),
@@ -119,6 +124,9 @@ def get_models_global(
         rows.append(
             {
                 "model_id": model_id,
+                "score_windows": {"recent": avg, "steady": avg, "anchor": avg},
+                "score_rank_key": avg,
+                # backward-compatible fields
                 "score_recent": avg,
                 "score_steady": avg,
                 "score_anchor": avg,
@@ -138,28 +146,30 @@ def get_models_params(
 ) -> list[dict]:
     predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
 
-    grouped: dict[tuple[str, str, int, int], list] = {}
+    grouped: dict[tuple[str, str], list] = {}
     for model_id, predictions in predictions_by_model.items():
         for prediction in predictions:
-            key = (model_id, prediction.asset, prediction.horizon, prediction.step)
+            key = (model_id, prediction.scope_key)
             grouped.setdefault(key, []).append(prediction)
 
     rows: list[dict] = []
-    for (model_id, asset, horizon, step), predictions in grouped.items():
+    for (model_id, scope_key), predictions in grouped.items():
         scores = [p.score.value for p in predictions if p.score and p.score.success and p.score.value is not None]
         if not scores:
             continue
 
         avg = float(sum(scores) / len(scores))
         performed_at = max((p.performed_at for p in predictions), default=end)
+        scope = predictions[-1].scope if predictions else {}
 
         rows.append(
             {
                 "model_id": model_id,
-                "param": f"{asset}-{horizon}-{step}",
-                "asset": asset,
-                "horizon": horizon,
-                "step": step,
+                "scope_key": scope_key,
+                "scope": scope,
+                "score_windows": {"recent": avg, "steady": avg, "anchor": avg},
+                "score_rank_key": avg,
+                # backward-compatible fields
                 "score_recent": avg,
                 "score_steady": avg,
                 "score_anchor": avg,
@@ -192,10 +202,9 @@ def get_predictions(
             rows.append(
                 {
                     "model_id": prediction.model_id,
-                    "param": f"{prediction.asset}-{prediction.horizon}-{prediction.step}",
-                    "asset": prediction.asset,
-                    "horizon": prediction.horizon,
-                    "step": prediction.step,
+                    "prediction_config_id": prediction.prediction_config_id,
+                    "scope_key": prediction.scope_key,
+                    "scope": prediction.scope,
                     "score_value": score.value if score else None,
                     "score_failed": (not score.success) if score else True,
                     "score_failed_reason": score.failed_reason if score else "Prediction not scored",
