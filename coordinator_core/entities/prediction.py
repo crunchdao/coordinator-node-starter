@@ -1,0 +1,30 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any
+
+
+@dataclass
+class PredictionScore:
+    value: float | None
+    success: bool
+    failed_reason: str | None
+    scored_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass
+class PredictionRecord:
+    id: str
+    model_id: str
+    asset: str
+    horizon: int
+    step: int
+    status: str
+    exec_time_ms: float
+    inference_input: dict[str, Any] = field(default_factory=dict)
+    inference_output: dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
+    performed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    resolvable_at: datetime | None = None
+    score: PredictionScore | None = None
