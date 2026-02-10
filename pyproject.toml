@@ -1,7 +1,7 @@
 [project]
-name = "condorgame-backend"
+name = "coordinator-node-starter"
 version = "0.1.0"
-description = "Add your description here"
+description = "Starter template runtime for Crunch coordinator nodes"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [

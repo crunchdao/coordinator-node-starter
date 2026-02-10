@@ -121,7 +121,7 @@ wheels = [
 ]
 
 [[package]]
-name = "condorgame-backend"
+name = "coordinator-node-starter"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
