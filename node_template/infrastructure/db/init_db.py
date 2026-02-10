@@ -18,12 +18,12 @@ def tables_to_reset() -> list[str]:
         "leaderboards",
         "model_scores",
         "predictions",
-        "prediction_configs",
+        "scheduled_prediction_configs",
         "models",
     ]
 
 
-def default_prediction_configs() -> list[dict[str, Any]]:
+def default_scheduled_prediction_configs() -> list[dict[str, Any]]:
     # Starter profile: generic scope + schedule for quick local end-to-end feedback.
     return [
         {
@@ -50,7 +50,7 @@ def init_db() -> None:
 
     with create_session() as session:
         session.exec(delete(PredictionConfigRow))
-        for idx, config in enumerate(default_prediction_configs(), start=1):
+        for idx, config in enumerate(default_scheduled_prediction_configs(), start=1):
             session.add(
                 PredictionConfigRow(
                     id=f"CFG_{idx:03d}",

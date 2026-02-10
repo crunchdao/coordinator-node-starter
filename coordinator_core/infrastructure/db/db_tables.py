@@ -43,7 +43,7 @@ class PredictionRow(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     model_id: str = Field(index=True, foreign_key="models.id")
-    prediction_config_id: Optional[str] = Field(default=None, foreign_key="prediction_configs.id", index=True)
+    prediction_config_id: Optional[str] = Field(default=None, foreign_key="scheduled_prediction_configs.id", index=True)
 
     scope_key: str = Field(index=True)
     scope_jsonb: dict[str, Any] = Field(
@@ -140,7 +140,7 @@ class EmissionCheckpointRow(SQLModel, table=True):
 
 
 class PredictionConfigRow(SQLModel, table=True):
-    __tablename__ = "prediction_configs"
+    __tablename__ = "scheduled_prediction_configs"
 
     id: str = Field(primary_key=True)
 

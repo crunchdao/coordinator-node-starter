@@ -82,4 +82,12 @@ Useful endpoints:
 
 ## Documentation
 
-See `docs/` for concise architecture and bootstrap instructions.
+Start here for challenge setup:
+
+- `docs/ONBOARDING.md` — canonical onboarding flow (including typed JSONB schema ownership)
+
+Additional references:
+
+- `docs/BUILD_YOUR_OWN_CHALLENGE.md`
+- `docs/DATABASE_SCHEMA.md`
+- `docs/`

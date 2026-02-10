@@ -26,6 +26,12 @@ class TestDocsTemplateWorkflow(unittest.TestCase):
             with self.subTest(item=item):
                 self.assertIn(item, guide)
 
+    def test_onboarding_doc_exists_and_mentions_typed_jsonb_flow(self):
+        onboarding = Path("docs/ONBOARDING.md").read_text()
+        self.assertIn("scheduled_prediction_configs", onboarding)
+        self.assertIn("JSONB", onboarding)
+        self.assertIn("define", onboarding.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

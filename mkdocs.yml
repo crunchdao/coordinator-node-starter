@@ -11,6 +11,7 @@ nav:
   - Home: index.md
   - Getting Started:
       - Introduction: INTRODUCTION.md
+      - Onboarding: ONBOARDING.md
       - Build Your Own Challenge: BUILD_YOUR_OWN_CHALLENGE.md
       - Running Locally: RUNNING_LOCALLY.md
       - Deployment: DEPLOYMENT.md

@@ -19,7 +19,7 @@ class TestCoordinatorCoreSchema(unittest.TestCase):
         self.assertEqual(LeaderboardRow.__tablename__, "leaderboards")
         self.assertEqual(CheckpointRow.__tablename__, "checkpoints")
         self.assertEqual(EmissionCheckpointRow.__tablename__, "emission_checkpoints")
-        self.assertEqual(PredictionConfigRow.__tablename__, "prediction_configs")
+        self.assertEqual(PredictionConfigRow.__tablename__, "scheduled_prediction_configs")
 
     def test_jsonb_extension_fields_exist(self):
         self.assertIn("overall_score_jsonb", ModelRow.model_fields)

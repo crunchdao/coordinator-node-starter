@@ -9,7 +9,7 @@ This document reflects the current canonical SQLModel schema in:
 ```mermaid
 erDiagram
     MODELS ||--o{ PREDICTIONS : "model_id -> models.id"
-    PREDICTION_CONFIGS ||--o{ PREDICTIONS : "prediction_config_id -> prediction_configs.id"
+    SCHEDULED_PREDICTION_CONFIGS ||--o{ PREDICTIONS : "prediction_config_id -> scheduled_prediction_configs.id"
     MODELS ||--o{ MODEL_SCORES : "model_id -> models.id"
     CHECKPOINTS ||--o{ EMISSION_CHECKPOINTS : "checkpoint_id -> checkpoints.id"
 
@@ -26,7 +26,7 @@ erDiagram
         datetime updated_at
     }
 
-    PREDICTION_CONFIGS {
+    SCHEDULED_PREDICTION_CONFIGS {
         string id PK
         string scope_key
         jsonb scope_template_jsonb
