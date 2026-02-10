@@ -38,6 +38,10 @@ def build_service() -> ScoreService:
         extension_settings.leaderboard_ranker,
         required_params=("entries",),
     )
+    ground_truth_resolver = resolve_callable(
+        extension_settings.ground_truth_resolver,
+        required_params=("prediction",),
+    )
 
     session = create_session()
 
@@ -49,6 +53,7 @@ def build_service() -> ScoreService:
         leaderboard_repository=DBLeaderboardRepository(session),
         model_score_aggregator=model_score_aggregator,
         leaderboard_ranker=leaderboard_ranker,
+        ground_truth_resolver=ground_truth_resolver,
     )
 
 

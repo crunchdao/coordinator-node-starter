@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 
@@ -11,6 +12,16 @@ def default_build_inference_input(raw_input: dict[str, Any]) -> dict[str, Any]:
 def default_validate_inference_output(inference_output: dict[str, Any]) -> dict[str, Any]:
     """Default inference-output validator: no-op pass-through."""
     return inference_output
+
+
+def default_provide_raw_input(now: datetime) -> dict[str, Any]:
+    """Default raw-input provider: no-op empty payload."""
+    return {}
+
+
+def default_resolve_ground_truth(prediction: Any) -> dict[str, Any]:
+    """Default ground-truth resolver: no-op empty payload."""
+    return {}
 
 
 def default_score_prediction(prediction: dict[str, Any], ground_truth: dict[str, Any]) -> dict[str, Any]:

@@ -41,6 +41,14 @@ class TestCallableResolver(unittest.TestCase):
             settings.leaderboard_ranker,
             "node_template.extensions.default_callables:default_rank_leaderboard",
         )
+        self.assertEqual(
+            settings.raw_input_provider,
+            "node_template.extensions.default_callables:default_provide_raw_input",
+        )
+        self.assertEqual(
+            settings.ground_truth_resolver,
+            "node_template.extensions.default_callables:default_resolve_ground_truth",
+        )
 
     def test_default_inference_builder_callable_is_resolvable(self):
         settings = ExtensionSettings.from_env()
@@ -65,10 +73,20 @@ class TestCallableResolver(unittest.TestCase):
             settings.leaderboard_ranker,
             required_params=("entries",),
         )
+        raw_input_provider = resolve_callable(
+            settings.raw_input_provider,
+            required_params=("now",),
+        )
+        ground_truth_resolver = resolve_callable(
+            settings.ground_truth_resolver,
+            required_params=("prediction",),
+        )
 
         self.assertTrue(callable(validator))
         self.assertTrue(callable(aggregator))
         self.assertTrue(callable(ranker))
+        self.assertTrue(callable(raw_input_provider))
+        self.assertTrue(callable(ground_truth_resolver))
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ class ScoreService:
         leaderboard_repository,
         model_score_aggregator: Callable[[list[Any], dict[str, Any]], list[dict[str, Any]]] | None,
         leaderboard_ranker: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None,
+        ground_truth_resolver: Callable[[Any], dict[str, Any] | None] | None,
     ):
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
         self.scoring_function = scoring_function
@@ -26,6 +27,7 @@ class ScoreService:
         self.leaderboard_repository = leaderboard_repository
         self.model_score_aggregator = model_score_aggregator
         self.leaderboard_ranker = leaderboard_ranker
+        self.ground_truth_resolver = ground_truth_resolver
 
         self.logger = logging.getLogger(__name__)
         self.stop_event = asyncio.Event()
@@ -52,9 +54,14 @@ class ScoreService:
             return False
 
         now = datetime.now(timezone.utc)
+        scored_predictions = []
 
         for prediction in predictions:
-            result = self.scoring_function(prediction.inference_output, {})
+            ground_truth = self._resolve_ground_truth(prediction)
+            if ground_truth is None:
+                continue
+
+            result = self.scoring_function(prediction.inference_output, ground_truth)
 
             prediction.score = PredictionScore(
                 value=self._to_float(result.get("value")),
@@ -62,9 +69,13 @@ class ScoreService:
                 failed_reason=result.get("failed_reason"),
                 scored_at=now,
             )
+            scored_predictions.append(prediction)
 
-        self.prediction_repository.save_all(predictions)
-        self._rebuild_leaderboard(recent_predictions=predictions)
+        if not scored_predictions:
+            return False
+
+        self.prediction_repository.save_all(scored_predictions)
+        self._rebuild_leaderboard(recent_predictions=scored_predictions)
         return True
 
     async def shutdown(self) -> None:
@@ -81,6 +92,17 @@ class ScoreService:
             ranked_entries,
             meta={"generated_by": "node_template.score_service"},
         )
+
+    def _resolve_ground_truth(self, prediction) -> dict[str, Any] | None:
+        if self.ground_truth_resolver is None:
+            return {}
+
+        truth = self.ground_truth_resolver(prediction)
+        if truth is None:
+            return None
+        if not isinstance(truth, dict):
+            raise ValueError("ground_truth_resolver must return a dictionary or None")
+        return truth
 
     def _aggregate_model_scores(self, scored_predictions, models) -> list[dict[str, Any]]:
         if self.model_score_aggregator is not None:

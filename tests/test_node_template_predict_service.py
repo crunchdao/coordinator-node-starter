@@ -97,6 +97,7 @@ class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
 
         service = PredictService(
             checkpoint_interval_seconds=60,
+            raw_input_provider=None,
             inference_input_builder=lambda raw_input: {"wrapped": raw_input},
             inference_output_validator=lambda inference_output: {"validated": True, **inference_output},
             model_repository=model_repo,
@@ -111,6 +112,28 @@ class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(prediction_repo.saved_predictions[0].asset, "BTC")
         self.assertIn("wrapped", prediction_repo.saved_predictions[0].inference_input)
         self.assertTrue(prediction_repo.saved_predictions[0].inference_output.get("validated"))
+
+    async def test_run_once_uses_raw_input_provider_when_input_not_given(self):
+        model_repo = InMemoryModelRepository()
+        prediction_repo = InMemoryPredictionRepository()
+
+        service = PredictService(
+            checkpoint_interval_seconds=60,
+            raw_input_provider=lambda now: {"source": "provider", "ts": now.isoformat()},
+            inference_input_builder=lambda raw_input: {"wrapped": raw_input},
+            inference_output_validator=None,
+            model_repository=model_repo,
+            prediction_repository=prediction_repo,
+            runner=FakeRunner(),
+        )
+
+        now = datetime.now(timezone.utc)
+        await service.run_once(now=now)
+
+        self.assertGreaterEqual(len(prediction_repo.saved_predictions), 1)
+        wrapped = prediction_repo.saved_predictions[0].inference_input["wrapped"]
+        self.assertEqual(wrapped["source"], "provider")
+        self.assertEqual(wrapped["ts"], now.isoformat())
 
 
 if __name__ == "__main__":

@@ -11,6 +11,8 @@ class ExtensionSettings:
     inference_output_validator: str | None
     model_score_aggregator: str | None
     leaderboard_ranker: str | None
+    raw_input_provider: str | None
+    ground_truth_resolver: str | None
 
     @classmethod
     def from_env(cls) -> "ExtensionSettings":
@@ -34,5 +36,13 @@ class ExtensionSettings:
             leaderboard_ranker=os.getenv(
                 "LEADERBOARD_RANKER",
                 "node_template.extensions.default_callables:default_rank_leaderboard",
+            ),
+            raw_input_provider=os.getenv(
+                "RAW_INPUT_PROVIDER",
+                "node_template.extensions.default_callables:default_provide_raw_input",
+            ),
+            ground_truth_resolver=os.getenv(
+                "GROUND_TRUTH_RESOLVER",
+                "node_template.extensions.default_callables:default_resolve_ground_truth",
             ),
         )

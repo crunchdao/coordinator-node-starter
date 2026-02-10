@@ -25,6 +25,7 @@ class PredictService:
     def __init__(
         self,
         checkpoint_interval_seconds: int,
+        raw_input_provider: Callable[[datetime], dict[str, Any]] | None,
         inference_input_builder: Callable[[dict[str, Any]], dict[str, Any]],
         inference_output_validator: Callable[[dict[str, Any]], dict[str, Any]] | None,
         model_repository,
@@ -37,6 +38,7 @@ class PredictService:
         base_classname: str = "condorgame.tracker.TrackerBase",
     ):
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
+        self.raw_input_provider = raw_input_provider
         self.inference_input_builder = inference_input_builder
         self.inference_output_validator = inference_output_validator
         self.model_repository = model_repository
@@ -76,7 +78,8 @@ class PredictService:
 
     async def run_once(self, raw_input: dict[str, Any] | None = None, now: datetime | None = None) -> bool:
         now = now or datetime.now(timezone.utc)
-        raw_input = raw_input or {}
+        if raw_input is None:
+            raw_input = self._provide_raw_input(now)
 
         await self._ensure_runner_initialized()
         await self._ensure_models_loaded()
@@ -134,6 +137,17 @@ class PredictService:
 
         existing = self.model_repository.fetch_all()
         self._known_models.update(existing)
+
+    def _provide_raw_input(self, now: datetime) -> dict[str, Any]:
+        if self.raw_input_provider is None:
+            return {}
+
+        payload = self.raw_input_provider(now)
+        if payload is None:
+            return {}
+        if not isinstance(payload, dict):
+            raise ValueError("raw_input_provider must return a dictionary")
+        return payload
 
     def _fetch_active_configs(self) -> list[dict[str, Any]]:
         if hasattr(self.prediction_repository, "fetch_active_configs"):

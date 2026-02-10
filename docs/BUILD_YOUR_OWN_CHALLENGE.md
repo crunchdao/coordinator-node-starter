@@ -28,7 +28,18 @@ INFERENCE_OUTPUT_VALIDATOR=crunch_<name>.validation:validate_output
 SCORING_FUNCTION=crunch_<name>.scoring:score_prediction
 MODEL_SCORE_AGGREGATOR=crunch_<name>.scoring:aggregate_model_scores
 LEADERBOARD_RANKER=crunch_<name>.ranking:rank
+RAW_INPUT_PROVIDER=crunch_<name>.data:provide_raw_input
+GROUND_TRUTH_RESOLVER=crunch_<name>.truth:resolve_ground_truth
 CHECKPOINT_INTERVAL_SECONDS=900
+```
+
+Optional built-in starter (BTC + Pyth):
+
+```bash
+RAW_INPUT_PROVIDER=node_template.plugins.pyth_updown_btc:build_raw_input_from_pyth
+INFERENCE_OUTPUT_VALIDATOR=node_template.plugins.pyth_updown_btc:validate_probability_up_output
+SCORING_FUNCTION=node_template.plugins.pyth_updown_btc:score_brier_probability_up
+GROUND_TRUTH_RESOLVER=node_template.plugins.pyth_updown_btc:resolve_ground_truth_from_pyth
 ```
 
 ## Step 4 — Validate locally
