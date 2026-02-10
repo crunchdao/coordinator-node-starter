@@ -168,6 +168,30 @@ class DBPredictionRepository(PredictionRepository):
         ).all()
         return [self._row_to_domain(row) for row in rows]
 
+    def query_scores(
+        self,
+        model_ids: list[str],
+        _from: datetime | None,
+        to: datetime | None,
+    ) -> dict[str, list[PredictionRecord]]:
+        stmt = select(PredictionRow).where(PredictionRow.score_scored_at.is_not(None))
+
+        if model_ids:
+            stmt = stmt.where(PredictionRow.model_id.in_(model_ids))
+        if _from is not None:
+            stmt = stmt.where(PredictionRow.performed_at >= _from)
+        if to is not None:
+            stmt = stmt.where(PredictionRow.performed_at <= to)
+
+        rows = self._session.exec(stmt.order_by(PredictionRow.performed_at.asc())).all()
+
+        by_model: dict[str, list[PredictionRecord]] = {}
+        for row in rows:
+            prediction = self._row_to_domain(row)
+            by_model.setdefault(prediction.model_id, []).append(prediction)
+
+        return by_model
+
     @staticmethod
     def _domain_to_row(prediction: PredictionRecord) -> PredictionRow:
         score_value = prediction.score.value if prediction.score else None

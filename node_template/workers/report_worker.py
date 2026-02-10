@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Annotated, Any, Generator
 
 import uvicorn
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from sqlmodel import Session
 
 from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
 from coordinator_core.services.interfaces.model_repository import ModelRepository
-from node_template.infrastructure.db import DBLeaderboardRepository, DBModelRepository, create_session
+from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
+from node_template.infrastructure.db import (
+    DBLeaderboardRepository,
+    DBModelRepository,
+    DBPredictionRepository,
+    create_session,
+)
 
 app = FastAPI(title="Node Template Report Worker")
 
@@ -29,6 +36,12 @@ def get_leaderboard_repository(
     session_db: Annotated[Session, Depends(get_db_session)]
 ) -> LeaderboardRepository:
     return DBLeaderboardRepository(session_db)
+
+
+def get_prediction_repository(
+    session_db: Annotated[Session, Depends(get_db_session)]
+) -> PredictionRepository:
+    return DBPredictionRepository(session_db)
 
 
 @app.get("/healthz")
@@ -83,6 +96,115 @@ def get_leaderboard(
         )
 
     return sorted(normalized_entries, key=lambda item: item.get("rank", 999999))
+
+
+@app.get("/reports/models/global")
+def get_models_global(
+    model_ids: Annotated[list[str], Query(..., alias="projectIds")],
+    start: Annotated[datetime, Query(...)],
+    end: Annotated[datetime, Query(...)],
+    prediction_repo: Annotated[PredictionRepository, Depends(get_prediction_repository)],
+) -> list[dict]:
+    predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
+
+    rows: list[dict] = []
+    for model_id, predictions in predictions_by_model.items():
+        scores = [p.score.value for p in predictions if p.score and p.score.success and p.score.value is not None]
+        if not scores:
+            continue
+
+        avg = float(sum(scores) / len(scores))
+        performed_at = max((p.performed_at for p in predictions), default=end)
+
+        rows.append(
+            {
+                "model_id": model_id,
+                "score_recent": avg,
+                "score_steady": avg,
+                "score_anchor": avg,
+                "performed_at": performed_at,
+            }
+        )
+
+    return rows
+
+
+@app.get("/reports/models/params")
+def get_models_params(
+    model_ids: Annotated[list[str], Query(..., alias="projectIds")],
+    start: Annotated[datetime, Query(...)],
+    end: Annotated[datetime, Query(...)],
+    prediction_repo: Annotated[PredictionRepository, Depends(get_prediction_repository)],
+) -> list[dict]:
+    predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
+
+    grouped: dict[tuple[str, str, int, int], list] = {}
+    for model_id, predictions in predictions_by_model.items():
+        for prediction in predictions:
+            key = (model_id, prediction.asset, prediction.horizon, prediction.step)
+            grouped.setdefault(key, []).append(prediction)
+
+    rows: list[dict] = []
+    for (model_id, asset, horizon, step), predictions in grouped.items():
+        scores = [p.score.value for p in predictions if p.score and p.score.success and p.score.value is not None]
+        if not scores:
+            continue
+
+        avg = float(sum(scores) / len(scores))
+        performed_at = max((p.performed_at for p in predictions), default=end)
+
+        rows.append(
+            {
+                "model_id": model_id,
+                "param": f"{asset}-{horizon}-{step}",
+                "asset": asset,
+                "horizon": horizon,
+                "step": step,
+                "score_recent": avg,
+                "score_steady": avg,
+                "score_anchor": avg,
+                "performed_at": performed_at,
+            }
+        )
+
+    return rows
+
+
+@app.get("/reports/predictions")
+def get_predictions(
+    model_ids: Annotated[list[str], Query(..., alias="projectIds")],
+    start: Annotated[datetime, Query(...)],
+    end: Annotated[datetime, Query(...)],
+    prediction_repo: Annotated[PredictionRepository, Depends(get_prediction_repository)],
+) -> list[dict]:
+    if len(model_ids) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Service is available only for one model at a time. Please provide a single model_id.",
+        )
+
+    predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
+
+    rows: list[dict] = []
+    for _, predictions in predictions_by_model.items():
+        for prediction in predictions:
+            score = prediction.score
+            rows.append(
+                {
+                    "model_id": prediction.model_id,
+                    "param": f"{prediction.asset}-{prediction.horizon}-{prediction.step}",
+                    "asset": prediction.asset,
+                    "horizon": prediction.horizon,
+                    "step": prediction.step,
+                    "score_value": score.value if score else None,
+                    "score_failed": (not score.success) if score else True,
+                    "score_failed_reason": score.failed_reason if score else "Prediction not scored",
+                    "scored_at": score.scored_at if score else None,
+                    "performed_at": prediction.performed_at,
+                }
+            )
+
+    return sorted(rows, key=lambda row: row["performed_at"])
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Iterable
 
 from coordinator_core.entities.prediction import PredictionRecord
@@ -24,3 +25,11 @@ class PredictionRepository(ABC):
 
     def fetch_scored_predictions(self) -> list[PredictionRecord]:
         return []
+
+    def query_scores(
+        self,
+        model_ids: list[str],
+        _from: datetime | None,
+        to: datetime | None,
+    ) -> dict[str, list[PredictionRecord]]:
+        return {}

@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+from fastapi import HTTPException
 
 from coordinator_core.entities.model import Model
+from coordinator_core.entities.prediction import PredictionRecord, PredictionScore
 from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
 from coordinator_core.services.interfaces.model_repository import ModelRepository
-from node_template.workers.report_worker import get_leaderboard, get_models
+from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
+from node_template.workers.report_worker import (
+    get_leaderboard,
+    get_models,
+    get_models_global,
+    get_models_params,
+    get_predictions,
+)
 
 
 class InMemoryModelRepository(ModelRepository):
@@ -46,7 +56,56 @@ class InMemoryLeaderboardRepository(LeaderboardRepository):
         return self._latest
 
 
+class InMemoryPredictionRepository(PredictionRepository):
+    def __init__(self, predictions: list[PredictionRecord]):
+        self._predictions = predictions
+
+    def save(self, prediction: PredictionRecord) -> None:
+        raise NotImplementedError
+
+    def save_all(self, predictions):
+        raise NotImplementedError
+
+    def fetch_ready_to_score(self):
+        return []
+
+    def query_scores(self, model_ids: list[str], _from: datetime | None, to: datetime | None):
+        result: dict[str, list[PredictionRecord]] = {}
+        for prediction in self._predictions:
+            if model_ids and prediction.model_id not in model_ids:
+                continue
+            if _from and prediction.performed_at < _from:
+                continue
+            if to and prediction.performed_at > to:
+                continue
+            result.setdefault(prediction.model_id, []).append(prediction)
+        return result
+
+
 class TestNodeTemplateReportWorker(unittest.TestCase):
+    def _make_prediction(self, model_id: str, asset: str, horizon: int, step: int, score_value: float):
+        now = datetime.now(timezone.utc)
+        prediction = PredictionRecord(
+            id=f"pre-{model_id}-{asset}-{horizon}-{step}",
+            model_id=model_id,
+            asset=asset,
+            horizon=horizon,
+            step=step,
+            status="SUCCESS",
+            exec_time_ms=1.0,
+            inference_input={},
+            inference_output={},
+            performed_at=now - timedelta(minutes=2),
+            resolvable_at=now - timedelta(minutes=1),
+        )
+        prediction.score = PredictionScore(
+            value=score_value,
+            success=True,
+            failed_reason=None,
+            scored_at=now - timedelta(seconds=30),
+        )
+        return prediction
+
     def test_get_models_returns_expected_shape(self):
         models = {
             "m1": Model(
@@ -100,6 +159,56 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
     def test_get_leaderboard_returns_empty_when_missing(self):
         repo = InMemoryLeaderboardRepository(None)
         self.assertEqual(get_leaderboard(repo), [])
+
+    def test_get_models_global_returns_entries(self):
+        predictions = [
+            self._make_prediction("m1", "BTC", 60, 60, 0.4),
+            self._make_prediction("m1", "ETH", 60, 60, 0.6),
+        ]
+        repo = InMemoryPredictionRepository(predictions)
+
+        start = datetime.now(timezone.utc) - timedelta(hours=1)
+        end = datetime.now(timezone.utc)
+
+        response = get_models_global(["m1"], start, end, repo)
+        self.assertEqual(len(response), 1)
+        self.assertEqual(response[0]["model_id"], "m1")
+        self.assertAlmostEqual(response[0]["score_anchor"], 0.5)
+
+    def test_get_models_params_returns_grouped_entries(self):
+        predictions = [
+            self._make_prediction("m1", "BTC", 60, 60, 0.4),
+            self._make_prediction("m1", "BTC", 60, 60, 0.6),
+            self._make_prediction("m1", "ETH", 60, 60, 0.9),
+        ]
+        repo = InMemoryPredictionRepository(predictions)
+
+        start = datetime.now(timezone.utc) - timedelta(hours=1)
+        end = datetime.now(timezone.utc)
+
+        response = get_models_params(["m1"], start, end, repo)
+        self.assertEqual(len(response), 2)
+        btc = next(item for item in response if item["asset"] == "BTC")
+        self.assertAlmostEqual(btc["score_anchor"], 0.5)
+
+    def test_get_predictions_requires_single_model(self):
+        repo = InMemoryPredictionRepository([])
+        start = datetime.now(timezone.utc) - timedelta(hours=1)
+        end = datetime.now(timezone.utc)
+
+        with self.assertRaises(HTTPException):
+            get_predictions(["m1", "m2"], start, end, repo)
+
+    def test_get_predictions_returns_scored_rows(self):
+        predictions = [self._make_prediction("m1", "BTC", 60, 60, 0.4)]
+        repo = InMemoryPredictionRepository(predictions)
+        start = datetime.now(timezone.utc) - timedelta(hours=1)
+        end = datetime.now(timezone.utc)
+
+        response = get_predictions(["m1"], start, end, repo)
+        self.assertEqual(len(response), 1)
+        self.assertEqual(response[0]["model_id"], "m1")
+        self.assertEqual(response[0]["score_value"], 0.4)
 
 
 if __name__ == "__main__":

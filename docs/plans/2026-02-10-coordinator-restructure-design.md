@@ -166,3 +166,17 @@ This repository acts as the standardized coordinator base and template source.
   - Add tests for checkpoint persistence and emission cadence
 
 Status: deferred by stakeholder decision (do later).
+
+## 11) Progress Snapshot
+
+Completed in migration work:
+
+- Runtime wiring moved to `node_template` workers/services
+- Full report API instantiated:
+  - `/reports/models`
+  - `/reports/leaderboard`
+  - `/reports/models/global`
+  - `/reports/models/params`
+  - `/reports/predictions`
+- Extension callables wired end-to-end (input builder, output validator, scoring, model-score aggregation, leaderboard ranking)
+- Docs and bootstrap guidance rewritten to concise template-first model (`crunch-<name>` + `crunch-node-<name>`)
