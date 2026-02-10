@@ -7,6 +7,10 @@ This repository provides:
 - `coordinator_core/` — canonical contracts (entities, DB tables, interfaces)
 - `node_template/` — runnable default workers/services
 
+Legacy status:
+- `condorgame_backend/` is deprecated and no longer included in runtime Docker images.
+- Keep using `coordinator_core/` + `node_template/` for all active development.
+
 ## Intended workflow
 
 Create two repositories per Crunch:
