@@ -407,6 +407,12 @@ def _render_scaffold_files(config: InitConfig, include_spec: bool) -> dict[str, 
         ),
         ("{node_name}/plugins/README.md", _plugins_readme("node")),
         ("{node_name}/extensions/README.md", _extensions_readme("node")),
+        ("{node_name}/node_callables/__init__.py", _node_callables_init()),
+        ("{node_name}/node_callables/contracts.py", _node_callables_contracts()),
+        ("{node_name}/node_callables/inference.py", _node_callables_inference()),
+        ("{node_name}/node_callables/validation.py", _node_callables_validation()),
+        ("{node_name}/node_callables/data.py", _node_callables_data()),
+        ("{node_name}/node_callables/reporting.py", _node_callables_reporting()),
         ("{challenge_name}/README.md", _challenge_readme(config.name, config.package_module)),
         (
             "{challenge_name}/SKILL.md",
@@ -418,10 +424,7 @@ def _render_scaffold_files(config: InitConfig, include_spec: bool) -> dict[str, 
         ),
         ("{challenge_name}/{package_module}/__init__.py", _challenge_init()),
         ("{challenge_name}/{package_module}/tracker.py", _challenge_tracker()),
-        ("{challenge_name}/{package_module}/inference.py", _challenge_inference()),
-        ("{challenge_name}/{package_module}/validation.py", _challenge_validation()),
         ("{challenge_name}/{package_module}/scoring.py", _challenge_scoring()),
-        ("{challenge_name}/{package_module}/reporting.py", _challenge_reporting()),
         ("{challenge_name}/{package_module}/schemas/README.md", _schemas_readme()),
         ("{challenge_name}/{package_module}/plugins/README.md", _plugins_readme("challenge")),
         (
@@ -574,15 +577,20 @@ summary: Agent instructions for implementing challenge logic.
 ## Primary implementation files
 
 - `{package_module}/tracker.py`
-- `{package_module}/inference.py`
-- `{package_module}/validation.py`
 - `{package_module}/scoring.py`
-- `{package_module}/reporting.py`
+
+## Node-private callable files
+
+- `../{node_name}/node_callables/inference.py`
+- `../{node_name}/node_callables/validation.py`
+- `../{node_name}/node_callables/data.py`
+- `../{node_name}/node_callables/reporting.py`
+- `../{node_name}/node_callables/contracts.py`
 
 ## Development guidance
 
-- Keep challenge logic in this package.
-- Keep node runtime wiring in `../{node_name}`.
+- Keep participant-facing challenge logic in this package.
+- Keep runtime input/validation/data/reporting callables in `../{node_name}/node_callables`.
 - Export callable entrypoints referenced by `../{node_name}/config/callables.env`.
 
 ## Validate from node workspace
@@ -600,8 +608,8 @@ def _workspace_readme(name: str) -> str:
 
 This workspace contains:
 
-- `crunch-node-{name}`: private node runtime config/deployment wiring
-- `crunch-{name}`: public challenge package (schemas/callables/tracker)
+- `crunch-node-{name}`: private node runtime config/deployment wiring (including runtime callables)
+- `crunch-{name}`: public challenge package (participant tracker/scoring)
 """
 
 
@@ -615,6 +623,7 @@ Standalone node runtime workspace for `{name}`.
 
 - local deployment/runtime config (`docker-compose.yml`, `Dockerfile`, `.local.env`)
 - callable path configuration (`config/callables.env`)
+- node-private runtime callables (`node_callables/`)
 - node-private adapters (`plugins/`) and overrides (`extensions/`)
 - vendored runtime packages under `runtime/`
 
@@ -743,6 +752,7 @@ RUN pip install --no-cache-dir \
 COPY runtime/coordinator_core ./coordinator_core
 COPY runtime/coordinator_runtime ./coordinator_runtime
 COPY runtime/node_template ./node_template
+COPY node_callables ./node_callables
 
 CMD ["python", "-m", "node_template"]
 """
@@ -1451,12 +1461,14 @@ Public challenge package.
 
 Primary package: `{package_module}`
 
-Implement required challenge callables in:
+Implement participant-facing files in:
 
-- `inference.py`
-- `validation.py`
+- `tracker.py`
 - `scoring.py`
-- `reporting.py`
+
+Node-private runtime callables live in:
+
+- `../crunch-node-{name}/node_callables/`
 """
 
 
@@ -1503,25 +1515,98 @@ class TrackerBase:
 """
 
 
-def _challenge_inference() -> str:
+def _node_callables_init() -> str:
+    return """
+# Node-private callable modules wired via config/callables.env.
+"""
+
+
+def _node_callables_contracts() -> str:
+    return """
+from __future__ import annotations
+
+from typing import Any, TypedDict
+
+
+class InferenceOutputContract(TypedDict):
+    # Node-private output payload contract.
+    value: float
+
+
+def normalize_output_payload(payload: dict[str, Any] | None) -> InferenceOutputContract:
+    if payload is None:
+        raise ValueError("inference_output cannot be None")
+    if not isinstance(payload, dict):
+        raise ValueError("inference_output must be a dictionary")
+
+    try:
+        value = float(payload.get("value", 0.0))
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError("value must be numeric") from exc
+
+    return {"value": value}
+"""
+
+
+def _node_callables_inference() -> str:
     return """
 from __future__ import annotations
 
 
 def build_input(raw_input):
+    if raw_input is None:
+        return {}
+    if not isinstance(raw_input, dict):
+        raise ValueError("raw_input must be a dictionary")
     return raw_input
 """
 
 
-def _challenge_validation() -> str:
+def _node_callables_validation() -> str:
+    return """
+from __future__ import annotations
+
+from node_callables.contracts import normalize_output_payload
+
+
+def validate_output(inference_output):
+    return normalize_output_payload(inference_output)
+"""
+
+
+def _node_callables_data() -> str:
     return """
 from __future__ import annotations
 
 
-def validate_output(inference_output):
-    if inference_output is None:
-        raise ValueError("inference_output cannot be None")
-    return inference_output
+def provide_raw_input(now):
+    _ = now
+    return {}
+
+
+def resolve_ground_truth(prediction):
+    _ = prediction
+    return {}
+"""
+
+
+def _node_callables_reporting() -> str:
+    return """
+from __future__ import annotations
+
+
+def report_schema():
+    return {
+        "schema_version": "1",
+        "leaderboard_columns": [
+            {"key": "rank", "label": "Rank"},
+            {"key": "model_name", "label": "Model"},
+            {"key": "score_anchor", "label": "Anchor"},
+        ],
+        "metrics_widgets": [
+            {"key": "score_anchor", "label": "Anchor", "series": ["score_anchor"]},
+        ],
+    }
 """
 
 
@@ -1639,7 +1724,7 @@ Use this folder for **reusable public helpers/adapters** that support challenge 
 - `math_utils.py` → shared scoring math
 - `normalization.py` → shared transforms
 
-Then import from `inference.py`, `scoring.py`, or `reporting.py`.
+Then import from `tracker.py`, `scoring.py`, or from node-private callables in `../crunch-node-<name>/node_callables/` when needed.
 """
 
 

@@ -72,13 +72,20 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertTrue((challenge / "pyproject.toml").exists())
                 self.assertTrue((package / "__init__.py").exists())
                 self.assertTrue((package / "tracker.py").exists())
-                self.assertTrue((package / "inference.py").exists())
-                self.assertTrue((package / "validation.py").exists())
                 self.assertTrue((package / "scoring.py").exists())
-                self.assertTrue((package / "reporting.py").exists())
+                self.assertFalse((package / "inference.py").exists())
+                self.assertFalse((package / "validation.py").exists())
+                self.assertFalse((package / "reporting.py").exists())
                 self.assertTrue((package / "schemas" / "README.md").exists())
                 self.assertTrue((package / "plugins" / "README.md").exists())
                 self.assertTrue((package / "extensions" / "README.md").exists())
+
+                self.assertTrue((node / "node_callables" / "__init__.py").exists())
+                self.assertTrue((node / "node_callables" / "inference.py").exists())
+                self.assertTrue((node / "node_callables" / "validation.py").exists())
+                self.assertTrue((node / "node_callables" / "reporting.py").exists())
+                self.assertTrue((node / "node_callables" / "data.py").exists())
+                self.assertTrue((node / "node_callables" / "contracts.py").exists())
 
                 self.assertFalse((node / "private_plugins").exists())
                 self.assertFalse((package / "private_plugins").exists())
@@ -108,8 +115,9 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertIn("runtime-services.jsonl", node_skill)
 
                 self.assertIn("tracker.py", challenge_skill)
-                self.assertIn("validation.py", challenge_skill)
                 self.assertIn("scoring.py", challenge_skill)
+                self.assertNotIn("crunch_btc_trader/validation.py", challenge_skill)
+                self.assertIn("../crunch-node-btc-trader/node_callables", challenge_skill)
 
     def test_init_generates_runbook_with_troubleshooting(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -440,7 +448,7 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertIn("in-sample", value)
                 self.assertIn("out-of-sample", value)
 
-    def test_init_uses_public_runtime_callables_by_default(self):
+    def test_init_uses_node_private_callables_for_runtime_data_paths_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             with _cwd(Path(tmp)):
                 code = main(["init", "btc-trader"])
@@ -451,6 +459,30 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 ).read_text(encoding="utf-8")
 
                 self.assertNotIn("node_template.", callables_env)
+                self.assertIn(
+                    "INFERENCE_INPUT_BUILDER=node_callables.inference:build_input",
+                    callables_env,
+                )
+                self.assertIn(
+                    "INFERENCE_OUTPUT_VALIDATOR=node_callables.validation:validate_output",
+                    callables_env,
+                )
+                self.assertIn(
+                    "RAW_INPUT_PROVIDER=node_callables.data:provide_raw_input",
+                    callables_env,
+                )
+                self.assertIn(
+                    "GROUND_TRUTH_RESOLVER=node_callables.data:resolve_ground_truth",
+                    callables_env,
+                )
+                self.assertIn(
+                    "REPORT_SCHEMA_PROVIDER=node_callables.reporting:report_schema",
+                    callables_env,
+                )
+                self.assertIn(
+                    "SCORING_FUNCTION=crunch_btc_trader.scoring:score_prediction",
+                    callables_env,
+                )
                 self.assertIn(
                     "MODEL_SCORE_AGGREGATOR=coordinator_runtime.defaults:aggregate_model_scores",
                     callables_env,
