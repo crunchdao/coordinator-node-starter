@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-import sys
+import subprocess
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -18,6 +18,37 @@ def _get_json(base_url: str, path: str, params: dict | None = None):
     return response.json()
 
 
+def _detect_model_runner_failure(log_text: str) -> str | None:
+    markers = [
+        "BAD_IMPLEMENTATION",
+        "No Inherited class found",
+        "Import error occurred",
+    ]
+    for line in log_text.splitlines():
+        if any(marker in line for marker in markers):
+            return line.strip()
+    return None
+
+
+def _read_model_orchestrator_logs() -> str:
+    cmd = [
+        "docker",
+        "compose",
+        "-f",
+        "docker-compose.yml",
+        "-f",
+        "docker-compose-local.yml",
+        "--env-file",
+        ".local.env",
+        "logs",
+        "model-orchestrator",
+        "--tail",
+        "300",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    return (result.stdout or "") + "\n" + (result.stderr or "")
+
+
 def main() -> int:
     base_url = os.getenv("REPORT_API_URL", "http://localhost:8000")
     timeout_seconds = int(os.getenv("E2E_VERIFY_TIMEOUT_SECONDS", "240"))
@@ -32,6 +63,12 @@ def main() -> int:
 
     while time.time() < deadline:
         try:
+            if os.getenv("E2E_SKIP_MODEL_RUNNER_LOG_CHECK", "0") != "1":
+                model_logs = _read_model_orchestrator_logs()
+                failure = _detect_model_runner_failure(model_logs)
+                if failure is not None:
+                    raise RuntimeError(f"model-runner failure detected: {failure}")
+
             health = _get_json(base_url, "/healthz")
             if health.get("status") != "ok":
                 raise RuntimeError(f"healthcheck not ok: {health}")

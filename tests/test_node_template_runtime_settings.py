@@ -9,6 +9,11 @@ class TestNodeTemplateRuntimeSettings(unittest.TestCase):
         settings = RuntimeSettings.from_env()
         self.assertEqual(settings.checkpoint_interval_seconds, 900)
 
+    def test_default_runtime_branding_is_generic(self):
+        settings = RuntimeSettings.from_env()
+        self.assertEqual(settings.crunch_id, "starter-challenge")
+        self.assertEqual(settings.base_classname, "tracker.TrackerBase")
+
     def test_checkpoint_interval_override(self):
         previous = os.environ.get("CHECKPOINT_INTERVAL_SECONDS")
         os.environ["CHECKPOINT_INTERVAL_SECONDS"] = "123"

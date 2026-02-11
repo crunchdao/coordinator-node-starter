@@ -37,7 +37,7 @@ class PredictService:
         model_runner_node_port: int = 9091,
         model_runner_timeout_seconds: int = 60,
         crunch_id: str = "starter-challenge",
-        base_classname: str = "main.TrackerBase",
+        base_classname: str = "tracker.TrackerBase",
     ):
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
         self.raw_input_provider = raw_input_provider

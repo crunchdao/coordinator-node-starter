@@ -1,13 +1,13 @@
 #!/bin/sh
 set -e
 
-if [ ! -f /app/data/orchestrator.dev.db ]; then
-  echo "Downloading the notebook for local example execution. You can modify it later via the UI at http://localhost:3000/models."
-  model-orchestrator dev \
-    --configuration-file /app/config/orchestrator.dev.yml \
-    import /app/config/starter-benchmarktracker.ipynb \
-    --import-choice 1 \
-    --import-name starter-benchmarktracker
+SUBMISSION_DIR="/app/data/submissions/starter-benchmarktracker"
+TEMPLATE_DIR="/app/config/starter-submission"
+
+if [ ! -f "$SUBMISSION_DIR/main.py" ] || [ ! -f "$SUBMISSION_DIR/tracker.py" ]; then
+  echo "Bootstrapping local starter submission files into $SUBMISSION_DIR"
+  mkdir -p "$SUBMISSION_DIR"
+  cp -f "$TEMPLATE_DIR"/* "$SUBMISSION_DIR"/
 fi
 
 exec "$@"   # runs the real CMD
