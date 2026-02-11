@@ -80,12 +80,12 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertTrue((package / "plugins" / "README.md").exists())
                 self.assertTrue((package / "extensions" / "README.md").exists())
 
-                self.assertTrue((node / "node_callables" / "__init__.py").exists())
-                self.assertTrue((node / "node_callables" / "inference.py").exists())
-                self.assertTrue((node / "node_callables" / "validation.py").exists())
-                self.assertTrue((node / "node_callables" / "reporting.py").exists())
-                self.assertTrue((node / "node_callables" / "data.py").exists())
-                self.assertTrue((node / "node_callables" / "contracts.py").exists())
+                self.assertTrue((node / "runtime_definitions" / "__init__.py").exists())
+                self.assertTrue((node / "runtime_definitions" / "inference.py").exists())
+                self.assertTrue((node / "runtime_definitions" / "validation.py").exists())
+                self.assertTrue((node / "runtime_definitions" / "reporting.py").exists())
+                self.assertTrue((node / "runtime_definitions" / "data.py").exists())
+                self.assertTrue((node / "runtime_definitions" / "contracts.py").exists())
 
                 self.assertFalse((node / "private_plugins").exists())
                 self.assertFalse((package / "private_plugins").exists())
@@ -117,7 +117,7 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertIn("tracker.py", challenge_skill)
                 self.assertIn("scoring.py", challenge_skill)
                 self.assertNotIn("crunch_btc_trader/validation.py", challenge_skill)
-                self.assertIn("../crunch-node-btc-trader/node_callables", challenge_skill)
+                self.assertIn("../crunch-node-btc-trader/runtime_definitions", challenge_skill)
 
     def test_init_generates_runbook_with_troubleshooting(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -460,23 +460,23 @@ class TestCoordinatorCliInit(unittest.TestCase):
 
                 self.assertNotIn("node_template.", callables_env)
                 self.assertIn(
-                    "INFERENCE_INPUT_BUILDER=node_callables.inference:build_input",
+                    "INFERENCE_INPUT_BUILDER=runtime_definitions.inference:build_input",
                     callables_env,
                 )
                 self.assertIn(
-                    "INFERENCE_OUTPUT_VALIDATOR=node_callables.validation:validate_output",
+                    "INFERENCE_OUTPUT_VALIDATOR=runtime_definitions.validation:validate_output",
                     callables_env,
                 )
                 self.assertIn(
-                    "RAW_INPUT_PROVIDER=node_callables.data:provide_raw_input",
+                    "RAW_INPUT_PROVIDER=runtime_definitions.data:provide_raw_input",
                     callables_env,
                 )
                 self.assertIn(
-                    "GROUND_TRUTH_RESOLVER=node_callables.data:resolve_ground_truth",
+                    "GROUND_TRUTH_RESOLVER=runtime_definitions.data:resolve_ground_truth",
                     callables_env,
                 )
                 self.assertIn(
-                    "REPORT_SCHEMA_PROVIDER=node_callables.reporting:report_schema",
+                    "REPORT_SCHEMA_PROVIDER=runtime_definitions.reporting:report_schema",
                     callables_env,
                 )
                 self.assertIn(

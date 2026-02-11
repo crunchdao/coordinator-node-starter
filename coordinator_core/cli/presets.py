@@ -4,14 +4,14 @@ from copy import deepcopy
 from typing import Any
 
 _DEFAULT_PRESET_CALLABLES = {
-    "INFERENCE_INPUT_BUILDER": "node_callables.inference:build_input",
-    "INFERENCE_OUTPUT_VALIDATOR": "node_callables.validation:validate_output",
+    "INFERENCE_INPUT_BUILDER": "runtime_definitions.inference:build_input",
+    "INFERENCE_OUTPUT_VALIDATOR": "runtime_definitions.validation:validate_output",
     "SCORING_FUNCTION": "{package_module}.scoring:score_prediction",
     "MODEL_SCORE_AGGREGATOR": "coordinator_runtime.defaults:aggregate_model_scores",
-    "REPORT_SCHEMA_PROVIDER": "node_callables.reporting:report_schema",
+    "REPORT_SCHEMA_PROVIDER": "runtime_definitions.reporting:report_schema",
     "LEADERBOARD_RANKER": "coordinator_runtime.defaults:rank_leaderboard",
-    "RAW_INPUT_PROVIDER": "node_callables.data:provide_raw_input",
-    "GROUND_TRUTH_RESOLVER": "node_callables.data:resolve_ground_truth",
+    "RAW_INPUT_PROVIDER": "runtime_definitions.data:provide_raw_input",
+    "GROUND_TRUTH_RESOLVER": "runtime_definitions.data:resolve_ground_truth",
     "PREDICTION_SCOPE_BUILDER": "coordinator_runtime.defaults:build_prediction_scope",
     "PREDICT_CALL_BUILDER": "coordinator_runtime.defaults:build_predict_call",
 }

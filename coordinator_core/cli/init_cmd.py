@@ -359,7 +359,7 @@ def _render_scaffold_files(config: InitConfig, include_spec: bool) -> dict[str, 
         ("{node_name}/.local.env", local_env),
         ("{node_name}/.local.env.example", local_env),
         ("{node_name}/config/README.md", _node_config_readme()),
-        ("{node_name}/config/callables.env", _node_callables_env(config.callables)),
+        ("{node_name}/config/callables.env", _runtime_definitions_env(config.callables)),
         (
             "{node_name}/config/scheduled_prediction_configs.json",
             _scheduled_prediction_configs(config.scheduled_prediction_configs),
@@ -407,12 +407,12 @@ def _render_scaffold_files(config: InitConfig, include_spec: bool) -> dict[str, 
         ),
         ("{node_name}/plugins/README.md", _plugins_readme("node")),
         ("{node_name}/extensions/README.md", _extensions_readme("node")),
-        ("{node_name}/node_callables/__init__.py", _node_callables_init()),
-        ("{node_name}/node_callables/contracts.py", _node_callables_contracts()),
-        ("{node_name}/node_callables/inference.py", _node_callables_inference()),
-        ("{node_name}/node_callables/validation.py", _node_callables_validation()),
-        ("{node_name}/node_callables/data.py", _node_callables_data()),
-        ("{node_name}/node_callables/reporting.py", _node_callables_reporting()),
+        ("{node_name}/runtime_definitions/__init__.py", _runtime_definitions_init()),
+        ("{node_name}/runtime_definitions/contracts.py", _runtime_definitions_contracts()),
+        ("{node_name}/runtime_definitions/inference.py", _runtime_definitions_inference()),
+        ("{node_name}/runtime_definitions/validation.py", _runtime_definitions_validation()),
+        ("{node_name}/runtime_definitions/data.py", _runtime_definitions_data()),
+        ("{node_name}/runtime_definitions/reporting.py", _runtime_definitions_reporting()),
         ("{challenge_name}/README.md", _challenge_readme(config.name, config.package_module)),
         (
             "{challenge_name}/SKILL.md",
@@ -581,16 +581,16 @@ summary: Agent instructions for implementing challenge logic.
 
 ## Node-private callable files
 
-- `../{node_name}/node_callables/inference.py`
-- `../{node_name}/node_callables/validation.py`
-- `../{node_name}/node_callables/data.py`
-- `../{node_name}/node_callables/reporting.py`
-- `../{node_name}/node_callables/contracts.py`
+- `../{node_name}/runtime_definitions/inference.py`
+- `../{node_name}/runtime_definitions/validation.py`
+- `../{node_name}/runtime_definitions/data.py`
+- `../{node_name}/runtime_definitions/reporting.py`
+- `../{node_name}/runtime_definitions/contracts.py`
 
 ## Development guidance
 
 - Keep participant-facing challenge logic in this package.
-- Keep runtime input/validation/data/reporting callables in `../{node_name}/node_callables`.
+- Keep runtime input/validation/data/reporting callables in `../{node_name}/runtime_definitions`.
 - Export callable entrypoints referenced by `../{node_name}/config/callables.env`.
 
 ## Validate from node workspace
@@ -623,7 +623,7 @@ Standalone node runtime workspace for `{name}`.
 
 - local deployment/runtime config (`docker-compose.yml`, `Dockerfile`, `.local.env`)
 - callable path configuration (`config/callables.env`)
-- node-private runtime callables (`node_callables/`)
+- node-private runtime callables (`runtime_definitions/`)
 - node-private adapters (`plugins/`) and overrides (`extensions/`)
 - vendored runtime packages under `runtime/`
 
@@ -752,7 +752,7 @@ RUN pip install --no-cache-dir \
 COPY runtime/coordinator_core ./coordinator_core
 COPY runtime/coordinator_runtime ./coordinator_runtime
 COPY runtime/node_template ./node_template
-COPY node_callables ./node_callables
+COPY runtime_definitions ./runtime_definitions
 
 CMD ["python", "-m", "node_template"]
 """
@@ -1141,7 +1141,7 @@ def _node_local_env(
     checkpoint_interval_seconds: int,
     callables: dict[str, str],
 ) -> str:
-    callables_block = _node_callables_env(callables)
+    callables_block = _runtime_definitions_env(callables)
 
     return f"""
 POSTGRES_USER=starter
@@ -1171,7 +1171,7 @@ def _node_config_readme() -> str:
 """
 
 
-def _node_callables_env(callables: dict[str, str]) -> str:
+def _runtime_definitions_env(callables: dict[str, str]) -> str:
     return "\n".join(f"{key}={callables[key]}" for key in _CALLABLE_ORDER)
 
 
@@ -1468,7 +1468,7 @@ Implement participant-facing files in:
 
 Node-private runtime callables live in:
 
-- `../crunch-node-{name}/node_callables/`
+- `../crunch-node-{name}/runtime_definitions/`
 """
 
 
@@ -1515,13 +1515,13 @@ class TrackerBase:
 """
 
 
-def _node_callables_init() -> str:
+def _runtime_definitions_init() -> str:
     return """
 # Node-private callable modules wired via config/callables.env.
 """
 
 
-def _node_callables_contracts() -> str:
+def _runtime_definitions_contracts() -> str:
     return """
 from __future__ import annotations
 
@@ -1548,7 +1548,7 @@ def normalize_output_payload(payload: dict[str, Any] | None) -> InferenceOutputC
 """
 
 
-def _node_callables_inference() -> str:
+def _runtime_definitions_inference() -> str:
     return """
 from __future__ import annotations
 
@@ -1562,11 +1562,11 @@ def build_input(raw_input):
 """
 
 
-def _node_callables_validation() -> str:
+def _runtime_definitions_validation() -> str:
     return """
 from __future__ import annotations
 
-from node_callables.contracts import normalize_output_payload
+from runtime_definitions.contracts import normalize_output_payload
 
 
 def validate_output(inference_output):
@@ -1574,7 +1574,7 @@ def validate_output(inference_output):
 """
 
 
-def _node_callables_data() -> str:
+def _runtime_definitions_data() -> str:
     return """
 from __future__ import annotations
 
@@ -1590,7 +1590,7 @@ def resolve_ground_truth(prediction):
 """
 
 
-def _node_callables_reporting() -> str:
+def _runtime_definitions_reporting() -> str:
     return """
 from __future__ import annotations
 
@@ -1724,7 +1724,7 @@ Use this folder for **reusable public helpers/adapters** that support challenge 
 - `math_utils.py` → shared scoring math
 - `normalization.py` → shared transforms
 
-Then import from `tracker.py`, `scoring.py`, or from node-private callables in `../crunch-node-<name>/node_callables/` when needed.
+Then import from `tracker.py`, `scoring.py`, or from node-private callables in `../crunch-node-<name>/runtime_definitions/` when needed.
 """
 
 
