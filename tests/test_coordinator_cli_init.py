@@ -47,6 +47,7 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertTrue((node / "Dockerfile").exists())
                 self.assertTrue((node / "docker-compose.yml").exists())
                 self.assertTrue((node / "scripts" / "verify_e2e.py").exists())
+                self.assertTrue((node / "scripts" / "capture_runtime_logs.py").exists())
                 self.assertTrue((node / "runtime" / "coordinator_core").exists())
                 self.assertTrue((node / "runtime" / "coordinator_runtime").exists())
                 self.assertTrue((node / "runtime" / "node_template").exists())
@@ -62,6 +63,7 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertIn("-f docker-compose.yml", makefile)
                 self.assertNotIn("ROOT_DIR", makefile)
                 self.assertNotIn("../../..", makefile)
+                self.assertIn("logs-capture", makefile)
 
                 self.assertTrue((challenge / "README.md").exists())
                 self.assertTrue((challenge / "pyproject.toml").exists())
@@ -168,6 +170,19 @@ class TestCoordinatorCliInit(unittest.TestCase):
 
                 content = script.read_text(encoding="utf-8")
                 self.assertIn('return (result.stdout or "") + "\\n" + (result.stderr or "")', content)
+
+    def test_init_generates_parseable_capture_runtime_logs_script(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                code = main(["init", "btc-trader"])
+                self.assertEqual(code, 0)
+
+                script = Path("btc-trader/crunch-node-btc-trader/scripts/capture_runtime_logs.py")
+                py_compile.compile(str(script), doraise=True)
+
+                content = script.read_text(encoding="utf-8")
+                self.assertIn("runtime-services.jsonl", content)
+                self.assertIn("model-orchestrator", content)
 
     def test_init_fails_when_target_exists_without_force(self):
         with tempfile.TemporaryDirectory() as tmp:
