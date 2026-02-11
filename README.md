@@ -70,6 +70,10 @@ Useful endpoints:
 - UI: http://localhost:3000
 - Docs: http://localhost:8080
 
+For local challenge instances inside this repo, see:
+
+- `crunch-implementations/README.md`
+
 ## Runtime notes (current defaults)
 
 - `predict-worker` and `score-worker` configure INFO logging on startup and emit lifecycle/idle log lines.

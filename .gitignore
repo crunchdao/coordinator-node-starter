@@ -12,3 +12,6 @@ wheels/
 .idea
 
 data/
+
+# Local challenge implementations/workspaces
+crunch-implementations/
