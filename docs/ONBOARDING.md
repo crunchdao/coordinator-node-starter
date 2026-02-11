@@ -4,6 +4,19 @@ This is the canonical onboarding flow for a new challenge using the generic coor
 
 ## 1) Create the two repositories
 
+You can scaffold both with the CLI:
+
+```bash
+coordinator init <name>
+```
+
+This creates:
+
+- `crunch-implementations/<name>/crunch-node-<name>`
+- `crunch-implementations/<name>/crunch-<name>`
+
+Manual structure reference:
+
 1. **Public challenge repo**: `crunch-<name>`
    - challenge schemas
    - challenge callables

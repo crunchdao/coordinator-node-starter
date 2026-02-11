@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY pyproject.toml ./
-RUN uv sync
+RUN uv sync --no-install-project
 
 # Activate venv
 ENV VIRTUAL_ENV=/app/.venv

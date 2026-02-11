@@ -12,6 +12,16 @@ Legacy status:
 
 ## Intended workflow
 
+> New thin-workspace scaffolding is available via CLI:
+>
+> ```bash
+> coordinator init <challenge-slug>
+> ```
+>
+> This generates `crunch-implementations/<challenge-slug>/` with:
+> - `crunch-node-<challenge-slug>` (thin node wiring)
+> - `crunch-<challenge-slug>` (challenge package stubs)
+
 Create two repositories per Crunch:
 
 1. `crunch-<name>` (public)

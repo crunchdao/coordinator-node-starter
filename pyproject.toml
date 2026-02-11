@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
 [project]
 name = "coordinator-node-starter"
 version = "0.1.0"
@@ -14,3 +18,12 @@ dependencies = [
     "sqlmodel>=0.0.27",
     "uvicorn>=0.38.0",
 ]
+
+[project.scripts]
+coordinator = "coordinator_core.cli.main:entrypoint"
+
+[tool.hatch.build.targets.wheel]
+packages = ["coordinator_core", "node_template"]
+
+[tool.uv]
+package = true
