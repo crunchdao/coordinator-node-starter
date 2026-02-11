@@ -25,6 +25,8 @@ Legacy status:
 > coordinator doctor --spec path/to/spec.json
 > ```
 >
+> `spec.json` must include `"spec_version": "1"`.
+>
 > This generates `crunch-implementations/<challenge-slug>/` with:
 > - `crunch-node-<challenge-slug>` (thin node wiring)
 > - `crunch-<challenge-slug>` (challenge package stubs)

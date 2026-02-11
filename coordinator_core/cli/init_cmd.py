@@ -9,6 +9,8 @@ from typing import Any
 
 _SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
+SUPPORTED_SPEC_VERSION = "1"
+
 _DEFAULT_CALLABLES = {
     "INFERENCE_INPUT_BUILDER": "{package_module}.inference:build_input",
     "INFERENCE_OUTPUT_VALIDATOR": "{package_module}.validation:validate_output",
@@ -56,8 +58,23 @@ def load_spec(path: Path) -> dict[str, Any]:
     return payload
 
 
-def resolve_init_config(name: str | None, spec: dict[str, Any]) -> InitConfig:
+def resolve_init_config(
+    name: str | None,
+    spec: dict[str, Any],
+    require_spec_version: bool = False,
+) -> InitConfig:
     spec_name = spec.get("name")
+
+    if require_spec_version:
+        if "spec_version" not in spec:
+            raise ValueError(
+                f"Spec missing required 'spec_version'. Supported version: '{SUPPORTED_SPEC_VERSION}'."
+            )
+        if str(spec.get("spec_version")) != SUPPORTED_SPEC_VERSION:
+            raise ValueError(
+                "Unsupported spec_version "
+                f"'{spec.get('spec_version')}'. Supported version: '{SUPPORTED_SPEC_VERSION}'."
+            )
 
     if name and spec_name and name != spec_name:
         raise ValueError(
@@ -112,7 +129,11 @@ def run_init(
 ) -> int:
     try:
         spec = load_spec(spec_path) if spec_path is not None else {}
-        config = resolve_init_config(name=name, spec=spec)
+        config = resolve_init_config(
+            name=name,
+            spec=spec,
+            require_spec_version=spec_path is not None,
+        )
     except ValueError as exc:
         print(str(exc))
         return 1

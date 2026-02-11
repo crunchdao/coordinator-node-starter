@@ -77,6 +77,7 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 spec_path = self._write_spec(
                     Path("spec.json"),
                     {
+                        "spec_version": "1",
                         "name": "eth-trader",
                         "crunch_id": "challenge-eth",
                         "model_base_classname": "crunch_eth_trader.tracker.CustomTrackerBase",
@@ -101,6 +102,7 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 spec_path = self._write_spec(
                     Path("btc-spec.json"),
                     {
+                        "spec_version": "1",
                         "name": "btc-trader",
                         "callables": {
                             "SCORING_FUNCTION": "crunch_btc_trader.scoring:score_v2",
@@ -153,8 +155,26 @@ class TestCoordinatorCliInit(unittest.TestCase):
     def test_init_rejects_name_mismatch_between_cli_and_spec(self):
         with tempfile.TemporaryDirectory() as tmp:
             with _cwd(Path(tmp)):
-                spec_path = self._write_spec(Path("spec.json"), {"name": "eth-trader"})
+                spec_path = self._write_spec(
+                    Path("spec.json"), {"spec_version": "1", "name": "eth-trader"}
+                )
                 code = main(["init", "btc-trader", "--spec", str(spec_path)])
+                self.assertEqual(code, 1)
+
+    def test_init_rejects_spec_without_spec_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                spec_path = self._write_spec(Path("spec.json"), {"name": "btc-trader"})
+                code = main(["init", "--spec", str(spec_path)])
+                self.assertEqual(code, 1)
+
+    def test_init_rejects_spec_with_unsupported_spec_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                spec_path = self._write_spec(
+                    Path("spec.json"), {"spec_version": "2", "name": "btc-trader"}
+                )
+                code = main(["init", "--spec", str(spec_path)])
                 self.assertEqual(code, 1)
 
     def test_init_rejects_invalid_slug(self):

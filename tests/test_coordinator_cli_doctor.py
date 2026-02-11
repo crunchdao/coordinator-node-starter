@@ -25,6 +25,7 @@ class TestCoordinatorCliDoctor(unittest.TestCase):
                 Path("spec.json").write_text(
                     json.dumps(
                         {
+                            "spec_version": "1",
                             "name": "btc-trader",
                             "crunch_id": "starter-btc",
                             "callables": {
@@ -50,12 +51,35 @@ class TestCoordinatorCliDoctor(unittest.TestCase):
                 Path("spec.json").write_text(
                     json.dumps(
                         {
+                            "spec_version": "1",
                             "name": "btc-trader",
                             "callables": {
                                 "UNKNOWN_KEY": "crunch_btc_trader.scoring:score_prediction"
                             },
                         }
                     ),
+                    encoding="utf-8",
+                )
+
+                code = main(["doctor", "--spec", "spec.json"])
+                self.assertEqual(code, 1)
+
+    def test_doctor_rejects_missing_spec_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                Path("spec.json").write_text(
+                    json.dumps({"name": "btc-trader"}),
+                    encoding="utf-8",
+                )
+
+                code = main(["doctor", "--spec", "spec.json"])
+                self.assertEqual(code, 1)
+
+    def test_doctor_rejects_unsupported_spec_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                Path("spec.json").write_text(
+                    json.dumps({"spec_version": "2", "name": "btc-trader"}),
                     encoding="utf-8",
                 )
 

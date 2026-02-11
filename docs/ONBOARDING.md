@@ -22,10 +22,11 @@ This creates:
 - `crunch-implementations/<name>/crunch-node-<name>`
 - `crunch-implementations/<name>/crunch-<name>`
 
-Minimal `spec.json` example:
+Minimal `spec.json` example (note the required `spec_version`):
 
 ```json
 {
+  "spec_version": "1",
   "name": "btc-trader",
   "crunch_id": "starter-challenge",
   "model_base_classname": "crunch_btc_trader.tracker.TrackerBase",

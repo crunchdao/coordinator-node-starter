@@ -12,7 +12,7 @@ def run_doctor(name: str | None, spec_path: Path | None) -> int:
 
     try:
         spec = load_spec(spec_path)
-        config = resolve_init_config(name=name, spec=spec)
+        config = resolve_init_config(name=name, spec=spec, require_spec_version=True)
     except ValueError as exc:
         print(f"doctor failed: {exc}")
         return 1
