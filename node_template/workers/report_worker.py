@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime
 from typing import Annotated, Any, Generator
 
@@ -12,6 +13,8 @@ from coordinator_core.schemas import LeaderboardEntryEnvelope
 from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
 from coordinator_core.services.interfaces.model_repository import ModelRepository
 from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
+from node_template.extensions.callable_resolver import resolve_callable
+from node_template.extensions.risk_adjusted_callables import compute_return_metrics, flatten_risk_metrics
 from node_template.infrastructure.db import (
     DBLeaderboardRepository,
     DBModelRepository,
@@ -45,9 +48,51 @@ def get_prediction_repository(
     return DBPredictionRepository(session_db)
 
 
+def resolve_report_schema(provider_path: str | None = None) -> dict[str, Any]:
+    configured_path = provider_path or os.getenv(
+        "REPORT_SCHEMA_PROVIDER",
+        "node_template.extensions.default_callables:default_report_schema",
+    )
+    provider = resolve_callable(configured_path)
+    schema = provider()
+    if not isinstance(schema, dict):
+        raise ValueError("REPORT_SCHEMA_PROVIDER must return a dictionary")
+
+    leaderboard_columns = schema.get("leaderboard_columns")
+    metrics_widgets = schema.get("metrics_widgets")
+    if not isinstance(leaderboard_columns, list):
+        raise ValueError("Report schema must define list field 'leaderboard_columns'")
+    if not isinstance(metrics_widgets, list):
+        raise ValueError("Report schema must define list field 'metrics_widgets'")
+
+    return {
+        "schema_version": str(schema.get("schema_version", "1")),
+        "leaderboard_columns": leaderboard_columns,
+        "metrics_widgets": metrics_widgets,
+    }
+
+
+REPORT_SCHEMA = resolve_report_schema()
+
+
 @app.get("/healthz")
 def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/reports/schema")
+def get_report_schema() -> dict[str, Any]:
+    return REPORT_SCHEMA
+
+
+@app.get("/reports/schema/leaderboard-columns")
+def get_report_schema_leaderboard_columns() -> list[dict[str, Any]]:
+    return list(REPORT_SCHEMA.get("leaderboard_columns", []))
+
+
+@app.get("/reports/schema/metrics-widgets")
+def get_report_schema_metrics_widgets() -> list[dict[str, Any]]:
+    return list(REPORT_SCHEMA.get("metrics_widgets", []))
 
 
 @app.get("/reports/models")
@@ -82,14 +127,16 @@ def get_leaderboard(
     normalized_entries = []
     for entry in entries:
         normalized = LeaderboardEntryEnvelope.model_validate(entry)
+        metrics = dict(normalized.score.metrics)
 
         normalized_entries.append(
             {
                 "created_at": created_at,
                 "model_id": normalized.model_id,
-                "score_metrics": dict(normalized.score.metrics),
+                "score_metrics": metrics,
                 "score_ranking": normalized.score.ranking.model_dump(exclude_none=True),
                 "score_payload": dict(normalized.score.payload),
+                **flatten_risk_metrics(metrics),
                 "rank": normalized.rank if normalized.rank is not None else 999999,
                 "model_name": normalized.model_name,
                 "cruncher_name": normalized.cruncher_name,
@@ -114,14 +161,20 @@ def get_models_global(
         if not scores:
             continue
 
-        avg = float(sum(scores) / len(scores))
+        metrics = compute_return_metrics([float(value) for value in scores])
         performed_at = max((p.performed_at for p in predictions), default=end)
 
         rows.append(
             {
                 "model_id": model_id,
-                "score_metrics": {"average": avg},
-                "score_ranking": {"key": "average", "value": avg, "direction": "desc"},
+                "score_metrics": metrics,
+                "score_ranking": {
+                    "key": "sharpe_like",
+                    "value": metrics.get("sharpe_like"),
+                    "direction": "desc",
+                    "tie_breakers": ["wealth", "mean_return"],
+                },
+                **flatten_risk_metrics(metrics),
                 "performed_at": performed_at,
             }
         )
@@ -150,7 +203,7 @@ def get_models_params(
         if not scores:
             continue
 
-        avg = float(sum(scores) / len(scores))
+        metrics = compute_return_metrics([float(value) for value in scores])
         performed_at = max((p.performed_at for p in predictions), default=end)
         scope = predictions[-1].scope if predictions else {}
 
@@ -159,8 +212,14 @@ def get_models_params(
                 "model_id": model_id,
                 "scope_key": scope_key,
                 "scope": scope,
-                "score_metrics": {"average": avg},
-                "score_ranking": {"key": "average", "value": avg, "direction": "desc"},
+                "score_metrics": metrics,
+                "score_ranking": {
+                    "key": "sharpe_like",
+                    "value": metrics.get("sharpe_like"),
+                    "direction": "desc",
+                    "tie_breakers": ["wealth", "mean_return"],
+                },
+                **flatten_risk_metrics(metrics),
                 "performed_at": performed_at,
             }
         )

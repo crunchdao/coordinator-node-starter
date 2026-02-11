@@ -8,6 +8,7 @@ from node_template.plugins.pyth_updown_btc import (
     build_raw_input_from_pyth,
     resolve_ground_truth_from_pyth,
     score_brier_probability_up,
+    score_position_return_probability_up,
     validate_probability_up_output,
 )
 
@@ -90,6 +91,30 @@ class TestPythUpdownBtcPlugin(unittest.TestCase):
         result = score_brier_probability_up(payload, {"y_up": True})
         self.assertTrue(result["success"])
         self.assertGreater(result["value"], 0.8)
+
+    def test_score_position_return_probability_up_long_wins_on_up_move(self):
+        result = score_position_return_probability_up(
+            {"p_up": 1.0},
+            {"asset": "BTC", "entry_price": 100.0, "resolved_price": 110.0, "y_up": True},
+        )
+        self.assertTrue(result["success"])
+        self.assertAlmostEqual(result["value"], 0.10, places=6)
+
+    def test_score_position_return_probability_up_short_loses_on_up_move(self):
+        result = score_position_return_probability_up(
+            {"p_up": 0.0},
+            {"asset": "BTC", "entry_price": 100.0, "resolved_price": 110.0, "y_up": True},
+        )
+        self.assertTrue(result["success"])
+        self.assertAlmostEqual(result["value"], -0.10, places=6)
+
+    def test_score_position_return_probability_up_fractional_position(self):
+        result = score_position_return_probability_up(
+            {"p_up": 0.75},
+            {"asset": "BTC", "entry_price": 100.0, "resolved_price": 110.0, "y_up": True},
+        )
+        self.assertTrue(result["success"])
+        self.assertAlmostEqual(result["value"], 0.05, places=6)
 
     def test_build_raw_input_from_pyth_returns_price_data(self):
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)

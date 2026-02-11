@@ -159,6 +159,54 @@ def default_rank_leaderboard(entries: list[dict[str, Any]]) -> list[dict[str, An
     return ranked
 
 
+def default_report_schema() -> dict[str, Any]:
+    """Default report schema contract exposed by the report worker.
+
+    FE may use this as canonical schema and merge local override files on top.
+    """
+    return {
+        "schema_version": "1",
+        "leaderboard_columns": [
+            {
+                "id": 1,
+                "type": "MODEL",
+                "property": "model_id",
+                "format": None,
+                "displayName": "Model",
+                "tooltip": None,
+                "nativeConfiguration": {"type": "model", "statusProperty": "status"},
+                "order": 0,
+            },
+            {
+                "id": 2,
+                "type": "VALUE",
+                "property": "score_average",
+                "format": "decimal-4",
+                "displayName": "Average Score",
+                "tooltip": "Average score across scored predictions.",
+                "nativeConfiguration": None,
+                "order": 20,
+            },
+        ],
+        "metrics_widgets": [
+            {
+                "id": 1,
+                "type": "CHART",
+                "displayName": "Average score",
+                "tooltip": None,
+                "order": 10,
+                "endpointUrl": "/reports/models/global",
+                "nativeConfiguration": {
+                    "type": "line",
+                    "xAxis": {"name": "performed_at"},
+                    "yAxis": {"series": [{"name": "score_average", "label": "Average Score"}], "format": "decimal-4"},
+                    "displayEvolution": False,
+                },
+            }
+        ],
+    }
+
+
 def invalid_score_prediction(prediction: dict[str, Any]) -> dict[str, Any]:
     """Intentionally invalid signature used by tests for resolver validation."""
     return {"value": 0.0, "success": True, "failed_reason": None}

@@ -134,6 +134,46 @@ def score_brier_probability_up(prediction: dict[str, Any], ground_truth: dict[st
         }
 
 
+def score_position_return_probability_up(prediction: dict[str, Any], ground_truth: dict[str, Any]) -> dict[str, Any]:
+    """Score each prediction as realized strategy return.
+
+    - p_up in [0, 1] becomes position in [-1, 1]
+    - realized market return = (resolved_price - entry_price) / entry_price
+    - strategy return = position * realized market return
+    """
+    try:
+        p_up = _extract_probability_up(prediction)
+        if p_up is None:
+            raise ValueError("could not extract p_up from prediction payload")
+
+        normalized_prediction = ProbabilityUpOutputSchema.model_validate({"p_up": p_up})
+        normalized_truth = BtcGroundTruthSchema.model_validate(ground_truth)
+
+        if normalized_truth.entry_price is None or normalized_truth.resolved_price is None:
+            raise ValueError("ground truth must include entry_price and resolved_price")
+
+        entry_price = float(normalized_truth.entry_price)
+        resolved_price = float(normalized_truth.resolved_price)
+        if entry_price <= 0.0:
+            raise ValueError("entry_price must be > 0")
+
+        market_return = (resolved_price - entry_price) / entry_price
+        position = (2.0 * normalized_prediction.p_up) - 1.0
+        strategy_return = position * market_return
+
+        return {
+            "value": float(strategy_return),
+            "success": True,
+            "failed_reason": None,
+        }
+    except Exception as exc:
+        return {
+            "value": None,
+            "success": False,
+            "failed_reason": str(exc),
+        }
+
+
 def _extract_probability_up(prediction: dict[str, Any]) -> float | None:
     if "p_up" in prediction:
         return float(prediction["p_up"])

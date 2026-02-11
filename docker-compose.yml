@@ -91,6 +91,7 @@ services:
     <<: *common-build
     environment:
       <<: *common-db-env
+      REPORT_SCHEMA_PROVIDER: ${REPORT_SCHEMA_PROVIDER:-node_template.extensions.default_callables:default_report_schema}
     restart: always
     command: [ "python", "-m", "node_template.workers.report_worker" ]
     ports:

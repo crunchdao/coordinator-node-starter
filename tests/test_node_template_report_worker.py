@@ -16,6 +16,10 @@ from node_template.workers.report_worker import (
     get_models_global,
     get_models_params,
     get_predictions,
+    get_report_schema,
+    get_report_schema_leaderboard_columns,
+    get_report_schema_metrics_widgets,
+    resolve_report_schema,
 )
 
 
@@ -161,6 +165,7 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         self.assertEqual(response[0]["model_id"], "m1")
         self.assertEqual(response[0]["score_metrics"]["wealth"], 300.0)
         self.assertEqual(response[0]["score_ranking"]["key"], "wealth")
+        self.assertEqual(response[0]["score_wealth"], 300.0)
 
     def test_get_leaderboard_returns_empty_when_missing(self):
         repo = InMemoryLeaderboardRepository(None)
@@ -179,8 +184,9 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         response = get_models_global(["m1"], start, end, repo)
         self.assertEqual(len(response), 1)
         self.assertEqual(response[0]["model_id"], "m1")
-        self.assertAlmostEqual(response[0]["score_metrics"]["average"], 0.5)
-        self.assertEqual(response[0]["score_ranking"]["direction"], "desc")
+        self.assertIn("sharpe_like", response[0]["score_metrics"])
+        self.assertEqual(response[0]["score_ranking"]["key"], "sharpe_like")
+        self.assertIn("score_sharpe_like", response[0])
 
     def test_get_models_params_returns_grouped_entries(self):
         predictions = [
@@ -196,8 +202,9 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         response = get_models_params(["m1"], start, end, repo)
         self.assertEqual(len(response), 2)
         btc = next(item for item in response if item["scope_key"] == "BTC-60")
-        self.assertAlmostEqual(btc["score_metrics"]["average"], 0.5)
-        self.assertEqual(btc["score_ranking"]["key"], "average")
+        self.assertIn("sharpe_like", btc["score_metrics"])
+        self.assertEqual(btc["score_ranking"]["key"], "sharpe_like")
+        self.assertIn("score_sharpe_like", btc)
 
     def test_get_predictions_requires_single_model(self):
         repo = InMemoryPredictionRepository([])
@@ -218,6 +225,26 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         self.assertEqual(response[0]["model_id"], "m1")
         self.assertEqual(response[0]["scope_key"], "BTC-60")
         self.assertEqual(response[0]["score_value"], 0.4)
+
+    def test_report_schema_endpoints_return_expected_shape(self):
+        schema = get_report_schema()
+        self.assertIn("schema_version", schema)
+        self.assertIn("leaderboard_columns", schema)
+        self.assertIn("metrics_widgets", schema)
+        self.assertIsInstance(get_report_schema_leaderboard_columns(), list)
+        self.assertIsInstance(get_report_schema_metrics_widgets(), list)
+
+    def test_resolve_report_schema_for_risk_profile(self):
+        schema = resolve_report_schema(
+            "node_template.extensions.risk_adjusted_callables:risk_adjusted_report_schema"
+        )
+        leaderboard_props = {
+            col.get("property")
+            for col in schema["leaderboard_columns"]
+            if isinstance(col, dict)
+        }
+        self.assertIn("score_sharpe_like", leaderboard_props)
+        self.assertIn("score_wealth", leaderboard_props)
 
 
 if __name__ == "__main__":
