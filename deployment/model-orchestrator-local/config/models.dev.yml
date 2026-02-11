@@ -1,16 +1,40 @@
 models:
-- id: '1'
+  - id: "1"
+    submission_id: sbs-quickstarter-momentum
+    crunch_id: structural-break-stream
+    desired_state: RUNNING
+    model_name: sbs-momentum
+    cruncher_name: local-dev
+    cruncher_id: local-sbs-0001
 
-    # submission code id, it is the code used to run the model
-    # the corresponding directory must exist in the storage
-  submission_id: starter-benchmarktracker
+  - id: "2"
+    submission_id: sbs-quickstarter-mean-reversion
+    crunch_id: structural-break-stream
+    desired_state: RUNNING
+    model_name: sbs-mean-reversion
+    cruncher_name: local-dev
+    cruncher_id: local-sbs-0002
 
-    # which crunch this model must be run on
-  crunch_id: starter-challenge
+  - id: "3"
+    submission_id: sbs-quickstarter-volatility-burst
+    crunch_id: structural-break-stream
+    desired_state: RUNNING
+    model_name: sbs-volatility-burst
+    cruncher_name: local-dev
+    cruncher_id: local-sbs-0003
 
-    # which desired state this model must be in: "RUNNING", "STOPPED"
-  desired_state: RUNNING
+  - id: "4"
+    submission_id: sbs-quickstarter-zscore-shift
+    crunch_id: structural-break-stream
+    desired_state: RUNNING
+    model_name: sbs-zscore-shift
+    cruncher_name: local-dev
+    cruncher_id: local-sbs-0004
 
-  model_name: light
-  cruncher_name: degu
-  cruncher_id: AHgm2bE4rcyiD1skgvWaujXyyzcfouiq8JXdMKvPhFFR
+  - id: "5"
+    submission_id: sbs-quickstarter-ensemble
+    crunch_id: structural-break-stream
+    desired_state: RUNNING
+    model_name: sbs-ensemble
+    cruncher_name: local-dev
+    cruncher_id: local-sbs-0005

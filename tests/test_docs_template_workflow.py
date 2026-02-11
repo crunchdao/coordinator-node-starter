@@ -24,7 +24,10 @@ class TestDocsTemplateWorkflow(unittest.TestCase):
         readme = Path("README.md").read_text()
         self.assertIn("Launch a local Crunch workspace", readme)
         self.assertIn("coordinator doctor --spec path/to/spec.json", readme)
-        self.assertIn("coordinator init --spec path/to/spec.json --preset realtime", readme)
+        self.assertRegex(
+            readme,
+            r"coordinator init .*--spec path/to/spec\.json.*--preset realtime",
+        )
         self.assertIn("cd <challenge-slug>/crunch-node-<challenge-slug>", readme)
         self.assertIn("make deploy", readme)
         self.assertIn("make verify-e2e", readme)
