@@ -112,6 +112,11 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertTrue((node / "runtime_definitions" / "data.py").exists())
                 self.assertTrue((node / "runtime_definitions" / "contracts.py").exists())
 
+                runtime_data = (node / "runtime_definitions" / "data.py").read_text(encoding="utf-8")
+                self.assertIn("provide_binance_raw_input", runtime_data)
+                self.assertIn("resolve_binance_ground_truth", runtime_data)
+                self.assertIn('symbol="BTCUSDT"', runtime_data)
+
                 self.assertFalse((node / "private_plugins").exists())
                 self.assertFalse((package / "private_plugins").exists())
                 self.assertTrue((node / "RUNBOOK.md").exists())

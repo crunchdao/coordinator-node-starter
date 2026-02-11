@@ -1838,15 +1838,18 @@ def _runtime_definitions_data() -> str:
     return """
 from __future__ import annotations
 
+from coordinator_runtime.data_sources.binance import (
+    provide_binance_raw_input,
+    resolve_binance_ground_truth,
+)
+
 
 def provide_raw_input(now):
-    _ = now
-    return {}
+    return provide_binance_raw_input(now, symbol="BTCUSDT")
 
 
 def resolve_ground_truth(prediction):
-    _ = prediction
-    return {}
+    return resolve_binance_ground_truth(prediction, symbol="BTCUSDT")
 """
 
 
