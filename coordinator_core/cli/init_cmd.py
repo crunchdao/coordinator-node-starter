@@ -4,63 +4,193 @@ import json
 import re
 import shutil
 from pathlib import Path
+from typing import Any
 
 _SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+_DEFAULT_CALLABLES = {
+    "INFERENCE_INPUT_BUILDER": "{package_module}.inference:build_input",
+    "INFERENCE_OUTPUT_VALIDATOR": "{package_module}.validation:validate_output",
+    "SCORING_FUNCTION": "{package_module}.scoring:score_prediction",
+    "MODEL_SCORE_AGGREGATOR": "{package_module}.scoring:aggregate_model_scores",
+    "REPORT_SCHEMA_PROVIDER": "{package_module}.reporting:report_schema",
+    "LEADERBOARD_RANKER": "node_template.extensions.default_callables:default_rank_leaderboard",
+    "RAW_INPUT_PROVIDER": "node_template.extensions.default_callables:default_provide_raw_input",
+    "GROUND_TRUTH_RESOLVER": "node_template.extensions.default_callables:default_resolve_ground_truth",
+    "PREDICTION_SCOPE_BUILDER": "node_template.extensions.default_callables:default_build_prediction_scope",
+    "PREDICT_CALL_BUILDER": "node_template.extensions.default_callables:default_build_predict_call",
+}
 
 
 def is_valid_slug(name: str) -> bool:
     return bool(_SLUG_PATTERN.fullmatch(name or ""))
 
 
-def run_init(name: str, project_root: Path, force: bool = False) -> int:
-    if not is_valid_slug(name):
+def run_init(
+    name: str | None,
+    project_root: Path,
+    force: bool = False,
+    spec_path: Path | None = None,
+) -> int:
+    try:
+        spec = _load_spec(spec_path) if spec_path is not None else {}
+        resolved_name = _resolve_name(name=name, spec=spec)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+
+    if not is_valid_slug(resolved_name):
         print(
             "Invalid challenge name. Use lowercase slug format like 'btc-trader' "
             "(letters, numbers, single dashes)."
         )
         return 1
 
-    workspace_dir = project_root / "crunch-implementations" / name
+    workspace_dir = project_root / "crunch-implementations" / resolved_name
     if workspace_dir.exists():
         if not force:
             print(f"Target already exists: {workspace_dir}. Use --force to overwrite.")
             return 1
         shutil.rmtree(workspace_dir)
 
-    package_module = f"crunch_{name.replace('-', '_')}"
-    node_name = f"crunch-node-{name}"
-    challenge_name = f"crunch-{name}"
+    package_module = f"crunch_{resolved_name.replace('-', '_')}"
+    node_name = f"crunch-node-{resolved_name}"
+    challenge_name = f"crunch-{resolved_name}"
 
-    _write_tree(
-        workspace_dir,
-        {
-            "README.md": _workspace_readme(name),
-            f"{node_name}/README.md": _node_readme(name),
-            f"{node_name}/pyproject.toml": _node_pyproject(node_name, challenge_name),
-            f"{node_name}/.local.env.example": _node_local_env(package_module),
-            f"{node_name}/config/README.md": _node_config_readme(),
-            f"{node_name}/config/callables.env": _node_callables_env(package_module),
-            f"{node_name}/config/scheduled_prediction_configs.json": _scheduled_prediction_configs(),
-            f"{node_name}/deployment/README.md": _node_deployment_readme(),
-            f"{node_name}/plugins/README.md": _plugins_readme("node"),
-            f"{node_name}/extensions/README.md": _extensions_readme("node"),
-            f"{challenge_name}/README.md": _challenge_readme(name, package_module),
-            f"{challenge_name}/pyproject.toml": _challenge_pyproject(challenge_name, package_module),
-            f"{challenge_name}/{package_module}/__init__.py": _challenge_init(),
-            f"{challenge_name}/{package_module}/tracker.py": _challenge_tracker(),
-            f"{challenge_name}/{package_module}/inference.py": _challenge_inference(),
-            f"{challenge_name}/{package_module}/validation.py": _challenge_validation(),
-            f"{challenge_name}/{package_module}/scoring.py": _challenge_scoring(),
-            f"{challenge_name}/{package_module}/reporting.py": _challenge_reporting(),
-            f"{challenge_name}/{package_module}/schemas/README.md": _schemas_readme(),
-            f"{challenge_name}/{package_module}/plugins/README.md": _plugins_readme("challenge"),
-            f"{challenge_name}/{package_module}/extensions/README.md": _extensions_readme("challenge"),
-        },
-    )
+    try:
+        crunch_id = str(spec.get("crunch_id", "starter-challenge"))
+        base_classname = str(spec.get("model_base_classname", f"{package_module}.tracker.TrackerBase"))
+        checkpoint_interval_seconds = int(spec.get("checkpoint_interval_seconds", 60))
+
+        callables = _merge_callables(
+            package_module=package_module,
+            overrides=spec.get("callables") or {},
+        )
+
+        scheduled_prediction_configs = _resolve_scheduled_prediction_configs(
+            spec.get("scheduled_prediction_configs")
+        )
+    except (TypeError, ValueError) as exc:
+        print(f"Invalid spec: {exc}")
+        return 1
+
+    files = {
+        "README.md": _workspace_readme(resolved_name),
+        f"{node_name}/README.md": _node_readme(resolved_name),
+        f"{node_name}/pyproject.toml": _node_pyproject(node_name, challenge_name),
+        f"{node_name}/.local.env.example": _node_local_env(
+            crunch_id=crunch_id,
+            base_classname=base_classname,
+            checkpoint_interval_seconds=checkpoint_interval_seconds,
+        ),
+        f"{node_name}/config/README.md": _node_config_readme(),
+        f"{node_name}/config/callables.env": _node_callables_env(callables),
+        f"{node_name}/config/scheduled_prediction_configs.json": _scheduled_prediction_configs(
+            scheduled_prediction_configs
+        ),
+        f"{node_name}/deployment/README.md": _node_deployment_readme(),
+        f"{node_name}/plugins/README.md": _plugins_readme("node"),
+        f"{node_name}/extensions/README.md": _extensions_readme("node"),
+        f"{challenge_name}/README.md": _challenge_readme(resolved_name, package_module),
+        f"{challenge_name}/pyproject.toml": _challenge_pyproject(challenge_name, package_module),
+        f"{challenge_name}/{package_module}/__init__.py": _challenge_init(),
+        f"{challenge_name}/{package_module}/tracker.py": _challenge_tracker(),
+        f"{challenge_name}/{package_module}/inference.py": _challenge_inference(),
+        f"{challenge_name}/{package_module}/validation.py": _challenge_validation(),
+        f"{challenge_name}/{package_module}/scoring.py": _challenge_scoring(),
+        f"{challenge_name}/{package_module}/reporting.py": _challenge_reporting(),
+        f"{challenge_name}/{package_module}/schemas/README.md": _schemas_readme(),
+        f"{challenge_name}/{package_module}/plugins/README.md": _plugins_readme("challenge"),
+        f"{challenge_name}/{package_module}/extensions/README.md": _extensions_readme("challenge"),
+    }
+
+    if spec_path is not None:
+        files["spec.json"] = json.dumps(spec, indent=2)
+
+    _write_tree(workspace_dir, files)
 
     print(f"Scaffold created: {workspace_dir}")
     print(f"Next: cd {workspace_dir / node_name}")
     return 0
+
+
+def _resolve_name(name: str | None, spec: dict[str, Any]) -> str:
+    spec_name = spec.get("name")
+
+    if name and spec_name and name != spec_name:
+        raise ValueError(
+            f"Name mismatch: CLI name '{name}' does not match spec name '{spec_name}'."
+        )
+
+    resolved = name or spec_name
+    if not resolved:
+        raise ValueError("Challenge name required. Provide <name> or include 'name' in --spec.")
+
+    return str(resolved)
+
+
+def _load_spec(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise ValueError(f"Spec file not found: {path}")
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Spec file is not valid JSON: {path} ({exc})") from exc
+
+    if not isinstance(payload, dict):
+        raise ValueError("Spec root must be a JSON object")
+
+    return payload
+
+
+def _merge_callables(package_module: str, overrides: dict[str, Any]) -> dict[str, str]:
+    if not isinstance(overrides, dict):
+        raise ValueError("'callables' must be an object of ENV_KEY -> module:callable")
+
+    defaults = {
+        key: value.format(package_module=package_module) for key, value in _DEFAULT_CALLABLES.items()
+    }
+
+    merged = dict(defaults)
+    for key, value in overrides.items():
+        if key not in defaults:
+            allowed = ", ".join(sorted(defaults.keys()))
+            raise ValueError(f"Unknown callable key '{key}'. Allowed keys: {allowed}")
+        if not isinstance(value, str) or ":" not in value:
+            raise ValueError(f"Callable override for '{key}' must be '<module>:<callable>'")
+        merged[key] = value
+
+    return merged
+
+
+def _resolve_scheduled_prediction_configs(value: Any) -> list[dict[str, Any]]:
+    if value is None:
+        return [
+            {
+                "scope_key": "default",
+                "scope_template": {
+                    "asset": "BTC",
+                    "horizon_seconds": 60,
+                    "step_seconds": 60,
+                },
+                "schedule": {"every_seconds": 60},
+                "active": True,
+                "order": 0,
+            }
+        ]
+
+    if not isinstance(value, list) or not value:
+        raise ValueError("'scheduled_prediction_configs' must be a non-empty array")
+
+    for idx, row in enumerate(value):
+        if not isinstance(row, dict):
+            raise ValueError(f"scheduled_prediction_configs[{idx}] must be an object")
+        for field in ("scope_key", "scope_template", "schedule"):
+            if field not in row:
+                raise ValueError(f"scheduled_prediction_configs[{idx}] missing '{field}'")
+
+    return value
 
 
 def _write_tree(base_dir: Path, files: dict[str, str]) -> None:
@@ -116,7 +246,11 @@ coordinator-node-starter = {{ path = "../../..", editable = true }}
 """
 
 
-def _node_local_env(package_module: str) -> str:
+def _node_local_env(
+    crunch_id: str,
+    base_classname: str,
+    checkpoint_interval_seconds: int,
+) -> str:
     return f"""
 POSTGRES_USER=starter
 POSTGRES_PASSWORD=starter
@@ -128,9 +262,9 @@ MODEL_RUNNER_NODE_HOST=model-orchestrator
 MODEL_RUNNER_NODE_PORT=9091
 MODEL_RUNNER_TIMEOUT_SECONDS=60
 
-CRUNCH_ID=starter-challenge
-MODEL_BASE_CLASSNAME={package_module}.tracker.TrackerBase
-CHECKPOINT_INTERVAL_SECONDS=60
+CRUNCH_ID={crunch_id}
+MODEL_BASE_CLASSNAME={base_classname}
+CHECKPOINT_INTERVAL_SECONDS={checkpoint_interval_seconds}
 """
 
 
@@ -143,32 +277,23 @@ def _node_config_readme() -> str:
 """
 
 
-def _node_callables_env(package_module: str) -> str:
-    return f"""
-INFERENCE_INPUT_BUILDER={package_module}.inference:build_input
-INFERENCE_OUTPUT_VALIDATOR={package_module}.validation:validate_output
-SCORING_FUNCTION={package_module}.scoring:score_prediction
-MODEL_SCORE_AGGREGATOR={package_module}.scoring:aggregate_model_scores
-REPORT_SCHEMA_PROVIDER={package_module}.reporting:report_schema
-
-LEADERBOARD_RANKER=node_template.extensions.default_callables:default_rank_leaderboard
-RAW_INPUT_PROVIDER=node_template.extensions.default_callables:default_provide_raw_input
-GROUND_TRUTH_RESOLVER=node_template.extensions.default_callables:default_resolve_ground_truth
-PREDICTION_SCOPE_BUILDER=node_template.extensions.default_callables:default_build_prediction_scope
-PREDICT_CALL_BUILDER=node_template.extensions.default_callables:default_build_predict_call
-"""
-
-
-def _scheduled_prediction_configs() -> str:
-    payload = [
-        {
-            "scope_key": "default",
-            "scope_template": {"asset": "BTC", "horizon_seconds": 60, "step_seconds": 60},
-            "schedule": {"every_seconds": 60},
-            "active": True,
-            "order": 0,
-        }
+def _node_callables_env(callables: dict[str, str]) -> str:
+    order = [
+        "INFERENCE_INPUT_BUILDER",
+        "INFERENCE_OUTPUT_VALIDATOR",
+        "SCORING_FUNCTION",
+        "MODEL_SCORE_AGGREGATOR",
+        "REPORT_SCHEMA_PROVIDER",
+        "LEADERBOARD_RANKER",
+        "RAW_INPUT_PROVIDER",
+        "GROUND_TRUTH_RESOLVER",
+        "PREDICTION_SCOPE_BUILDER",
+        "PREDICT_CALL_BUILDER",
     ]
+    return "\n".join(f"{key}={callables[key]}" for key in order)
+
+
+def _scheduled_prediction_configs(payload: list[dict[str, Any]]) -> str:
     return json.dumps(payload, indent=2)
 
 

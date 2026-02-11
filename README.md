@@ -18,6 +18,12 @@ Legacy status:
 > coordinator init <challenge-slug>
 > ```
 >
+> Spec-driven scaffolding is also supported:
+>
+> ```bash
+> coordinator init --spec path/to/spec.json
+> ```
+>
 > This generates `crunch-implementations/<challenge-slug>/` with:
 > - `crunch-node-<challenge-slug>` (thin node wiring)
 > - `crunch-<challenge-slug>` (challenge package stubs)

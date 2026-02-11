@@ -11,7 +11,11 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     init_parser = subparsers.add_parser("init", help="Scaffold a thin challenge workspace")
-    init_parser.add_argument("name", help="Challenge slug, e.g. btc-trader")
+    init_parser.add_argument("name", nargs="?", help="Challenge slug, e.g. btc-trader")
+    init_parser.add_argument(
+        "--spec",
+        help="Path to init spec JSON file. Can define name/callables/schedule/env defaults.",
+    )
     init_parser.add_argument(
         "--force",
         action="store_true",
@@ -28,7 +32,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "init":
-        return run_init(name=args.name, project_root=Path.cwd(), force=args.force)
+        spec_path = Path(args.spec) if args.spec else None
+        return run_init(name=args.name, project_root=Path.cwd(), force=args.force, spec_path=spec_path)
     if args.command == "doctor":
         print("coordinator doctor is planned for PR2")
         return 0

@@ -10,10 +10,40 @@ You can scaffold both with the CLI:
 coordinator init <name>
 ```
 
+Or use a spec file (JSON) for agent-generated setup:
+
+```bash
+coordinator init --spec path/to/spec.json
+```
+
 This creates:
 
 - `crunch-implementations/<name>/crunch-node-<name>`
 - `crunch-implementations/<name>/crunch-<name>`
+
+Minimal `spec.json` example:
+
+```json
+{
+  "name": "btc-trader",
+  "crunch_id": "starter-challenge",
+  "model_base_classname": "crunch_btc_trader.tracker.TrackerBase",
+  "checkpoint_interval_seconds": 60,
+  "callables": {
+    "SCORING_FUNCTION": "crunch_btc_trader.scoring:score_prediction",
+    "REPORT_SCHEMA_PROVIDER": "crunch_btc_trader.reporting:report_schema"
+  },
+  "scheduled_prediction_configs": [
+    {
+      "scope_key": "default",
+      "scope_template": {"asset": "BTC", "horizon_seconds": 60, "step_seconds": 60},
+      "schedule": {"every_seconds": 60},
+      "active": true,
+      "order": 0
+    }
+  ]
+}
+```
 
 Manual structure reference:
 

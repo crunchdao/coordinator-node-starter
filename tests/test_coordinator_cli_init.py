@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -18,6 +19,11 @@ def _cwd(path: Path):
 
 
 class TestCoordinatorCliInit(unittest.TestCase):
+    @staticmethod
+    def _write_spec(path: Path, payload: dict) -> Path:
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
     def test_init_creates_expected_workspace_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
             with _cwd(Path(tmp)):
@@ -64,6 +70,92 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertEqual(first, 0)
                 self.assertEqual(second, 1)
                 self.assertEqual(forced, 0)
+
+    def test_init_supports_name_from_spec(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                spec_path = self._write_spec(
+                    Path("spec.json"),
+                    {
+                        "name": "eth-trader",
+                        "crunch_id": "challenge-eth",
+                        "model_base_classname": "crunch_eth_trader.tracker.CustomTrackerBase",
+                    },
+                )
+
+                code = main(["init", "--spec", str(spec_path)])
+                self.assertEqual(code, 0)
+
+                node_env = Path(
+                    "crunch-implementations/eth-trader/crunch-node-eth-trader/.local.env.example"
+                ).read_text(encoding="utf-8")
+                self.assertIn("CRUNCH_ID=challenge-eth", node_env)
+                self.assertIn(
+                    "MODEL_BASE_CLASSNAME=crunch_eth_trader.tracker.CustomTrackerBase",
+                    node_env,
+                )
+
+    def test_init_spec_overrides_callables_and_schedule(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                spec_path = self._write_spec(
+                    Path("btc-spec.json"),
+                    {
+                        "name": "btc-trader",
+                        "callables": {
+                            "SCORING_FUNCTION": "crunch_btc_trader.scoring:score_v2",
+                            "REPORT_SCHEMA_PROVIDER": "crunch_btc_trader.reporting:report_schema_v2",
+                        },
+                        "scheduled_prediction_configs": [
+                            {
+                                "scope_key": "btc-5m",
+                                "scope_template": {
+                                    "asset": "BTC",
+                                    "horizon_seconds": 300,
+                                    "step_seconds": 60,
+                                },
+                                "schedule": {"every_seconds": 300},
+                                "active": True,
+                                "order": 0,
+                            }
+                        ],
+                    },
+                )
+
+                code = main(["init", "btc-trader", "--spec", str(spec_path)])
+                self.assertEqual(code, 0)
+
+                callables_env = Path(
+                    "crunch-implementations/btc-trader/crunch-node-btc-trader/config/callables.env"
+                ).read_text(encoding="utf-8")
+                self.assertIn(
+                    "SCORING_FUNCTION=crunch_btc_trader.scoring:score_v2",
+                    callables_env,
+                )
+                self.assertIn(
+                    "REPORT_SCHEMA_PROVIDER=crunch_btc_trader.reporting:report_schema_v2",
+                    callables_env,
+                )
+
+                schedule_raw = Path(
+                    "crunch-implementations/btc-trader/crunch-node-btc-trader/config/scheduled_prediction_configs.json"
+                ).read_text(encoding="utf-8")
+                schedule = json.loads(schedule_raw)
+                self.assertEqual(schedule[0]["scope_key"], "btc-5m")
+                self.assertEqual(schedule[0]["schedule"]["every_seconds"], 300)
+
+    def test_init_fails_without_name_and_without_spec(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                code = main(["init"])
+                self.assertEqual(code, 1)
+
+    def test_init_rejects_name_mismatch_between_cli_and_spec(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                spec_path = self._write_spec(Path("spec.json"), {"name": "eth-trader"})
+                code = main(["init", "btc-trader", "--spec", str(spec_path)])
+                self.assertEqual(code, 1)
 
     def test_init_rejects_invalid_slug(self):
         with tempfile.TemporaryDirectory() as tmp:
