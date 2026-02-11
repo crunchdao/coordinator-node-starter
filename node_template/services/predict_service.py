@@ -196,6 +196,13 @@ class PredictService:
             except Exception as exc:
                 validation_error = str(exc)
                 status = "FAILED"
+                self.logger.error(
+                    "INFERENCE_OUTPUT_VALIDATION_ERROR model_id=%s scope_key=%s error=%s raw_output=%s",
+                    model.id,
+                    scope_key,
+                    validation_error,
+                    inference_output,
+                )
 
             inference_input_payload = dict(inference_input)
             inference_input_payload["_scope"] = scope_object
