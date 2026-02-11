@@ -429,8 +429,16 @@ def _render_scaffold_files(config: InitConfig, include_spec: bool) -> dict[str, 
         ("{challenge_name}/{package_module}/examples/__init__.py", _challenge_examples_init()),
         ("{challenge_name}/{package_module}/examples/README.md", _challenge_examples_readme()),
         (
-            "{challenge_name}/{package_module}/examples/quickstarter_tracker.py",
-            _challenge_quickstarter_tracker(config.package_module),
+            "{challenge_name}/{package_module}/examples/mean_reversion_tracker.py",
+            _challenge_mean_reversion_tracker(config.package_module),
+        ),
+        (
+            "{challenge_name}/{package_module}/examples/trend_following_tracker.py",
+            _challenge_trend_following_tracker(config.package_module),
+        ),
+        (
+            "{challenge_name}/{package_module}/examples/volatility_regime_tracker.py",
+            _challenge_volatility_regime_tracker(config.package_module),
         ),
     ]
 
@@ -582,7 +590,9 @@ summary: Agent instructions for implementing challenge logic.
 
 ## Quickstarters (public)
 
-- `{package_module}/examples/quickstarter_tracker.py`
+- `{package_module}/examples/mean_reversion_tracker.py`
+- `{package_module}/examples/trend_following_tracker.py`
+- `{package_module}/examples/volatility_regime_tracker.py`
 
 ## Node-private callable files
 
@@ -1470,7 +1480,9 @@ Implement participant-facing files in:
 
 - `tracker.py`
 - `scoring.py`
-- `examples/quickstarter_tracker.py`
+- `examples/mean_reversion_tracker.py`
+- `examples/trend_following_tracker.py`
+- `examples/volatility_regime_tracker.py`
 
 Node-private runtime callables live in:
 
@@ -1523,9 +1535,15 @@ class TrackerBase:
 
 def _challenge_examples_init() -> str:
     return """
-from .quickstarter_tracker import QuickstarterTracker
+from .mean_reversion_tracker import MeanReversionTracker
+from .trend_following_tracker import TrendFollowingTracker
+from .volatility_regime_tracker import VolatilityRegimeTracker
 
-__all__ = ["QuickstarterTracker"]
+__all__ = [
+    "MeanReversionTracker",
+    "TrendFollowingTracker",
+    "VolatilityRegimeTracker",
+]
 """
 
 
@@ -1533,28 +1551,227 @@ def _challenge_examples_readme() -> str:
     return """
 # examples
 
-Public quickstarters for participants.
+Simple public quickstarters for participants.
 
-Keep these examples simple and runnable without node-private dependencies.
+- `mean_reversion_tracker.py` — fades short-term overextension.
+- `trend_following_tracker.py` — follows short-term momentum.
+- `volatility_regime_tracker.py` — adapts signal strength across volatility regimes.
+
+All examples return a prediction dictionary with a numeric `value` field.
 """
 
 
-def _challenge_quickstarter_tracker(package_module: str) -> str:
+def _challenge_mean_reversion_tracker(package_module: str) -> str:
     return f"""
 from __future__ import annotations
 
 from {package_module}.tracker import TrackerBase
 
 
-class QuickstarterTracker(TrackerBase):
-    \"\"\"Minimal quickstarter tracker.
-
-    Replace this logic with your own model.
-    \"\"\"
+class MeanReversionTracker(TrackerBase):
+    \"\"\"Predicts pullback after short-term overextension.\"\"\"
 
     def predict(self, **kwargs):
-        _ = kwargs
-        return {{"value": 0.0}}
+        prices = _extract_prices(kwargs, getattr(self, "_latest_data", None))
+        if len(prices) < 3:
+            return {{"value": 0.0}}
+
+        lookback = min(5, len(prices))
+        window = prices[-lookback:]
+        average = sum(window) / lookback
+        deviation = (window[-1] - average) / max(abs(average), 1e-9)
+
+        return {{"value": -0.7 * deviation}}
+
+
+def _extract_prices(kwargs, latest_data):
+    for key in ("prices", "series"):
+        values = kwargs.get(key)
+        if isinstance(values, list):
+            return _to_numeric(values)
+
+    candles = kwargs.get("candles_1m")
+    if isinstance(candles, list):
+        return _closes(candles)
+
+    if isinstance(latest_data, dict) and isinstance(latest_data.get("candles_1m"), list):
+        return _closes(latest_data["candles_1m"])
+
+    return []
+
+
+def _closes(candles):
+    closes = []
+    for row in candles:
+        if not isinstance(row, dict):
+            continue
+        value = row.get("close")
+        try:
+            closes.append(float(value))
+        except Exception:
+            continue
+    return closes
+
+
+def _to_numeric(values):
+    numeric = []
+    for value in values:
+        try:
+            numeric.append(float(value))
+        except Exception:
+            continue
+    return numeric
+"""
+
+
+def _challenge_trend_following_tracker(package_module: str) -> str:
+    return f"""
+from __future__ import annotations
+
+from {package_module}.tracker import TrackerBase
+
+
+class TrendFollowingTracker(TrackerBase):
+    \"\"\"Projects recent direction forward with conservative scaling.\"\"\"
+
+    def predict(self, **kwargs):
+        prices = _extract_prices(kwargs, getattr(self, "_latest_data", None))
+        if len(prices) < 3:
+            return {{"value": 0.0}}
+
+        lookback = min(8, len(prices))
+        window = prices[-lookback:]
+        momentum = (window[-1] - window[0]) / max(abs(window[0]), 1e-9)
+
+        return {{"value": 0.6 * momentum}}
+
+
+def _extract_prices(kwargs, latest_data):
+    for key in ("prices", "series"):
+        values = kwargs.get(key)
+        if isinstance(values, list):
+            return _to_numeric(values)
+
+    candles = kwargs.get("candles_1m")
+    if isinstance(candles, list):
+        return _closes(candles)
+
+    if isinstance(latest_data, dict) and isinstance(latest_data.get("candles_1m"), list):
+        return _closes(latest_data["candles_1m"])
+
+    return []
+
+
+def _closes(candles):
+    closes = []
+    for row in candles:
+        if not isinstance(row, dict):
+            continue
+        value = row.get("close")
+        try:
+            closes.append(float(value))
+        except Exception:
+            continue
+    return closes
+
+
+def _to_numeric(values):
+    numeric = []
+    for value in values:
+        try:
+            numeric.append(float(value))
+        except Exception:
+            continue
+    return numeric
+"""
+
+
+def _challenge_volatility_regime_tracker(package_module: str) -> str:
+    return f"""
+from __future__ import annotations
+
+from math import sqrt
+
+from {package_module}.tracker import TrackerBase
+
+
+class VolatilityRegimeTracker(TrackerBase):
+    \"\"\"Dampens directional signal when short-term volatility spikes.\"\"\"
+
+    def predict(self, **kwargs):
+        prices = _extract_prices(kwargs, getattr(self, "_latest_data", None))
+        returns = _returns(prices)
+        if len(returns) < 3:
+            return {{"value": 0.0}}
+
+        split = max(1, len(returns) // 2)
+        baseline_vol = _volatility(returns[:split])
+        recent_vol = _volatility(returns[split:])
+
+        momentum = sum(returns[-3:]) / min(3, len(returns))
+        volatility_ratio = recent_vol / max(baseline_vol, 1e-6)
+        dampening = 1.0 + max(0.0, volatility_ratio - 1.0)
+
+        return {{"value": momentum / dampening}}
+
+
+def _extract_prices(kwargs, latest_data):
+    for key in ("prices", "series"):
+        values = kwargs.get(key)
+        if isinstance(values, list):
+            return _to_numeric(values)
+
+    candles = kwargs.get("candles_1m")
+    if isinstance(candles, list):
+        return _closes(candles)
+
+    if isinstance(latest_data, dict) and isinstance(latest_data.get("candles_1m"), list):
+        return _closes(latest_data["candles_1m"])
+
+    return []
+
+
+def _returns(prices):
+    if len(prices) < 2:
+        return []
+
+    output = []
+    for idx in range(1, len(prices)):
+        prev = prices[idx - 1]
+        cur = prices[idx]
+        if prev == 0:
+            continue
+        output.append((cur - prev) / prev)
+    return output
+
+
+def _volatility(values):
+    if not values:
+        return 0.0
+    return sqrt(sum(value * value for value in values) / len(values))
+
+
+def _closes(candles):
+    closes = []
+    for row in candles:
+        if not isinstance(row, dict):
+            continue
+        value = row.get("close")
+        try:
+            closes.append(float(value))
+        except Exception:
+            continue
+    return closes
+
+
+def _to_numeric(values):
+    numeric = []
+    for value in values:
+        try:
+            numeric.append(float(value))
+        except Exception:
+            continue
+    return numeric
 """
 
 

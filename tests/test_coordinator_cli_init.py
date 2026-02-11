@@ -81,7 +81,29 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertFalse((package / "extensions" / "README.md").exists())
                 self.assertTrue((package / "examples" / "__init__.py").exists())
                 self.assertTrue((package / "examples" / "README.md").exists())
-                self.assertTrue((package / "examples" / "quickstarter_tracker.py").exists())
+                self.assertTrue((package / "examples" / "mean_reversion_tracker.py").exists())
+                self.assertTrue((package / "examples" / "trend_following_tracker.py").exists())
+                self.assertTrue((package / "examples" / "volatility_regime_tracker.py").exists())
+                self.assertFalse((package / "examples" / "quickstarter_tracker.py").exists())
+
+                examples_init = (package / "examples" / "__init__.py").read_text(encoding="utf-8")
+                self.assertIn("MeanReversionTracker", examples_init)
+                self.assertIn("TrendFollowingTracker", examples_init)
+                self.assertIn("VolatilityRegimeTracker", examples_init)
+
+                mean_reversion = (package / "examples" / "mean_reversion_tracker.py").read_text(
+                    encoding="utf-8"
+                )
+                trend_following = (package / "examples" / "trend_following_tracker.py").read_text(
+                    encoding="utf-8"
+                )
+                volatility_regime = (package / "examples" / "volatility_regime_tracker.py").read_text(
+                    encoding="utf-8"
+                )
+
+                self.assertIn("class MeanReversionTracker", mean_reversion)
+                self.assertIn("class TrendFollowingTracker", trend_following)
+                self.assertIn("class VolatilityRegimeTracker", volatility_regime)
 
                 self.assertTrue((node / "runtime_definitions" / "__init__.py").exists())
                 self.assertTrue((node / "runtime_definitions" / "inference.py").exists())
@@ -119,7 +141,10 @@ class TestCoordinatorCliInit(unittest.TestCase):
 
                 self.assertIn("tracker.py", challenge_skill)
                 self.assertIn("scoring.py", challenge_skill)
-                self.assertIn("examples/quickstarter_tracker.py", challenge_skill)
+                self.assertIn("examples/mean_reversion_tracker.py", challenge_skill)
+                self.assertIn("examples/trend_following_tracker.py", challenge_skill)
+                self.assertIn("examples/volatility_regime_tracker.py", challenge_skill)
+                self.assertNotIn("examples/quickstarter_tracker.py", challenge_skill)
                 self.assertNotIn("crunch_btc_trader/validation.py", challenge_skill)
                 self.assertIn("../crunch-node-btc-trader/runtime_definitions", challenge_skill)
 

@@ -75,7 +75,9 @@ Define these in your Crunch repos (not in this template):
 - Define model interface  
   `crunch-<name>/crunch_<name>/tracker.py`
 - Define participant quickstarters  
-  `crunch-<name>/crunch_<name>/examples/quickstarter_tracker.py`
+  `crunch-<name>/crunch_<name>/examples/mean_reversion_tracker.py`  
+  `crunch-<name>/crunch_<name>/examples/trend_following_tracker.py`  
+  `crunch-<name>/crunch_<name>/examples/volatility_regime_tracker.py`
 - Define scoring function for local self-eval  
   `crunch-<name>/crunch_<name>/scoring.py`
 - Define runtime inference input  
