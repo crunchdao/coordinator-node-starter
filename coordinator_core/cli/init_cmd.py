@@ -574,34 +574,115 @@ Keep core envelope contracts in `coordinator_core` and embed challenge payloads 
 def _plugins_readme(scope: str) -> str:
     if scope == "node":
         return """
-# plugins
+# plugins (node-private)
 
-Node-side adapters/integrations/helpers.
+Use this folder for **node-side integrations** that should not live in the public challenge package.
 
-Use this folder for wiring that should stay private to node infrastructure.
+## Put code here when
+
+- you call private/external APIs (keys/secrets live in node env)
+- you need infrastructure-specific data shaping
+- logic is operational, not challenge-contract logic
+
+## Typical modules
+
+- `raw_input.py` → source data adapters
+- `ground_truth.py` → truth resolvers
+
+## Expected callable shapes
+
+```python
+def provide_raw_input(now):
+    ...
+
+def resolve_ground_truth(prediction):
+    ...  # return dict or None
+```
+
+## Wire via env
+
+- `RAW_INPUT_PROVIDER=node_plugins.raw_input:provide_raw_input`
+- `GROUND_TRUTH_RESOLVER=node_plugins.ground_truth:resolve_ground_truth`
+
+Keep these functions pure and deterministic where possible.
 """
     return """
-# plugins
+# plugins (challenge-public)
 
-Challenge-side public adapters/helpers.
+Use this folder for **reusable public helpers/adapters** that support challenge logic.
 
-Use this folder for reusable public challenge code.
+## Put code here when
+
+- helper is useful across inference/scoring/reporting
+- code is safe to publish (no secrets)
+- it does not depend on private node infrastructure
+
+## Typical modules
+
+- `features.py` → feature engineering helpers
+- `math_utils.py` → shared scoring math
+- `normalization.py` → shared transforms
+
+Then import from `inference.py`, `scoring.py`, or `reporting.py`.
 """
 
 
 def _extensions_readme(scope: str) -> str:
     if scope == "node":
         return """
-# extensions
+# extensions (node-private)
 
-Node-side callable wiring and optional override hooks.
+Use this folder for **node-specific callable overrides** selected via env variables.
 
-Use this folder for custom integration glue while keeping runtime core in `coordinator_core`.
+## Put code here when
+
+- default callables from `node_template` are not enough
+- override should stay private to this node deployment
+- you need custom ranking/scope/predict/report behavior
+
+## Common override callables
+
+```python
+def build_prediction_scope(config, inference_input):
+    ...
+
+def build_predict_call(config, inference_input, scope):
+    ...
+
+def rank_leaderboard(entries):
+    ...
+```
+
+## Wire via env
+
+- `PREDICTION_SCOPE_BUILDER=extensions.scope:build_prediction_scope`
+- `PREDICT_CALL_BUILDER=extensions.predict:build_predict_call`
+- `LEADERBOARD_RANKER=extensions.ranking:rank_leaderboard`
+
+Match signatures exactly, otherwise runtime validation will fail.
 """
     return """
-# extensions
+# extensions (challenge-public)
 
-Challenge-side callable groups and extension helpers.
+Use this folder to group **public challenge callable profiles**.
 
-Keep public scoring/ranking/reporting extension sets here when useful.
+## Recommended structure
+
+- `baseline.py` → default scoring/ranking/report schema
+- `risk_adjusted.py` → alternative profile
+
+## Example exports per profile
+
+```python
+def score_prediction(prediction, ground_truth):
+    ...
+
+def aggregate_model_scores(scored_predictions, models):
+    ...
+
+def report_schema():
+    ...
+```
+
+Then point env vars to the selected profile module.
 """
