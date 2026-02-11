@@ -20,6 +20,6 @@ class RuntimeSettings:
             model_runner_node_host=os.getenv("MODEL_RUNNER_NODE_HOST", "model-orchestrator"),
             model_runner_node_port=int(os.getenv("MODEL_RUNNER_NODE_PORT", "9091")),
             model_runner_timeout_seconds=int(os.getenv("MODEL_RUNNER_TIMEOUT_SECONDS", "60")),
-            crunch_id=os.getenv("CRUNCH_ID", "condorgame"),
-            base_classname=os.getenv("MODEL_BASE_CLASSNAME", "condorgame.tracker.TrackerBase"),
+            crunch_id=os.getenv("CRUNCH_ID", "starter-challenge"),
+            base_classname=os.getenv("MODEL_BASE_CLASSNAME", "main.TrackerBase"),
         )

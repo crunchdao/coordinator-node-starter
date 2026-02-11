@@ -5,7 +5,7 @@ description: Use when defining or changing raw data sources and inference input-
 
 # Data Sources & Inference Input
 
-> Compatibility note: this skill file remains in `condorgame_backend/infrastructure/http/` for routing; implementation targets are in `node_template/`.
+> Compatibility note: this skill file may be mirrored under legacy backend paths for routing; implementation targets are in `node_template/`.
 
 ## Goal
 

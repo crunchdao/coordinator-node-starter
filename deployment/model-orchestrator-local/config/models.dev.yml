@@ -3,10 +3,10 @@ models:
 
     # submission code id, it is the code used to run the model
     # the corresponding directory must exist in the storage
-  submission_id: condorgame-benchmarktracker
+  submission_id: starter-benchmarktracker
 
     # which crunch this model must be run on
-  crunch_id: condorgame
+  crunch_id: starter-challenge
 
     # which desired state this model must be in: "RUNNING", "STOPPED"
   desired_state: RUNNING

@@ -5,7 +5,7 @@ description: Use when defining or changing model interface, inference input/outp
 
 # Prediction Format & Inference Contracts
 
-> Compatibility note: this skill file stays in `condorgame_backend/entities/` for agent routing, but targets the **new structure** (`coordinator_core/` + `node_template/`).
+> Compatibility note: this skill file may be mirrored under legacy backend paths for agent routing, but targets the **new structure** (`coordinator_core/` + `node_template/`).
 
 ## Goal
 

@@ -6,11 +6,11 @@ from sqlmodel import Session, create_engine
 
 
 def database_url() -> str:
-    user = os.getenv("POSTGRES_USER", "condorgame")
-    password = os.getenv("POSTGRES_PASSWORD", "condorgame")
+    user = os.getenv("POSTGRES_USER", "starter")
+    password = os.getenv("POSTGRES_PASSWORD", "starter")
     host = os.getenv("POSTGRES_HOST", "postgres")
     port = os.getenv("POSTGRES_PORT", "5432")
-    db = os.getenv("POSTGRES_DB", "condorgame")
+    db = os.getenv("POSTGRES_DB", "starter")
     return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"
 
 

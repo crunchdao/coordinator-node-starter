@@ -5,7 +5,7 @@ description: Use when defining or changing scoring callable behavior, ModelScore
 
 # Scoring, ModelScore, and Cadence
 
-> Compatibility note: this skill file remains in `condorgame_backend/services/` for routing, but all implementation targets are in `node_template/` and `coordinator_core/`.
+> Compatibility note: this skill file may be mirrored under legacy backend paths for routing, but all implementation targets are in `node_template/` and `coordinator_core/`.
 
 ## Goal
 

@@ -4,4 +4,6 @@
 
 # Except model-orchestrator-local
 !model-orchestrator-local
+!model-orchestrator-local/config/
+!model-orchestrator-local/config/**
 !postgres/init-scripts/

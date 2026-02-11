@@ -49,8 +49,8 @@ watcher:
     path: "/app/config/models.dev.yml"
 
 crunches:
-  - id: "condorgame"
-    name: "condorgame"
+  - id: "starter-challenge"
+    name: "starter-challenge"
     infrastructure:
       zone: "local"
 

@@ -2,9 +2,9 @@ x-common-env:
   environment: &common-db-env
     POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
     POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-    POSTGRES_USER: ${POSTGRES_USER:-condorgame}
-    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-condorgame}
-    POSTGRES_DB: ${POSTGRES_DB:-condorgame}
+    POSTGRES_USER: ${POSTGRES_USER:-starter}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
+    POSTGRES_DB: ${POSTGRES_DB:-starter}
 
 x-common-build: &common-build
   build:
@@ -51,8 +51,8 @@ services:
       MODEL_RUNNER_NODE_PORT: ${MODEL_RUNNER_NODE_PORT:-9091}
       MODEL_RUNNER_TIMEOUT_SECONDS: ${MODEL_RUNNER_TIMEOUT_SECONDS:-60}
       CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-60}
-      CRUNCH_ID: ${CRUNCH_ID:-condorgame}
-      MODEL_BASE_CLASSNAME: ${MODEL_BASE_CLASSNAME:-condorgame.tracker.TrackerBase}
+      CRUNCH_ID: ${CRUNCH_ID:-starter-challenge}
+      MODEL_BASE_CLASSNAME: ${MODEL_BASE_CLASSNAME:-main.TrackerBase}
       INFERENCE_INPUT_BUILDER: ${INFERENCE_INPUT_BUILDER:-node_template.extensions.default_callables:default_build_inference_input}
       INFERENCE_OUTPUT_VALIDATOR: ${INFERENCE_OUTPUT_VALIDATOR:-node_template.extensions.default_callables:default_validate_inference_output}
       RAW_INPUT_PROVIDER: ${RAW_INPUT_PROVIDER:-node_template.extensions.default_callables:default_provide_raw_input}

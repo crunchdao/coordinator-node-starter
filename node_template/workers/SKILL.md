@@ -5,7 +5,7 @@ description: Use when defining leaderboard ranking behavior and report API outpu
 
 # Leaderboard & Report Endpoints
 
-> Compatibility note: this skill file remains in `condorgame_backend/workers/` for routing; implementation targets are in `node_template/`.
+> Compatibility note: this skill file may be mirrored under legacy backend paths for routing; implementation targets are in `node_template/`.
 
 ## Goal
 

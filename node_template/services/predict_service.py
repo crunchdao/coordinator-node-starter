@@ -36,8 +36,8 @@ class PredictService:
         model_runner_node_host: str = "model-orchestrator",
         model_runner_node_port: int = 9091,
         model_runner_timeout_seconds: int = 60,
-        crunch_id: str = "condorgame",
-        base_classname: str = "condorgame.tracker.TrackerBase",
+        crunch_id: str = "starter-challenge",
+        base_classname: str = "main.TrackerBase",
     ):
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
         self.raw_input_provider = raw_input_provider

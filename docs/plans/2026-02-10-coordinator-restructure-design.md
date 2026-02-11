@@ -123,7 +123,7 @@ Implementers may add typed columns or extra tables in `crunch-node-<name>` when 
 
 1. Create `coordinator_core/` contracts and canonical schema models
 2. Create `node_template/` runnable default workers/services
-3. Remove `condorgame_backend/` entirely
+3. Remove legacy backend package paths entirely
 4. Repoint deployment and runtime imports to new structure
 5. Add callable resolver + startup fail-fast validation
 6. Rework docs around two-repo usage model
@@ -146,7 +146,7 @@ Implementers may add typed columns or extra tables in `crunch-node-<name>` when 
 ## 8) Non-Goals (for this refactor)
 
 - Immediate extraction of `coordinator_core` as pip-install package
-- Backward compatibility layer for `condorgame_backend`
+- Backward compatibility layer for legacy backend paths
 - DB-driven dynamic callable override
 
 ## 9) Usage Model After Refactor

@@ -17,10 +17,10 @@ class TestSkillFileLocations(unittest.TestCase):
 
     def test_legacy_skill_files_if_present_are_compatibility_stubs(self):
         legacy_map = {
-            Path("condorgame_backend/entities/SKILL.md"): "node_template/entities/SKILL.md",
-            Path("condorgame_backend/services/SKILL.md"): "node_template/services/SKILL.md",
-            Path("condorgame_backend/workers/SKILL.md"): "node_template/workers/SKILL.md",
-            Path("condorgame_backend/infrastructure/http/SKILL.md"): "node_template/infrastructure/http/SKILL.md",
+            Path("legacy_backend/entities/SKILL.md"): "node_template/entities/SKILL.md",
+            Path("legacy_backend/services/SKILL.md"): "node_template/services/SKILL.md",
+            Path("legacy_backend/workers/SKILL.md"): "node_template/workers/SKILL.md",
+            Path("legacy_backend/infrastructure/http/SKILL.md"): "node_template/infrastructure/http/SKILL.md",
         }
 
         for old_path, new_path in legacy_map.items():
