@@ -14,7 +14,10 @@ from coordinator_core.services.interfaces.leaderboard_repository import Leaderbo
 from coordinator_core.services.interfaces.model_repository import ModelRepository
 from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
 from node_template.extensions.callable_resolver import resolve_callable
-from node_template.extensions.risk_adjusted_callables import compute_return_metrics, flatten_risk_metrics
+from node_template.extensions.default_callables import (
+    default_compute_window_metrics,
+    default_flatten_report_metrics,
+)
 from node_template.infrastructure.db import (
     DBLeaderboardRepository,
     DBModelRepository,
@@ -136,7 +139,7 @@ def get_leaderboard(
                 "score_metrics": metrics,
                 "score_ranking": normalized.score.ranking.model_dump(exclude_none=True),
                 "score_payload": dict(normalized.score.payload),
-                **flatten_risk_metrics(metrics),
+                **default_flatten_report_metrics(metrics),
                 "rank": normalized.rank if normalized.rank is not None else 999999,
                 "model_name": normalized.model_name,
                 "cruncher_name": normalized.cruncher_name,
@@ -161,7 +164,7 @@ def get_models_global(
         if not scores:
             continue
 
-        metrics = compute_return_metrics([float(value) for value in scores])
+        metrics = default_compute_window_metrics([float(value) for value in scores])
         performed_at = max((p.performed_at for p in predictions), default=end)
 
         rows.append(
@@ -169,12 +172,11 @@ def get_models_global(
                 "model_id": model_id,
                 "score_metrics": metrics,
                 "score_ranking": {
-                    "key": "sharpe_like",
-                    "value": metrics.get("sharpe_like"),
+                    "key": "anchor",
+                    "value": metrics.get("anchor"),
                     "direction": "desc",
-                    "tie_breakers": ["wealth", "mean_return"],
                 },
-                **flatten_risk_metrics(metrics),
+                **default_flatten_report_metrics(metrics),
                 "performed_at": performed_at,
             }
         )
@@ -203,7 +205,7 @@ def get_models_params(
         if not scores:
             continue
 
-        metrics = compute_return_metrics([float(value) for value in scores])
+        metrics = default_compute_window_metrics([float(value) for value in scores])
         performed_at = max((p.performed_at for p in predictions), default=end)
         scope = predictions[-1].scope if predictions else {}
 
@@ -214,12 +216,11 @@ def get_models_params(
                 "scope": scope,
                 "score_metrics": metrics,
                 "score_ranking": {
-                    "key": "sharpe_like",
-                    "value": metrics.get("sharpe_like"),
+                    "key": "anchor",
+                    "value": metrics.get("anchor"),
                     "direction": "desc",
-                    "tie_breakers": ["wealth", "mean_return"],
                 },
-                **flatten_risk_metrics(metrics),
+                **default_flatten_report_metrics(metrics),
                 "performed_at": performed_at,
             }
         )

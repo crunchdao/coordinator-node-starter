@@ -58,7 +58,7 @@ class TestReportUiConfigContract(unittest.TestCase):
         self.leaderboard_config = json.loads(Path("deployment/report-ui/config/leaderboard-columns.json").read_text())
         self.widgets_config = json.loads(Path("deployment/report-ui/config/metrics-widgets.json").read_text())
         self.backend_schema = resolve_report_schema(
-            "node_template.extensions.risk_adjusted_callables:risk_adjusted_report_schema"
+            "node_template.extensions.default_callables:default_report_schema"
         )
 
     def test_leaderboard_columns_match_leaderboard_payload(self):
@@ -69,17 +69,14 @@ class TestReportUiConfigContract(unittest.TestCase):
             cruncher_name="alice",
             score={
                 "metrics": {
-                    "sharpe_like": 1.5,
-                    "wealth": 1.12,
-                    "mean_return": 0.02,
-                    "volatility": 0.01,
-                    "hit_rate": 0.65,
+                    "recent": 0.4,
+                    "steady": 0.5,
+                    "anchor": 0.6,
                 },
                 "ranking": {
-                    "key": "sharpe_like",
-                    "value": 1.5,
+                    "key": "anchor",
+                    "value": 0.6,
                     "direction": "desc",
-                    "tie_breakers": ["wealth", "mean_return"],
                 },
                 "payload": {"num_predictions": 42},
             },

@@ -60,6 +60,7 @@ Set dotted paths in node runtime config:
 - `SCORING_FUNCTION`
 - `MODEL_SCORE_AGGREGATOR`
 - `LEADERBOARD_RANKER`
+- `REPORT_SCHEMA_PROVIDER`
 
 ## 5) Configure scheduled prediction configs
 
@@ -76,13 +77,30 @@ Predict worker reads active rows, builds scope/predict calls, and writes predict
 - `scope_key`
 - `scope_jsonb`
 
-## 6) Verify end-to-end
+## 6) Define report schema contract for UI sync
+
+Expose canonical report schema from backend through `REPORT_SCHEMA_PROVIDER`.
+
+The report worker serves:
+
+- `GET /reports/schema`
+- `GET /reports/schema/leaderboard-columns`
+- `GET /reports/schema/metrics-widgets`
+
+Recommended FE behavior:
+
+1. fetch backend schema (canonical)
+2. merge local override files (labels/order/visibility)
+3. warn when override keys are unknown to backend schema
+
+## 7) Verify end-to-end
 
 ```bash
 make deploy
 curl -s http://localhost:8000/healthz
 curl -s http://localhost:8000/reports/models
 curl -s http://localhost:8000/reports/leaderboard
+curl -s http://localhost:8000/reports/schema
 ```
 
 ## JSONB ownership summary

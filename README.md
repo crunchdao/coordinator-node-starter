@@ -51,7 +51,8 @@ This starter profile provides:
 
 - Pyth BTC price input
 - output validation (`p_up` or density payload)
-- Brier scoring
+- default Brier + 3-window leaderboard metrics (`recent`, `steady`, `anchor`)
+- optional alternative scoring/ranking profiles (e.g. risk-adjusted Sharpe-like)
 - Pyth-based ground-truth resolution
 
 ## Run local template stack (end-to-end)
@@ -78,6 +79,13 @@ Useful endpoints:
 - Local `report-ui` mounts config to both:
   - `/app/config`
   - `/app/apps/starter/config`
+- Report worker exposes schema endpoints:
+  - `/reports/schema`
+  - `/reports/schema/leaderboard-columns`
+  - `/reports/schema/metrics-widgets`
+- `REPORT_SCHEMA_PROVIDER` selects the canonical schema callable used by report worker.
+  - FE can merge local override files on top of this canonical schema.
+  - Default schema provides `score_recent`, `score_steady`, `score_anchor` fields.
 
 ## Documentation
 

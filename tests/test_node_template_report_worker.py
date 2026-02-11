@@ -184,9 +184,9 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         response = get_models_global(["m1"], start, end, repo)
         self.assertEqual(len(response), 1)
         self.assertEqual(response[0]["model_id"], "m1")
-        self.assertIn("sharpe_like", response[0]["score_metrics"])
-        self.assertEqual(response[0]["score_ranking"]["key"], "sharpe_like")
-        self.assertIn("score_sharpe_like", response[0])
+        self.assertIn("anchor", response[0]["score_metrics"])
+        self.assertEqual(response[0]["score_ranking"]["key"], "anchor")
+        self.assertIn("score_anchor", response[0])
 
     def test_get_models_params_returns_grouped_entries(self):
         predictions = [
@@ -202,9 +202,9 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         response = get_models_params(["m1"], start, end, repo)
         self.assertEqual(len(response), 2)
         btc = next(item for item in response if item["scope_key"] == "BTC-60")
-        self.assertIn("sharpe_like", btc["score_metrics"])
-        self.assertEqual(btc["score_ranking"]["key"], "sharpe_like")
-        self.assertIn("score_sharpe_like", btc)
+        self.assertIn("anchor", btc["score_metrics"])
+        self.assertEqual(btc["score_ranking"]["key"], "anchor")
+        self.assertIn("score_anchor", btc)
 
     def test_get_predictions_requires_single_model(self):
         repo = InMemoryPredictionRepository([])
