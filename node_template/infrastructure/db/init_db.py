@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlmodel import SQLModel, delete
 
 from coordinator_core.infrastructure.db.db_tables import PredictionConfigRow
+from coordinator_core.schemas import ScheduledPredictionConfigEnvelope
 from node_template.infrastructure.db.session import create_session, engine
 
 MINUTE = 60
@@ -51,15 +52,16 @@ def init_db() -> None:
     with create_session() as session:
         session.exec(delete(PredictionConfigRow))
         for idx, config in enumerate(default_scheduled_prediction_configs(), start=1):
+            envelope = ScheduledPredictionConfigEnvelope.model_validate(config)
             session.add(
                 PredictionConfigRow(
                     id=f"CFG_{idx:03d}",
-                    scope_key=config["scope_key"],
-                    scope_template_jsonb=config["scope_template"],
-                    schedule_jsonb=config["schedule"],
-                    active=config["active"],
-                    order=config["order"],
-                    meta_jsonb={},
+                    scope_key=envelope.scope_key,
+                    scope_template_jsonb=envelope.scope_template,
+                    schedule_jsonb=envelope.schedule.model_dump(),
+                    active=envelope.active,
+                    order=envelope.order,
+                    meta_jsonb=envelope.meta,
                 )
             )
         session.commit()

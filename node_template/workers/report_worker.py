@@ -8,6 +8,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from sqlmodel import Session
 
+from coordinator_core.schemas import LeaderboardEntryEnvelope
 from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
 from coordinator_core.services.interfaces.model_repository import ModelRepository
 from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
@@ -80,23 +81,41 @@ def get_leaderboard(
 
     normalized_entries = []
     for entry in entries:
-        score_obj = entry.get("score", {}) if isinstance(entry.get("score"), dict) else {}
-        windows = score_obj.get("windows", {}) if isinstance(score_obj.get("windows"), dict) else {}
+        normalized = LeaderboardEntryEnvelope.model_validate(
+            {
+                "model_id": entry.get("model_id"),
+                "score": entry.get("score")
+                if isinstance(entry.get("score"), dict)
+                else {
+                    "windows": {
+                        "recent": entry.get("score_recent"),
+                        "steady": entry.get("score_steady"),
+                        "anchor": entry.get("score_anchor"),
+                    },
+                    "rank_key": entry.get("rank_key", entry.get("score_anchor")),
+                    "payload": {},
+                },
+                "rank": entry.get("rank"),
+                "model_name": entry.get("model_name"),
+                "cruncher_name": entry.get("cruncher_name", entry.get("player_name")),
+            }
+        )
 
+        windows = dict(normalized.score.windows)
         normalized_entries.append(
             {
                 "created_at": created_at,
-                "model_id": entry.get("model_id"),
+                "model_id": normalized.model_id,
                 "score_windows": windows,
-                "score_rank_key": score_obj.get("rank_key", entry.get("rank_key")),
-                "score_payload": score_obj.get("payload", {}),
+                "score_rank_key": normalized.score.rank_key,
+                "score_payload": dict(normalized.score.payload),
                 # backward-compatible fields
                 "score_recent": entry.get("score_recent", windows.get("recent")),
                 "score_steady": entry.get("score_steady", windows.get("steady")),
                 "score_anchor": entry.get("score_anchor", windows.get("anchor")),
-                "rank": entry.get("rank", 999999),
-                "model_name": entry.get("model_name"),
-                "cruncher_name": entry.get("cruncher_name", entry.get("player_name")),
+                "rank": normalized.rank if normalized.rank is not None else 999999,
+                "model_name": normalized.model_name,
+                "cruncher_name": normalized.cruncher_name,
             }
         )
 

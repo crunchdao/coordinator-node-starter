@@ -89,6 +89,7 @@ erDiagram
 ## Notes
 
 - Challenge-specific shapes are carried in JSONB (`*_jsonb`) and typed in application code.
+- Core JSONB envelope schemas are defined in `coordinator_core/schemas/payload_contracts.py`.
 - `scope_key` + `scope_jsonb` are generic prediction dimensions.
 - `model_scores.score_payload_jsonb` is the canonical per-model score envelope/payload container.
 - `leaderboards.entries_jsonb` remains snapshot-oriented and denormalized by design.

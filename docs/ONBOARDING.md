@@ -18,6 +18,9 @@ The database is intentionally generic. Challenge-specific structure lives in JSO
 
 Define typed schemas (Pydantic/dataclasses) for:
 
+- core envelope contracts live in `coordinator_core/schemas/payload_contracts.py`
+- challenge-specific payload schemas live in your challenge package (`crunch_<name>/...`)
+
 - `scheduled_prediction_configs.scope_template_jsonb`
 - `scheduled_prediction_configs.schedule_jsonb`
 - `predictions.scope_jsonb`

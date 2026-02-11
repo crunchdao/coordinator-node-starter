@@ -8,6 +8,8 @@ from typing import Any
 
 import requests
 
+from node_template.plugins.schemas import BtcGroundTruthSchema, BtcRawInputSchema, BtcScopeSchema, ProbabilityUpOutputSchema
+
 BTC_USD_PYTH_FEED_ID = "0xe62df6c8b4a85fe1cc8b337a5f8854d9c1f5f59e4cb4ce8b063a492f6ed5b5b6"
 
 _FALLBACK_PRICE = 45_000.0
@@ -57,13 +59,14 @@ def build_raw_input_from_pyth(now: datetime, client: PythHermesClient | None = N
     # Build a tiny synthetic history so starter benchmark models can compute variance immediately.
     # (3 points, 5-minute spacing, non-zero variance in returns)
     delta = max(confidence, abs(price) * 0.0001, 1e-6)
-    return {
+    payload = {
         "BTC": [
             (ts - 600, price - 1.75 * delta),
             (ts - 300, price - 0.5 * delta),
             (ts, price),
         ]
     }
+    return BtcRawInputSchema.model_validate(payload).model_dump()
 
 
 def validate_probability_up_output(inference_output: dict[str, Any]) -> dict[str, Any]:
@@ -72,19 +75,19 @@ def validate_probability_up_output(inference_output: dict[str, Any]) -> dict[str
     if p_up is None:
         raise ValueError("inference_output must contain a valid 'p_up' or a parseable density payload")
 
-    if p_up < 0.0 or p_up > 1.0:
-        raise ValueError("'p_up' must be within [0, 1]")
-
-    return {"p_up": p_up}
+    normalized = ProbabilityUpOutputSchema.model_validate({"p_up": p_up})
+    return normalized.model_dump()
 
 
 def resolve_ground_truth_from_pyth(prediction: Any, client: PythHermesClient | None = None) -> dict[str, Any] | None:
     prediction_scope = getattr(prediction, "scope", {}) or {}
-    asset = ""
-    if isinstance(prediction_scope, dict):
-        asset = str(prediction_scope.get("asset", ""))
 
-    if asset.upper() != "BTC":
+    try:
+        parsed_scope = BtcScopeSchema.model_validate(prediction_scope)
+    except Exception:
+        return None
+
+    if parsed_scope.asset.upper() != "BTC":
         return None
 
     entry_price = _extract_entry_price(getattr(prediction, "inference_input", {}) or {})
@@ -95,7 +98,7 @@ def resolve_ground_truth_from_pyth(prediction: Any, client: PythHermesClient | N
     latest = _get_latest_price_or_fallback(resolved_client, datetime.now())
     resolved_price = float(latest["price"])
 
-    return {
+    truth = {
         "asset": "BTC",
         "entry_price": float(entry_price),
         "resolved_price": resolved_price,
@@ -103,6 +106,7 @@ def resolve_ground_truth_from_pyth(prediction: Any, client: PythHermesClient | N
         "y_up": resolved_price > float(entry_price),
         "source": latest.get("source", "pyth"),
     }
+    return BtcGroundTruthSchema.model_validate(truth).model_dump()
 
 
 def score_brier_probability_up(prediction: dict[str, Any], ground_truth: dict[str, Any]) -> dict[str, Any]:
@@ -110,12 +114,12 @@ def score_brier_probability_up(prediction: dict[str, Any], ground_truth: dict[st
         p_up = _extract_probability_up(prediction)
         if p_up is None:
             raise ValueError("could not extract p_up from prediction payload")
-        if p_up < 0.0 or p_up > 1.0:
-            raise ValueError("'p_up' must be within [0, 1]")
 
-        y_up = bool(ground_truth["y_up"])
-        y_value = 1.0 if y_up else 0.0
-        brier_loss = (p_up - y_value) ** 2
+        normalized_prediction = ProbabilityUpOutputSchema.model_validate({"p_up": p_up})
+        normalized_truth = BtcGroundTruthSchema.model_validate(ground_truth)
+
+        y_value = 1.0 if normalized_truth.y_up else 0.0
+        brier_loss = (normalized_prediction.p_up - y_value) ** 2
 
         return {
             "value": 1.0 - brier_loss,

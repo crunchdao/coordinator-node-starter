@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from coordinator_core.entities.prediction import PredictionScore
+from coordinator_core.schemas import LeaderboardEntryEnvelope, ScoreEnvelope
 
 
 class ScoreService:
@@ -131,22 +132,22 @@ class ScoreService:
             avg_score = sum(scores) / len(scores)
             model = models.get(model_id)
 
-            entries.append(
-                {
-                    "model_id": model_id,
-                    "score": {
-                        "windows": {
-                            "recent": avg_score,
-                            "steady": avg_score,
-                            "anchor": avg_score,
-                        },
-                        "rank_key": avg_score,
-                        "payload": {},
-                    },
-                    "model_name": model.name if model else None,
-                    "cruncher_name": model.player_name if model else None,
-                }
+            score_envelope = ScoreEnvelope(
+                windows={
+                    "recent": avg_score,
+                    "steady": avg_score,
+                    "anchor": avg_score,
+                },
+                rank_key=avg_score,
+                payload={},
             )
+            entry_envelope = LeaderboardEntryEnvelope(
+                model_id=model_id,
+                score=score_envelope,
+                model_name=model.name if model else None,
+                cruncher_name=model.player_name if model else None,
+            )
+            entries.append(entry_envelope.model_dump(exclude_none=True))
 
         return [self._normalize_score_entry(entry) for entry in entries]
 
@@ -187,32 +188,32 @@ class ScoreService:
             raise ValueError("Model score aggregator entries must be dictionaries")
 
         score = entry.get("score")
-        if isinstance(score, dict):
-            windows = score.get("windows") if isinstance(score.get("windows"), dict) else {}
-            rank_key = score.get("rank_key")
-            payload = score.get("payload") if isinstance(score.get("payload"), dict) else {}
-            return {
-                **entry,
-                "score": {
-                    "windows": windows,
-                    "rank_key": rank_key,
-                    "payload": payload,
+        if not isinstance(score, dict):
+            score = {
+                "windows": {
+                    "recent": entry.get("score_recent"),
+                    "steady": entry.get("score_steady"),
+                    "anchor": entry.get("score_anchor"),
                 },
+                "rank_key": entry.get("rank_key", entry.get("score_anchor")),
+                "payload": {},
             }
 
-        windows = {
-            "recent": entry.get("score_recent"),
-            "steady": entry.get("score_steady"),
-            "anchor": entry.get("score_anchor"),
-        }
-        rank_key = entry.get("rank_key", entry.get("score_anchor"))
+        normalized_score = ScoreEnvelope.model_validate(score)
+        normalized_entry = LeaderboardEntryEnvelope.model_validate(
+            {
+                "model_id": entry.get("model_id"),
+                "score": normalized_score,
+                "rank": entry.get("rank"),
+                "model_name": entry.get("model_name"),
+                "cruncher_name": entry.get("cruncher_name"),
+            }
+        )
+
         return {
             **entry,
-            "score": {
-                "windows": windows,
-                "rank_key": rank_key,
-                "payload": {},
-            },
+            **normalized_entry.model_dump(exclude_none=True),
+            "score": normalized_score.model_dump(),
         }
 
     @classmethod

@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from coordinator_core.entities.model import Model
 from coordinator_core.entities.prediction import PredictionRecord
+from coordinator_core.schemas import PredictionScopeEnvelope, ScheduleEnvelope
 
 try:
     from model_runner_client.grpc.generated.commons_pb2 import Argument, Variant, VariantType
@@ -110,8 +111,9 @@ class PredictService:
             batch_predictions = await self._predict_for_config(config=config, inference_input=inference_input, now=now)
             created_predictions.extend(batch_predictions)
 
-            schedule = config.get("schedule") if isinstance(config.get("schedule"), dict) else {}
-            interval = int(schedule.get("prediction_interval_seconds", self.checkpoint_interval_seconds))
+            schedule_dict = config.get("schedule") if isinstance(config.get("schedule"), dict) else {}
+            schedule = ScheduleEnvelope.model_validate(schedule_dict)
+            interval = int(schedule.prediction_interval_seconds)
             self._next_run_by_config_id[config_id] = now + timedelta(seconds=interval)
 
         if created_predictions:
@@ -298,19 +300,25 @@ class PredictService:
 
     def _build_scope(self, config: dict[str, Any], inference_input: dict[str, Any]) -> dict[str, Any]:
         if self.prediction_scope_builder is None:
-            return {
-                "scope_key": str(config.get("scope_key") or "default-scope"),
-                "scope": dict(config.get("scope_template") or {}),
-            }
+            envelope = PredictionScopeEnvelope.model_validate(
+                {
+                    "scope_key": str(config.get("scope_key") or "default-scope"),
+                    "scope": dict(config.get("scope_template") or {}),
+                }
+            )
+            return envelope.model_dump()
 
         scope = self.prediction_scope_builder(config, inference_input)
         if not isinstance(scope, dict):
             raise ValueError("prediction_scope_builder must return a dictionary")
 
-        return {
-            "scope_key": str(scope.get("scope_key") or config.get("scope_key") or "default-scope"),
-            "scope": dict(scope.get("scope") or {}),
-        }
+        envelope = PredictionScopeEnvelope.model_validate(
+            {
+                "scope_key": str(scope.get("scope_key") or config.get("scope_key") or "default-scope"),
+                "scope": dict(scope.get("scope") or {}),
+            }
+        )
+        return envelope.model_dump()
 
     def _build_predict_call(self, config: dict[str, Any], inference_input: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
         if self.predict_call_builder is None:
@@ -331,8 +339,9 @@ class PredictService:
 
     @staticmethod
     def _resolve_resolvable_at(config: dict[str, Any], now: datetime, scope: dict[str, Any]) -> datetime:
-        schedule = config.get("schedule") if isinstance(config.get("schedule"), dict) else {}
-        resolve_after = schedule.get("resolve_after_seconds")
+        schedule_dict = config.get("schedule") if isinstance(config.get("schedule"), dict) else {}
+        schedule = ScheduleEnvelope.model_validate(schedule_dict)
+        resolve_after = schedule.resolve_after_seconds
 
         if resolve_after is None:
             scope_payload = scope.get("scope") if isinstance(scope, dict) else {}

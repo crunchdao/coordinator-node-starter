@@ -13,6 +13,7 @@ from coordinator_core.infrastructure.db.db_tables import (
     PredictionConfigRow,
     PredictionRow,
 )
+from coordinator_core.schemas import PredictionScopeEnvelope, ScheduledPredictionConfigEnvelope, ScoreEnvelope
 from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
 from coordinator_core.services.interfaces.model_repository import ModelRepository
 from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
@@ -97,42 +98,25 @@ class DBModelRepository(ModelRepository):
     def _score_to_json(score: ModelScore | None) -> dict[str, Any]:
         if score is None:
             return {}
-        return {
-            "windows": score.windows,
-            "rank_key": score.rank_key,
-            "payload": score.payload,
-        }
+        envelope = ScoreEnvelope.model_validate(
+            {
+                "windows": score.windows,
+                "rank_key": score.rank_key,
+                "payload": score.payload,
+            }
+        )
+        return envelope.model_dump()
 
     @staticmethod
     def _json_to_score(score_payload: dict[str, Any]) -> ModelScore | None:
         if not score_payload:
             return None
 
-        windows = score_payload.get("windows") if isinstance(score_payload.get("windows"), dict) else {}
-        rank_key = score_payload.get("rank_key")
-        payload = score_payload.get("payload") if isinstance(score_payload.get("payload"), dict) else {}
-
-        rank_value = None
-        if rank_key is not None:
-            try:
-                rank_value = float(rank_key)
-            except Exception:
-                rank_value = None
-
-        normalized_windows: dict[str, float | None] = {}
-        for key, value in windows.items():
-            if value is None:
-                normalized_windows[str(key)] = None
-                continue
-            try:
-                normalized_windows[str(key)] = float(value)
-            except Exception:
-                normalized_windows[str(key)] = None
-
+        envelope = ScoreEnvelope.model_validate(score_payload)
         return ModelScore(
-            windows=normalized_windows,
-            rank_key=rank_value,
-            payload=payload,
+            windows=dict(envelope.windows),
+            rank_key=envelope.rank_key,
+            payload=dict(envelope.payload),
         )
 
 
@@ -185,18 +169,22 @@ class DBPredictionRepository(PredictionRepository):
             .order_by(PredictionConfigRow.order.asc())
         ).all()
 
-        return [
-            {
-                "id": row.id,
-                "scope_key": row.scope_key,
-                "scope_template": row.scope_template_jsonb or {},
-                "schedule": row.schedule_jsonb or {},
-                "active": row.active,
-                "order": row.order,
-                "meta": row.meta_jsonb or {},
-            }
-            for row in rows
-        ]
+        configs: list[dict[str, Any]] = []
+        for row in rows:
+            envelope = ScheduledPredictionConfigEnvelope.model_validate(
+                {
+                    "id": row.id,
+                    "scope_key": row.scope_key,
+                    "scope_template": row.scope_template_jsonb or {},
+                    "schedule": row.schedule_jsonb or {},
+                    "active": row.active,
+                    "order": row.order,
+                    "meta": row.meta_jsonb or {},
+                }
+            )
+            configs.append(envelope.model_dump())
+
+        return configs
 
     def fetch_scored_predictions(self) -> list[PredictionRecord]:
         rows = self._session.exec(
@@ -235,12 +223,19 @@ class DBPredictionRepository(PredictionRepository):
         score_failed_reason = prediction.score.failed_reason if prediction.score else None
         score_scored_at = prediction.score.scored_at if prediction.score else None
 
+        scope_envelope = PredictionScopeEnvelope.model_validate(
+            {
+                "scope_key": prediction.scope_key,
+                "scope": prediction.scope,
+            }
+        )
+
         return PredictionRow(
             id=prediction.id,
             model_id=prediction.model_id,
             prediction_config_id=prediction.prediction_config_id,
-            scope_key=prediction.scope_key,
-            scope_jsonb=prediction.scope,
+            scope_key=scope_envelope.scope_key,
+            scope_jsonb=scope_envelope.scope,
             status=prediction.status,
             exec_time_ms=prediction.exec_time_ms,
             inference_input_jsonb=prediction.inference_input,
@@ -265,12 +260,19 @@ class DBPredictionRepository(PredictionRepository):
                 scored_at=row.score_scored_at or datetime.now(timezone.utc),
             )
 
+        scope_envelope = PredictionScopeEnvelope.model_validate(
+            {
+                "scope_key": row.scope_key,
+                "scope": row.scope_jsonb or {},
+            }
+        )
+
         return PredictionRecord(
             id=row.id,
             model_id=row.model_id,
             prediction_config_id=row.prediction_config_id,
-            scope_key=row.scope_key,
-            scope=row.scope_jsonb or {},
+            scope_key=scope_envelope.scope_key,
+            scope=scope_envelope.scope,
             status=row.status,
             exec_time_ms=row.exec_time_ms,
             inference_input=row.inference_input_jsonb or {},
