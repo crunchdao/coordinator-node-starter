@@ -116,6 +116,7 @@ Useful endpoints:
 For scaffold-first local challenge onboarding, see:
 
 - `docs/ONBOARDING.md`
+- `docs/flow.md` (standard deterministic flow: answers file + preflight + runbook + process log)
 
 ## Runtime notes (current defaults)
 

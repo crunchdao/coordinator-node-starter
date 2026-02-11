@@ -4,6 +4,7 @@ import json
 import re
 import shutil
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,44 @@ def load_spec(path: Path) -> dict[str, Any]:
         raise ValueError("Spec root must be a JSON object")
 
     return payload
+
+
+def load_answers(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise ValueError(f"Answers file not found: {path}")
+
+    raw = path.read_text(encoding="utf-8")
+    suffix = path.suffix.lower()
+
+    if suffix == ".json":
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Answers file is not valid JSON: {path} ({exc})") from exc
+    else:
+        try:
+            import yaml  # type: ignore
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(
+                "YAML answers require PyYAML. Install with `pip install pyyaml` or use JSON answers."
+            ) from exc
+
+        try:
+            payload = yaml.safe_load(raw)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(f"Answers file is not valid YAML: {path} ({exc})") from exc
+
+    if payload is None:
+        return {}
+    if not isinstance(payload, dict):
+        raise ValueError("Answers root must be an object")
+    return payload
+
+
+def merge_answers_with_spec(answers: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(answers)
+    merged.update(spec)
+    return merged
 
 
 def resolve_init_config(
@@ -159,6 +198,7 @@ def run_init(
     project_root: Path,
     force: bool = False,
     spec_path: Path | None = None,
+    answers_path: Path | None = None,
     preset_name: str | None = None,
     list_presets: bool = False,
 ) -> int:
@@ -169,10 +209,12 @@ def run_init(
         return 0
 
     try:
+        answers = load_answers(answers_path) if answers_path is not None else {}
         spec = load_spec(spec_path) if spec_path is not None else {}
+        merged_spec = merge_answers_with_spec(answers=answers, spec=spec)
         config = resolve_init_config(
             name=name,
-            spec=spec,
+            spec=merged_spec,
             require_spec_version=spec_path is not None,
             preset_name=preset_name,
         )
@@ -199,6 +241,26 @@ def run_init(
     except Exception as exc:  # noqa: BLE001
         print(f"Failed to vendor runtime packages: {exc}")
         return 1
+
+    _write_process_log(
+        workspace_dir,
+        [
+            {
+                "phase": "init",
+                "action": "scaffold_created",
+                "status": "ok",
+                "workspace": str(workspace_dir),
+                "challenge": config.name,
+                "preset": config.preset,
+            },
+            {
+                "phase": "init",
+                "action": "runtime_vendored",
+                "status": "ok",
+                "runtime_dir": str(workspace_dir / config.node_name / "runtime"),
+            },
+        ],
+    )
 
     print(f"Scaffold created: {workspace_dir}")
     print(f"Next: cd {workspace_dir / config.node_name}")
@@ -285,6 +347,7 @@ def _render_scaffold_files(config: InitConfig, include_spec: bool) -> dict[str, 
     manifest: list[tuple[str, str]] = [
         ("README.md", _workspace_readme(config.name)),
         ("{node_name}/README.md", _node_readme(config.name)),
+        ("{node_name}/RUNBOOK.md", _node_runbook(config.name, config.node_name, config.challenge_name)),
         ("{node_name}/Makefile", _node_makefile()),
         ("{node_name}/pyproject.toml", _node_pyproject(config.node_name, config.challenge_name)),
         ("{node_name}/Dockerfile", _node_dockerfile()),
@@ -379,6 +442,18 @@ def _write_tree(base_dir: Path, files: dict[str, str]) -> None:
         path.write_text(content.strip() + "\n", encoding="utf-8")
 
 
+def _write_process_log(workspace_dir: Path, events: list[dict[str, Any]]) -> None:
+    path = workspace_dir / "process-log.jsonl"
+    lines: list[str] = []
+    for event in events:
+        payload = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            **event,
+        }
+        lines.append(json.dumps(payload, separators=(",", ":")))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _vendor_runtime_packages(target_runtime_dir: Path) -> None:
     import coordinator_core
     import coordinator_runtime
@@ -432,6 +507,56 @@ From this folder:
 make deploy
 make verify-e2e
 ```
+"""
+
+
+def _node_runbook(name: str, node_name: str, challenge_name: str) -> str:
+    return f"""
+# RUNBOOK - {name}
+
+## Start
+```bash
+make deploy
+```
+
+## Verify
+```bash
+make verify-e2e
+```
+
+## Stop
+```bash
+make down
+```
+
+## Common issues
+
+### Ports already in use
+Preflight will halt if required ports are busy.
+
+Inspect:
+```bash
+lsof -nP -iTCP:3000 -sTCP:LISTEN
+lsof -nP -iTCP:8000 -sTCP:LISTEN
+lsof -nP -iTCP:9091 -sTCP:LISTEN
+lsof -nP -iTCP:5432 -sTCP:LISTEN
+```
+
+### BAD_IMPLEMENTATION / model runner failures
+- Confirm `MODEL_BASE_CLASSNAME=tracker.TrackerBase` in `.local.env`.
+- Ensure challenge package path is wired in `pyproject.toml` under `[tool.uv.sources]`.
+
+### Clean reset
+```bash
+make down
+rm -rf .venv
+make deploy
+make verify-e2e
+```
+
+## Local paths
+- Node workspace: `{node_name}`
+- Challenge package: `../{challenge_name}`
 """
 
 

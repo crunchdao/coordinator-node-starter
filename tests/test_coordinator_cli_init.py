@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import socket
 import tempfile
 import unittest
 from contextlib import contextmanager, redirect_stdout
@@ -76,6 +77,59 @@ class TestCoordinatorCliInit(unittest.TestCase):
 
                 self.assertFalse((node / "private_plugins").exists())
                 self.assertFalse((package / "private_plugins").exists())
+                self.assertTrue((node / "RUNBOOK.md").exists())
+                self.assertTrue((base / "process-log.jsonl").exists())
+
+    def test_init_generates_runbook_with_troubleshooting(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                code = main(["init", "btc-trader"])
+                self.assertEqual(code, 0)
+
+                runbook = Path("btc-trader/crunch-node-btc-trader/RUNBOOK.md").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn("Ports already in use", runbook)
+                self.assertIn("MODEL_BASE_CLASSNAME=tracker.TrackerBase", runbook)
+
+    def test_init_generates_process_log_jsonl(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                code = main(["init", "btc-trader"])
+                self.assertEqual(code, 0)
+
+                raw = Path("btc-trader/process-log.jsonl").read_text(encoding="utf-8").strip()
+                lines = [json.loads(line) for line in raw.splitlines()]
+                self.assertGreaterEqual(len(lines), 2)
+                self.assertEqual(lines[0]["phase"], "init")
+                self.assertIn("timestamp", lines[0])
+
+    def test_init_accepts_answers_file_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                answers = {
+                    "name": "from-answers",
+                    "crunch_id": "answers-crunch",
+                    "checkpoint_interval_seconds": 33,
+                }
+                Path("answers.json").write_text(json.dumps(answers), encoding="utf-8")
+
+                code = main(["init", "--answers", "answers.json"])
+                self.assertEqual(code, 0)
+
+                env = Path("from-answers/crunch-node-from-answers/.local.env").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn("CRUNCH_ID=answers-crunch", env)
+                self.assertIn("CHECKPOINT_INTERVAL_SECONDS=33", env)
+
+    def test_preflight_halts_when_port_busy(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            sock.listen(1)
+            port = sock.getsockname()[1]
+            code = main(["preflight", "--ports", str(port)])
+            self.assertEqual(code, 1)
 
     def test_init_defaults_model_base_classname_to_tracker_trackerbase(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -314,6 +368,13 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertIn("CHECKPOINT_INTERVAL_SECONDS=15", runtime_env)
                 self.assertEqual(schedule[0]["scope_key"], "realtime-btc")
                 self.assertEqual(schedule[0]["schedule"]["every_seconds"], 15)
+
+    def test_preflight_passes_when_port_free(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        code = main(["preflight", "--ports", str(port)])
+        self.assertEqual(code, 0)
 
     def test_init_rejects_unknown_preset(self):
         with tempfile.TemporaryDirectory() as tmp:

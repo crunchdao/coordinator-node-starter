@@ -5,6 +5,7 @@ from pathlib import Path
 
 from coordinator_core.cli.doctor_cmd import run_doctor
 from coordinator_core.cli.init_cmd import run_init
+from coordinator_core.cli.preflight_cmd import parse_ports, run_preflight
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -16,6 +17,10 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument(
         "--spec",
         help="Path to init spec JSON file. Can define name/callables/schedule/env defaults.",
+    )
+    init_parser.add_argument(
+        "--answers",
+        help="Path to upfront answers file (JSON or YAML). Merged before spec overrides.",
     )
     init_parser.add_argument(
         "--force",
@@ -41,6 +46,14 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("name", nargs="?", help="Optional challenge slug for cross-check")
     doctor_parser.add_argument("--spec", help="Path to init spec JSON file")
     doctor_parser.add_argument("--preset", help="Optional preset override for spec validation")
+
+    preflight_parser = subparsers.add_parser("preflight", help="Check local prerequisites")
+    preflight_parser.add_argument(
+        "--ports",
+        default="3000,5432,8000,9091",
+        help="Comma-separated ports that must be free (default: 3000,5432,8000,9091)",
+    )
+
     subparsers.add_parser("dev", help="Run local dev lifecycle (coming in PR3)")
     return parser
 
@@ -51,17 +64,26 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "init":
         spec_path = Path(args.spec) if args.spec else None
+        answers_path = Path(args.answers) if args.answers else None
         return run_init(
             name=args.name,
             project_root=Path(args.output).resolve(),
             force=args.force,
             spec_path=spec_path,
+            answers_path=answers_path,
             preset_name=args.preset,
             list_presets=args.list_presets,
         )
     if args.command == "doctor":
         spec_path = Path(args.spec) if args.spec else None
         return run_doctor(name=args.name, spec_path=spec_path, preset_name=args.preset)
+    if args.command == "preflight":
+        try:
+            ports = parse_ports(args.ports)
+        except ValueError as exc:
+            print(f"preflight failed: {exc}")
+            return 1
+        return run_preflight(ports=ports)
     if args.command == "dev":
         print("coordinator dev is planned for PR3")
         return 0
