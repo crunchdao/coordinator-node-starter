@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -22,114 +23,25 @@ _DEFAULT_CALLABLES = {
 }
 
 
+@dataclass(frozen=True)
+class InitConfig:
+    name: str
+    package_module: str
+    node_name: str
+    challenge_name: str
+    crunch_id: str
+    model_base_classname: str
+    checkpoint_interval_seconds: int
+    callables: dict[str, str]
+    scheduled_prediction_configs: list[dict[str, Any]]
+    spec: dict[str, Any]
+
+
 def is_valid_slug(name: str) -> bool:
     return bool(_SLUG_PATTERN.fullmatch(name or ""))
 
 
-def run_init(
-    name: str | None,
-    project_root: Path,
-    force: bool = False,
-    spec_path: Path | None = None,
-) -> int:
-    try:
-        spec = _load_spec(spec_path) if spec_path is not None else {}
-        resolved_name = _resolve_name(name=name, spec=spec)
-    except ValueError as exc:
-        print(str(exc))
-        return 1
-
-    if not is_valid_slug(resolved_name):
-        print(
-            "Invalid challenge name. Use lowercase slug format like 'btc-trader' "
-            "(letters, numbers, single dashes)."
-        )
-        return 1
-
-    workspace_dir = project_root / "crunch-implementations" / resolved_name
-    if workspace_dir.exists():
-        if not force:
-            print(f"Target already exists: {workspace_dir}. Use --force to overwrite.")
-            return 1
-        shutil.rmtree(workspace_dir)
-
-    package_module = f"crunch_{resolved_name.replace('-', '_')}"
-    node_name = f"crunch-node-{resolved_name}"
-    challenge_name = f"crunch-{resolved_name}"
-
-    try:
-        crunch_id = str(spec.get("crunch_id", "starter-challenge"))
-        base_classname = str(spec.get("model_base_classname", f"{package_module}.tracker.TrackerBase"))
-        checkpoint_interval_seconds = int(spec.get("checkpoint_interval_seconds", 60))
-
-        callables = _merge_callables(
-            package_module=package_module,
-            overrides=spec.get("callables") or {},
-        )
-
-        scheduled_prediction_configs = _resolve_scheduled_prediction_configs(
-            spec.get("scheduled_prediction_configs")
-        )
-    except (TypeError, ValueError) as exc:
-        print(f"Invalid spec: {exc}")
-        return 1
-
-    files = {
-        "README.md": _workspace_readme(resolved_name),
-        f"{node_name}/README.md": _node_readme(resolved_name),
-        f"{node_name}/pyproject.toml": _node_pyproject(node_name, challenge_name),
-        f"{node_name}/.local.env.example": _node_local_env(
-            crunch_id=crunch_id,
-            base_classname=base_classname,
-            checkpoint_interval_seconds=checkpoint_interval_seconds,
-        ),
-        f"{node_name}/config/README.md": _node_config_readme(),
-        f"{node_name}/config/callables.env": _node_callables_env(callables),
-        f"{node_name}/config/scheduled_prediction_configs.json": _scheduled_prediction_configs(
-            scheduled_prediction_configs
-        ),
-        f"{node_name}/deployment/README.md": _node_deployment_readme(),
-        f"{node_name}/plugins/README.md": _plugins_readme("node"),
-        f"{node_name}/extensions/README.md": _extensions_readme("node"),
-        f"{challenge_name}/README.md": _challenge_readme(resolved_name, package_module),
-        f"{challenge_name}/pyproject.toml": _challenge_pyproject(challenge_name, package_module),
-        f"{challenge_name}/{package_module}/__init__.py": _challenge_init(),
-        f"{challenge_name}/{package_module}/tracker.py": _challenge_tracker(),
-        f"{challenge_name}/{package_module}/inference.py": _challenge_inference(),
-        f"{challenge_name}/{package_module}/validation.py": _challenge_validation(),
-        f"{challenge_name}/{package_module}/scoring.py": _challenge_scoring(),
-        f"{challenge_name}/{package_module}/reporting.py": _challenge_reporting(),
-        f"{challenge_name}/{package_module}/schemas/README.md": _schemas_readme(),
-        f"{challenge_name}/{package_module}/plugins/README.md": _plugins_readme("challenge"),
-        f"{challenge_name}/{package_module}/extensions/README.md": _extensions_readme("challenge"),
-    }
-
-    if spec_path is not None:
-        files["spec.json"] = json.dumps(spec, indent=2)
-
-    _write_tree(workspace_dir, files)
-
-    print(f"Scaffold created: {workspace_dir}")
-    print(f"Next: cd {workspace_dir / node_name}")
-    return 0
-
-
-def _resolve_name(name: str | None, spec: dict[str, Any]) -> str:
-    spec_name = spec.get("name")
-
-    if name and spec_name and name != spec_name:
-        raise ValueError(
-            f"Name mismatch: CLI name '{name}' does not match spec name '{spec_name}'."
-        )
-
-    resolved = name or spec_name
-    if not resolved:
-        raise ValueError("Challenge name required. Provide <name> or include 'name' in --spec.")
-
-    return str(resolved)
-
-
-def _load_spec(path: Path) -> dict[str, Any]:
+def load_spec(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise ValueError(f"Spec file not found: {path}")
 
@@ -142,6 +54,118 @@ def _load_spec(path: Path) -> dict[str, Any]:
         raise ValueError("Spec root must be a JSON object")
 
     return payload
+
+
+def resolve_init_config(name: str | None, spec: dict[str, Any]) -> InitConfig:
+    spec_name = spec.get("name")
+
+    if name and spec_name and name != spec_name:
+        raise ValueError(
+            f"Name mismatch: CLI name '{name}' does not match spec name '{spec_name}'."
+        )
+
+    resolved_name = str(name or spec_name or "")
+    if not resolved_name:
+        raise ValueError("Challenge name required. Provide <name> or include 'name' in --spec.")
+
+    if not is_valid_slug(resolved_name):
+        raise ValueError(
+            "Invalid challenge name. Use lowercase slug format like 'btc-trader' "
+            "(letters, numbers, single dashes)."
+        )
+
+    package_module = f"crunch_{resolved_name.replace('-', '_')}"
+    node_name = f"crunch-node-{resolved_name}"
+    challenge_name = f"crunch-{resolved_name}"
+
+    crunch_id = str(spec.get("crunch_id", "starter-challenge"))
+    model_base_classname = str(spec.get("model_base_classname", f"{package_module}.tracker.TrackerBase"))
+
+    checkpoint_interval_seconds = int(spec.get("checkpoint_interval_seconds", 60))
+    if checkpoint_interval_seconds <= 0:
+        raise ValueError("checkpoint_interval_seconds must be > 0")
+
+    callables = _merge_callables(package_module=package_module, overrides=spec.get("callables") or {})
+    scheduled_prediction_configs = _resolve_scheduled_prediction_configs(
+        spec.get("scheduled_prediction_configs")
+    )
+
+    return InitConfig(
+        name=resolved_name,
+        package_module=package_module,
+        node_name=node_name,
+        challenge_name=challenge_name,
+        crunch_id=crunch_id,
+        model_base_classname=model_base_classname,
+        checkpoint_interval_seconds=checkpoint_interval_seconds,
+        callables=callables,
+        scheduled_prediction_configs=scheduled_prediction_configs,
+        spec=spec,
+    )
+
+
+def run_init(
+    name: str | None,
+    project_root: Path,
+    force: bool = False,
+    spec_path: Path | None = None,
+) -> int:
+    try:
+        spec = load_spec(spec_path) if spec_path is not None else {}
+        config = resolve_init_config(name=name, spec=spec)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+
+    workspace_dir = project_root / "crunch-implementations" / config.name
+    if workspace_dir.exists():
+        if not force:
+            print(f"Target already exists: {workspace_dir}. Use --force to overwrite.")
+            return 1
+        shutil.rmtree(workspace_dir)
+
+    files = {
+        "README.md": _workspace_readme(config.name),
+        f"{config.node_name}/README.md": _node_readme(config.name),
+        f"{config.node_name}/pyproject.toml": _node_pyproject(config.node_name, config.challenge_name),
+        f"{config.node_name}/.local.env.example": _node_local_env(
+            crunch_id=config.crunch_id,
+            base_classname=config.model_base_classname,
+            checkpoint_interval_seconds=config.checkpoint_interval_seconds,
+        ),
+        f"{config.node_name}/config/README.md": _node_config_readme(),
+        f"{config.node_name}/config/callables.env": _node_callables_env(config.callables),
+        f"{config.node_name}/config/scheduled_prediction_configs.json": _scheduled_prediction_configs(
+            config.scheduled_prediction_configs
+        ),
+        f"{config.node_name}/deployment/README.md": _node_deployment_readme(),
+        f"{config.node_name}/plugins/README.md": _plugins_readme("node"),
+        f"{config.node_name}/extensions/README.md": _extensions_readme("node"),
+        f"{config.challenge_name}/README.md": _challenge_readme(config.name, config.package_module),
+        f"{config.challenge_name}/pyproject.toml": _challenge_pyproject(
+            config.challenge_name, config.package_module
+        ),
+        f"{config.challenge_name}/{config.package_module}/__init__.py": _challenge_init(),
+        f"{config.challenge_name}/{config.package_module}/tracker.py": _challenge_tracker(),
+        f"{config.challenge_name}/{config.package_module}/inference.py": _challenge_inference(),
+        f"{config.challenge_name}/{config.package_module}/validation.py": _challenge_validation(),
+        f"{config.challenge_name}/{config.package_module}/scoring.py": _challenge_scoring(),
+        f"{config.challenge_name}/{config.package_module}/reporting.py": _challenge_reporting(),
+        f"{config.challenge_name}/{config.package_module}/schemas/README.md": _schemas_readme(),
+        f"{config.challenge_name}/{config.package_module}/plugins/README.md": _plugins_readme("challenge"),
+        f"{config.challenge_name}/{config.package_module}/extensions/README.md": _extensions_readme(
+            "challenge"
+        ),
+    }
+
+    if spec_path is not None:
+        files["spec.json"] = json.dumps(config.spec, indent=2)
+
+    _write_tree(workspace_dir, files)
+
+    print(f"Scaffold created: {workspace_dir}")
+    print(f"Next: cd {workspace_dir / config.node_name}")
+    return 0
 
 
 def _merge_callables(package_module: str, overrides: dict[str, Any]) -> dict[str, str]:

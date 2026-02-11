@@ -22,6 +22,7 @@ Legacy status:
 >
 > ```bash
 > coordinator init --spec path/to/spec.json
+> coordinator doctor --spec path/to/spec.json
 > ```
 >
 > This generates `crunch-implementations/<challenge-slug>/` with:

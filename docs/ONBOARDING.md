@@ -14,6 +14,7 @@ Or use a spec file (JSON) for agent-generated setup:
 
 ```bash
 coordinator init --spec path/to/spec.json
+coordinator doctor --spec path/to/spec.json
 ```
 
 This creates:

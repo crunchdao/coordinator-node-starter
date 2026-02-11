@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from coordinator_core.cli.doctor_cmd import run_doctor
 from coordinator_core.cli.init_cmd import run_init
 
 
@@ -22,7 +23,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Overwrite existing target workspace if present",
     )
 
-    subparsers.add_parser("doctor", help="Validate workspace wiring (coming in PR2)")
+    doctor_parser = subparsers.add_parser("doctor", help="Validate init spec wiring")
+    doctor_parser.add_argument("name", nargs="?", help="Optional challenge slug for cross-check")
+    doctor_parser.add_argument("--spec", help="Path to init spec JSON file")
     subparsers.add_parser("dev", help="Run local dev lifecycle (coming in PR3)")
     return parser
 
@@ -35,8 +38,8 @@ def main(argv: list[str] | None = None) -> int:
         spec_path = Path(args.spec) if args.spec else None
         return run_init(name=args.name, project_root=Path.cwd(), force=args.force, spec_path=spec_path)
     if args.command == "doctor":
-        print("coordinator doctor is planned for PR2")
-        return 0
+        spec_path = Path(args.spec) if args.spec else None
+        return run_doctor(name=args.name, spec_path=spec_path)
     if args.command == "dev":
         print("coordinator dev is planned for PR3")
         return 0
