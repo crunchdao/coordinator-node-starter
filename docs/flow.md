@@ -52,6 +52,7 @@ coordinator doctor --spec <workspace>/spec.json
 cd <workspace>/crunch-node-<name>
 make deploy
 make verify-e2e
+make logs-capture
 ```
 
 ## Deterministic defaults included by scaffold

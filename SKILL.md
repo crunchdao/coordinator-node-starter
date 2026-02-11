@@ -15,12 +15,15 @@ Use this repository as the **base template source** for new Crunch coordinator n
 
 ## Template Usage Model (Required)
 
-When the user wants a new Crunch:
+When the user wants a new Crunch, use the CLI-first scaffold flow:
 
-1. Clone this repository.
-2. Create `crunch-<name>` (public): model interface, inference schemas, scoring callable, quickstarters.
-3. Create `crunch-node-<name>` (private): copy/adapt `node_template/` runtime and deployment files.
-4. Configure callable paths in env/config to point to `crunch-<name>` functions.
+1. Create an upfront answers file (JSON/YAML) for deterministic setup decisions.
+2. Run preflight to halt on busy local ports.
+3. Run `coordinator init` (with `--answers` and optional `--spec`).
+4. Implement challenge logic in generated `crunch-<name>`.
+5. Run generated node verification flow in `crunch-node-<name>`.
+
+Reference: `docs/flow.md`.
 
 This repository is the **template and contract baseline**, not the long-term identity of a specific Crunch.
 
@@ -129,30 +132,31 @@ Set callable paths in env/config:
 
 ## Post-Deployment Verification (Mandatory)
 
-After any change, run:
+After any change, run (from generated `crunch-node-<name>`):
 
 ```bash
-# 1) Rebuild + start
+# 1) Optional preflight from repo root
+coordinator preflight --ports 3000,5432,8000,9091
+
+# 2) Rebuild + start
 make deploy
 
-# 2) Error scan
-sleep 5
-docker compose -f docker-compose.yml -f docker-compose-local.yml --env-file .local.env \
-  logs score-worker predict-worker report-worker --tail 300 2>&1 \
-  | grep -i "error\|exception\|traceback\|failed\|validation" | tail -20
+# 3) E2E verification
+make verify-e2e
 
-# 3) Service status
-docker compose -f docker-compose.yml -f docker-compose-local.yml --env-file .local.env ps
+# 4) Structured runtime log capture for analysis
+make logs-capture
 
-# 4) Basic API checks
+# 5) Basic API checks
 curl -s http://localhost:8000/healthz
 curl -s http://localhost:8000/reports/models
 curl -s http://localhost:8000/reports/leaderboard
-
-# 5) Confirm worker lifecycle logs exist (for UI Logs tab visibility)
-docker logs --since 2m coordinator-node-starter-score-worker-1 | tail -n 20
-docker logs --since 2m coordinator-node-starter-predict-worker-1 | tail -n 20
 ```
+
+Artifacts to inspect:
+- `RUNBOOK.md` (generated in node workspace)
+- `runtime-services.jsonl` (from `make logs-capture`)
+- `process-log.jsonl` (generated in workspace root)
 
 Do not declare completion if verification fails.
 

@@ -33,19 +33,21 @@ Legacy status:
 
 ## Launch a local Crunch workspace
 
-From this project root, validate a spec and scaffold a standalone workspace:
+From this project root, run deterministic setup:
 
 ```bash
+coordinator preflight --ports 3000,5432,8000,9091
 coordinator doctor --spec path/to/spec.json
-coordinator init --spec path/to/spec.json --preset realtime --output .
+coordinator init --answers answers.json --spec path/to/spec.json --preset realtime --output .
 ```
 
-Then launch the generated local crunch runtime:
+Then launch and verify the generated local crunch runtime:
 
 ```bash
 cd <challenge-slug>/crunch-node-<challenge-slug>
 make deploy
 make verify-e2e
+make logs-capture
 ```
 
 `make verify-e2e` waits until scored predictions and leaderboard entries are available.
