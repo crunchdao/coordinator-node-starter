@@ -36,7 +36,7 @@ class PredictService:
         runner=None,
         model_runner_node_host: str = "model-orchestrator",
         model_runner_node_port: int = 9091,
-        model_runner_timeout_seconds: int = 60,
+        model_runner_timeout_seconds: float = 60,
         crunch_id: str = "starter-challenge",
         base_classname: str = "tracker.TrackerBase",
     ):

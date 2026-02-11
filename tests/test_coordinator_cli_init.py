@@ -1,9 +1,12 @@
+import io
 import json
 import os
 import tempfile
 import unittest
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
+
+import py_compile
 
 from coordinator_core.cli.main import main
 
@@ -30,27 +33,34 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 code = main(["init", "btc-trader"])
                 self.assertEqual(code, 0)
 
-                base = Path("crunch-implementations") / "btc-trader"
+                base = Path("btc-trader")
                 node = base / "crunch-node-btc-trader"
                 challenge = base / "crunch-btc-trader"
                 package = challenge / "crunch_btc_trader"
 
+                self.assertFalse(Path("crunch-implementations").exists())
                 self.assertTrue((base / "README.md").exists())
                 self.assertTrue((node / "README.md").exists())
                 self.assertTrue((node / "pyproject.toml").exists())
                 self.assertTrue((node / "Makefile").exists())
+                self.assertTrue((node / "Dockerfile").exists())
+                self.assertTrue((node / "docker-compose.yml").exists())
+                self.assertTrue((node / "scripts" / "verify_e2e.py").exists())
+                self.assertTrue((node / "runtime" / "coordinator_core").exists())
+                self.assertTrue((node / "runtime" / "coordinator_runtime").exists())
+                self.assertTrue((node / "runtime" / "node_template").exists())
                 self.assertTrue((node / ".local.env").exists())
                 self.assertTrue((node / ".local.env.example").exists())
                 self.assertTrue((node / "config" / "callables.env").exists())
                 self.assertTrue((node / "config" / "scheduled_prediction_configs.json").exists())
                 self.assertTrue((node / "deployment" / "README.md").exists())
-                self.assertTrue((node / "deployment" / "docker-compose-local.override.yml").exists())
                 self.assertTrue((node / "plugins" / "README.md").exists())
                 self.assertTrue((node / "extensions" / "README.md").exists())
 
                 makefile = (node / "Makefile").read_text(encoding="utf-8")
-                self.assertIn("-f $(ROOT_DIR)/docker-compose.yml", makefile)
-                self.assertIn("deployment/docker-compose-local.override.yml", makefile)
+                self.assertIn("-f docker-compose.yml", makefile)
+                self.assertNotIn("ROOT_DIR", makefile)
+                self.assertNotIn("../../..", makefile)
 
                 self.assertTrue((challenge / "README.md").exists())
                 self.assertTrue((challenge / "pyproject.toml").exists())
@@ -66,6 +76,44 @@ class TestCoordinatorCliInit(unittest.TestCase):
 
                 self.assertFalse((node / "private_plugins").exists())
                 self.assertFalse((package / "private_plugins").exists())
+
+    def test_init_defaults_model_base_classname_to_tracker_trackerbase(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                code = main(["init", "btc-trader"])
+                self.assertEqual(code, 0)
+
+                node_env = Path("btc-trader/crunch-node-btc-trader/.local.env").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn("MODEL_BASE_CLASSNAME=tracker.TrackerBase", node_env)
+
+    def test_init_writes_local_uv_sources_for_challenge_package(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                code = main(["init", "btc-trader"])
+                self.assertEqual(code, 0)
+
+                node_pyproject = Path("btc-trader/crunch-node-btc-trader/pyproject.toml").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn("[tool.uv.sources]", node_pyproject)
+                self.assertIn(
+                    'crunch-btc-trader = { path = "../crunch-btc-trader", editable = true }',
+                    node_pyproject,
+                )
+
+    def test_init_generates_parseable_verify_e2e_script(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                code = main(["init", "btc-trader"])
+                self.assertEqual(code, 0)
+
+                script = Path("btc-trader/crunch-node-btc-trader/scripts/verify_e2e.py")
+                py_compile.compile(str(script), doraise=True)
+
+                content = script.read_text(encoding="utf-8")
+                self.assertIn('return (result.stdout or "") + "\\n" + (result.stderr or "")', content)
 
     def test_init_fails_when_target_exists_without_force(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -95,13 +143,36 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertEqual(code, 0)
 
                 node_env = Path(
-                    "crunch-implementations/eth-trader/crunch-node-eth-trader/.local.env.example"
+                    "eth-trader/crunch-node-eth-trader/.local.env.example"
                 ).read_text(encoding="utf-8")
                 self.assertIn("CRUNCH_ID=challenge-eth", node_env)
                 self.assertIn(
                     "MODEL_BASE_CLASSNAME=crunch_eth_trader.tracker.CustomTrackerBase",
                     node_env,
                 )
+
+    def test_init_normalizes_package_scoped_model_base_classname(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                spec_path = self._write_spec(
+                    Path("spec.json"),
+                    {
+                        "spec_version": "1",
+                        "name": "eth-trader",
+                        "model_base_classname": "crunch_eth_trader.tracker.TrackerBase",
+                    },
+                )
+
+                code = main(["init", "--spec", str(spec_path)])
+                self.assertEqual(code, 0)
+
+                node_env = Path(
+                    "eth-trader/crunch-node-eth-trader/.local.env.example"
+                ).read_text(encoding="utf-8")
+                self.assertIn("MODEL_BASE_CLASSNAME=tracker.TrackerBase", node_env)
+
+                rendered_spec = json.loads(Path("eth-trader/spec.json").read_text(encoding="utf-8"))
+                self.assertEqual(rendered_spec["model_base_classname"], "tracker.TrackerBase")
 
     def test_init_spec_overrides_callables_and_schedule(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -135,13 +206,13 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertEqual(code, 0)
 
                 callables_env = Path(
-                    "crunch-implementations/btc-trader/crunch-node-btc-trader/config/callables.env"
+                    "btc-trader/crunch-node-btc-trader/config/callables.env"
                 ).read_text(encoding="utf-8")
                 runtime_env = Path(
-                    "crunch-implementations/btc-trader/crunch-node-btc-trader/.local.env"
+                    "btc-trader/crunch-node-btc-trader/.local.env"
                 ).read_text(encoding="utf-8")
-                override_compose = Path(
-                    "crunch-implementations/btc-trader/crunch-node-btc-trader/deployment/docker-compose-local.override.yml"
+                compose = Path(
+                    "btc-trader/crunch-node-btc-trader/docker-compose.yml"
                 ).read_text(encoding="utf-8")
                 self.assertIn(
                     "SCORING_FUNCTION=crunch_btc_trader.scoring:score_v2",
@@ -160,12 +231,12 @@ class TestCoordinatorCliInit(unittest.TestCase):
                     runtime_env,
                 )
                 self.assertIn(
-                    "./crunch-implementations/btc-trader/crunch-btc-trader:/app/challenge",
-                    override_compose,
+                    "../crunch-btc-trader:/app/challenge",
+                    compose,
                 )
 
                 schedule_raw = Path(
-                    "crunch-implementations/btc-trader/crunch-node-btc-trader/config/scheduled_prediction_configs.json"
+                    "btc-trader/crunch-node-btc-trader/config/scheduled_prediction_configs.json"
                 ).read_text(encoding="utf-8")
                 schedule = json.loads(schedule_raw)
                 self.assertEqual(schedule[0]["scope_key"], "btc-5m")
@@ -206,6 +277,99 @@ class TestCoordinatorCliInit(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with _cwd(Path(tmp)):
                 code = main(["init", "BTC Trader"])
+                self.assertEqual(code, 1)
+
+    def test_init_respects_output_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                output = Path("custom-output")
+                code = main(["init", "btc-trader", "--output", str(output)])
+                self.assertEqual(code, 0)
+                self.assertTrue((output / "btc-trader").exists())
+                self.assertFalse((output / "crunch-implementations").exists())
+
+    def test_init_supports_preset_flag_overriding_spec_preset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                spec_path = self._write_spec(
+                    Path("spec.json"),
+                    {
+                        "spec_version": "1",
+                        "name": "btc-trader",
+                        "preset": "in-sample",
+                    },
+                )
+
+                code = main(["init", "--spec", str(spec_path), "--preset", "realtime"])
+                self.assertEqual(code, 0)
+
+                node_dir = Path("btc-trader/crunch-node-btc-trader")
+                runtime_env = (node_dir / ".local.env").read_text(encoding="utf-8")
+                schedule = json.loads(
+                    (node_dir / "config" / "scheduled_prediction_configs.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+
+                self.assertIn("CHECKPOINT_INTERVAL_SECONDS=15", runtime_env)
+                self.assertEqual(schedule[0]["scope_key"], "realtime-btc")
+                self.assertEqual(schedule[0]["schedule"]["every_seconds"], 15)
+
+    def test_init_rejects_unknown_preset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                code = main(["init", "btc-trader", "--preset", "unknown"])
+                self.assertEqual(code, 1)
+
+    def test_init_lists_available_presets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    code = main(["init", "--list-presets"])
+
+                self.assertEqual(code, 0)
+                value = output.getvalue()
+                self.assertIn("baseline", value)
+                self.assertIn("realtime", value)
+                self.assertIn("in-sample", value)
+                self.assertIn("out-of-sample", value)
+
+    def test_init_uses_public_runtime_callables_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                code = main(["init", "btc-trader"])
+                self.assertEqual(code, 0)
+
+                callables_env = Path(
+                    "btc-trader/crunch-node-btc-trader/config/callables.env"
+                ).read_text(encoding="utf-8")
+
+                self.assertNotIn("node_template.", callables_env)
+                self.assertIn(
+                    "MODEL_SCORE_AGGREGATOR=coordinator_runtime.defaults:aggregate_model_scores",
+                    callables_env,
+                )
+                self.assertIn(
+                    "LEADERBOARD_RANKER=coordinator_runtime.defaults:rank_leaderboard",
+                    callables_env,
+                )
+
+    def test_init_rejects_legacy_tokens_in_rendered_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                spec_path = self._write_spec(
+                    Path("spec.json"),
+                    {
+                        "spec_version": "1",
+                        "name": "btc-trader",
+                        "callables": {
+                            "MODEL_SCORE_AGGREGATOR": "node_template.extensions.default_callables:default_aggregate_model_scores"
+                        },
+                    },
+                )
+
+                code = main(["init", "--spec", str(spec_path)])
                 self.assertEqual(code, 1)
 
 

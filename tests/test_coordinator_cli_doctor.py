@@ -86,6 +86,36 @@ class TestCoordinatorCliDoctor(unittest.TestCase):
                 code = main(["doctor", "--spec", "spec.json"])
                 self.assertEqual(code, 1)
 
+    def test_doctor_rejects_unknown_preset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                Path("spec.json").write_text(
+                    json.dumps({"spec_version": "1", "name": "btc-trader", "preset": "unknown"}),
+                    encoding="utf-8",
+                )
+
+                code = main(["doctor", "--spec", "spec.json"])
+                self.assertEqual(code, 1)
+
+    def test_doctor_rejects_template_callable_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                Path("spec.json").write_text(
+                    json.dumps(
+                        {
+                            "spec_version": "1",
+                            "name": "btc-trader",
+                            "callables": {
+                                "MODEL_SCORE_AGGREGATOR": "node_template.extensions.default_callables:default_aggregate_model_scores"
+                            },
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+                code = main(["doctor", "--spec", "spec.json"])
+                self.assertEqual(code, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

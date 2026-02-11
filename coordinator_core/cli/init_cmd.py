@@ -7,22 +7,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from coordinator_core.cli.presets import get_preset, list_preset_summaries
+from coordinator_core.cli.scaffold_render import ensure_no_legacy_references, render_template_strict
+
 _SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 SUPPORTED_SPEC_VERSION = "1"
 
-_DEFAULT_CALLABLES = {
-    "INFERENCE_INPUT_BUILDER": "{package_module}.inference:build_input",
-    "INFERENCE_OUTPUT_VALIDATOR": "{package_module}.validation:validate_output",
-    "SCORING_FUNCTION": "{package_module}.scoring:score_prediction",
-    "MODEL_SCORE_AGGREGATOR": "node_template.extensions.default_callables:default_aggregate_model_scores",
-    "REPORT_SCHEMA_PROVIDER": "{package_module}.reporting:report_schema",
-    "LEADERBOARD_RANKER": "node_template.extensions.default_callables:default_rank_leaderboard",
-    "RAW_INPUT_PROVIDER": "node_template.extensions.default_callables:default_provide_raw_input",
-    "GROUND_TRUTH_RESOLVER": "node_template.extensions.default_callables:default_resolve_ground_truth",
-    "PREDICTION_SCOPE_BUILDER": "node_template.extensions.default_callables:default_build_prediction_scope",
-    "PREDICT_CALL_BUILDER": "node_template.extensions.default_callables:default_build_predict_call",
-}
+_CALLABLE_ORDER = [
+    "INFERENCE_INPUT_BUILDER",
+    "INFERENCE_OUTPUT_VALIDATOR",
+    "SCORING_FUNCTION",
+    "MODEL_SCORE_AGGREGATOR",
+    "REPORT_SCHEMA_PROVIDER",
+    "LEADERBOARD_RANKER",
+    "RAW_INPUT_PROVIDER",
+    "GROUND_TRUTH_RESOLVER",
+    "PREDICTION_SCOPE_BUILDER",
+    "PREDICT_CALL_BUILDER",
+]
 
 
 @dataclass(frozen=True)
@@ -34,6 +37,7 @@ class InitConfig:
     crunch_id: str
     model_base_classname: str
     checkpoint_interval_seconds: int
+    preset: str
     callables: dict[str, str]
     scheduled_prediction_configs: list[dict[str, Any]]
     spec: dict[str, Any]
@@ -62,6 +66,7 @@ def resolve_init_config(
     name: str | None,
     spec: dict[str, Any],
     require_spec_version: bool = False,
+    preset_name: str | None = None,
 ) -> InitConfig:
     spec_name = spec.get("name")
 
@@ -95,16 +100,32 @@ def resolve_init_config(
     node_name = f"crunch-node-{resolved_name}"
     challenge_name = f"crunch-{resolved_name}"
 
-    crunch_id = str(spec.get("crunch_id", "starter-challenge"))
-    model_base_classname = str(spec.get("model_base_classname", f"{package_module}.tracker.TrackerBase"))
+    selected_preset = str(preset_name or spec.get("preset") or "baseline")
+    preset = get_preset(selected_preset)
+    normalized_spec = dict(spec)
+    normalized_spec["preset"] = selected_preset
 
-    checkpoint_interval_seconds = int(spec.get("checkpoint_interval_seconds", 60))
+    crunch_id = str(spec.get("crunch_id", "starter-challenge"))
+    model_base_classname = _normalize_model_base_classname(
+        str(spec.get("model_base_classname", "tracker.TrackerBase")),
+        package_module=package_module,
+    )
+    normalized_spec["model_base_classname"] = model_base_classname
+
+    checkpoint_interval_seconds = int(
+        spec.get("checkpoint_interval_seconds", preset.get("checkpoint_interval_seconds", 60))
+    )
     if checkpoint_interval_seconds <= 0:
         raise ValueError("checkpoint_interval_seconds must be > 0")
 
-    callables = _merge_callables(package_module=package_module, overrides=spec.get("callables") or {})
+    callables = _merge_callables(
+        package_module=package_module,
+        defaults=preset.get("callables") or {},
+        overrides=spec.get("callables") or {},
+    )
     scheduled_prediction_configs = _resolve_scheduled_prediction_configs(
-        spec.get("scheduled_prediction_configs")
+        value=spec.get("scheduled_prediction_configs"),
+        default_value=preset.get("scheduled_prediction_configs"),
     )
 
     return InitConfig(
@@ -115,10 +136,22 @@ def resolve_init_config(
         crunch_id=crunch_id,
         model_base_classname=model_base_classname,
         checkpoint_interval_seconds=checkpoint_interval_seconds,
+        preset=selected_preset,
         callables=callables,
         scheduled_prediction_configs=scheduled_prediction_configs,
-        spec=spec,
+        spec=normalized_spec,
     )
+
+
+def _normalize_model_base_classname(value: str, package_module: str) -> str:
+    canonical = "tracker.TrackerBase"
+    if not value:
+        return canonical
+
+    if value in (canonical, f"{package_module}.tracker.TrackerBase"):
+        return canonical
+
+    return value
 
 
 def run_init(
@@ -126,25 +159,116 @@ def run_init(
     project_root: Path,
     force: bool = False,
     spec_path: Path | None = None,
+    preset_name: str | None = None,
+    list_presets: bool = False,
 ) -> int:
+    if list_presets:
+        print("Available presets:")
+        for preset, description in list_preset_summaries():
+            print(f"- {preset}: {description}")
+        return 0
+
     try:
         spec = load_spec(spec_path) if spec_path is not None else {}
         config = resolve_init_config(
             name=name,
             spec=spec,
             require_spec_version=spec_path is not None,
+            preset_name=preset_name,
         )
     except ValueError as exc:
         print(str(exc))
         return 1
 
-    workspace_dir = project_root / "crunch-implementations" / config.name
+    workspace_dir = project_root / config.name
     if workspace_dir.exists():
         if not force:
             print(f"Target already exists: {workspace_dir}. Use --force to overwrite.")
             return 1
         shutil.rmtree(workspace_dir)
 
+    try:
+        files = _render_scaffold_files(config=config, include_spec=spec_path is not None)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+
+    _write_tree(workspace_dir, files)
+    try:
+        _vendor_runtime_packages(workspace_dir / config.node_name / "runtime")
+    except Exception as exc:  # noqa: BLE001
+        print(f"Failed to vendor runtime packages: {exc}")
+        return 1
+
+    print(f"Scaffold created: {workspace_dir}")
+    print(f"Next: cd {workspace_dir / config.node_name}")
+    return 0
+
+
+def _merge_callables(
+    package_module: str,
+    defaults: dict[str, Any],
+    overrides: dict[str, Any],
+) -> dict[str, str]:
+    if not isinstance(defaults, dict) or not defaults:
+        raise ValueError("Preset callables must be a non-empty object")
+    if not isinstance(overrides, dict):
+        raise ValueError("'callables' must be an object of ENV_KEY -> module:callable")
+
+    rendered_defaults: dict[str, str] = {}
+    for key in _CALLABLE_ORDER:
+        if key not in defaults:
+            raise ValueError(f"Preset callables missing required key '{key}'")
+
+        value = defaults[key]
+        if not isinstance(value, str):
+            raise ValueError(f"Preset callable for '{key}' must be '<module>:<callable>'")
+        rendered_defaults[key] = value.format(package_module=package_module)
+
+    merged = dict(rendered_defaults)
+    for key, value in overrides.items():
+        if key not in rendered_defaults:
+            allowed = ", ".join(sorted(rendered_defaults.keys()))
+            raise ValueError(f"Unknown callable key '{key}'. Allowed keys: {allowed}")
+        if not isinstance(value, str) or ":" not in value:
+            raise ValueError(f"Callable override for '{key}' must be '<module>:<callable>'")
+        merged[key] = value
+
+    for key, value in merged.items():
+        _validate_callable_path(key=key, value=value)
+
+    return merged
+
+
+def _validate_callable_path(key: str, value: str) -> None:
+    module_path, sep, callable_name = value.partition(":")
+    if not sep or not module_path or not callable_name:
+        raise ValueError(f"Callable override for '{key}' must be '<module>:<callable>'")
+
+    if module_path.startswith("node_template"):
+        raise ValueError(
+            f"Callable '{key}' uses internal module path '{module_path}'. "
+            "Use coordinator_runtime.* or challenge/node-local module paths instead."
+        )
+
+
+def _resolve_scheduled_prediction_configs(value: Any, default_value: Any) -> list[dict[str, Any]]:
+    resolved = value if value is not None else default_value
+
+    if not isinstance(resolved, list) or not resolved:
+        raise ValueError("'scheduled_prediction_configs' must be a non-empty array")
+
+    for idx, row in enumerate(resolved):
+        if not isinstance(row, dict):
+            raise ValueError(f"scheduled_prediction_configs[{idx}] must be an object")
+        for field in ("scope_key", "scope_template", "schedule"):
+            if field not in row:
+                raise ValueError(f"scheduled_prediction_configs[{idx}] missing '{field}'")
+
+    return resolved
+
+
+def _render_scaffold_files(config: InitConfig, include_spec: bool) -> dict[str, str]:
     local_env = _node_local_env(
         crunch_id=config.crunch_id,
         base_classname=config.model_base_classname,
@@ -152,99 +276,100 @@ def run_init(
         callables=config.callables,
     )
 
+    path_values = {
+        "node_name": config.node_name,
+        "challenge_name": config.challenge_name,
+        "package_module": config.package_module,
+    }
+
+    manifest: list[tuple[str, str]] = [
+        ("README.md", _workspace_readme(config.name)),
+        ("{node_name}/README.md", _node_readme(config.name)),
+        ("{node_name}/Makefile", _node_makefile()),
+        ("{node_name}/pyproject.toml", _node_pyproject(config.node_name, config.challenge_name)),
+        ("{node_name}/Dockerfile", _node_dockerfile()),
+        ("{node_name}/docker-compose.yml", _node_compose(config.node_name, config.challenge_name)),
+        ("{node_name}/scripts/verify_e2e.py", _node_verify_e2e_script()),
+        ("{node_name}/.local.env", local_env),
+        ("{node_name}/.local.env.example", local_env),
+        ("{node_name}/config/README.md", _node_config_readme()),
+        ("{node_name}/config/callables.env", _node_callables_env(config.callables)),
+        (
+            "{node_name}/config/scheduled_prediction_configs.json",
+            _scheduled_prediction_configs(config.scheduled_prediction_configs),
+        ),
+        ("{node_name}/deployment/README.md", _node_deployment_readme()),
+        (
+            "{node_name}/deployment/model-orchestrator-local/config/docker-entrypoint.sh",
+            _orchestrator_entrypoint_script(),
+        ),
+        (
+            "{node_name}/deployment/model-orchestrator-local/config/orchestrator.dev.yml",
+            _orchestrator_dev_config(config.crunch_id),
+        ),
+        (
+            "{node_name}/deployment/model-orchestrator-local/config/models.dev.yml",
+            _orchestrator_models_dev(config.crunch_id),
+        ),
+        (
+            "{node_name}/deployment/model-orchestrator-local/config/starter-submission/main.py",
+            _starter_submission_main(),
+        ),
+        (
+            "{node_name}/deployment/model-orchestrator-local/config/starter-submission/tracker.py",
+            _starter_submission_tracker(),
+        ),
+        (
+            "{node_name}/deployment/model-orchestrator-local/config/starter-submission/requirements.txt",
+            _starter_submission_requirements(),
+        ),
+        (
+            "{node_name}/deployment/model-orchestrator-local/data/.gitkeep",
+            "",
+        ),
+        (
+            "{node_name}/deployment/report-ui/config/global-settings.json",
+            _report_ui_global_settings(config.node_name),
+        ),
+        (
+            "{node_name}/deployment/report-ui/config/leaderboard-columns.json",
+            _report_ui_leaderboard_columns(),
+        ),
+        (
+            "{node_name}/deployment/report-ui/config/metrics-widgets.json",
+            _report_ui_metrics_widgets(),
+        ),
+        ("{node_name}/plugins/README.md", _plugins_readme("node")),
+        ("{node_name}/extensions/README.md", _extensions_readme("node")),
+        ("{challenge_name}/README.md", _challenge_readme(config.name, config.package_module)),
+        (
+            "{challenge_name}/pyproject.toml",
+            _challenge_pyproject(config.challenge_name, config.package_module),
+        ),
+        ("{challenge_name}/{package_module}/__init__.py", _challenge_init()),
+        ("{challenge_name}/{package_module}/tracker.py", _challenge_tracker()),
+        ("{challenge_name}/{package_module}/inference.py", _challenge_inference()),
+        ("{challenge_name}/{package_module}/validation.py", _challenge_validation()),
+        ("{challenge_name}/{package_module}/scoring.py", _challenge_scoring()),
+        ("{challenge_name}/{package_module}/reporting.py", _challenge_reporting()),
+        ("{challenge_name}/{package_module}/schemas/README.md", _schemas_readme()),
+        ("{challenge_name}/{package_module}/plugins/README.md", _plugins_readme("challenge")),
+        (
+            "{challenge_name}/{package_module}/extensions/README.md",
+            _extensions_readme("challenge"),
+        ),
+    ]
+
+    if include_spec:
+        manifest.append(("spec.json", json.dumps(config.spec, indent=2)))
+
     files = {
-        "README.md": _workspace_readme(config.name),
-        f"{config.node_name}/README.md": _node_readme(config.name),
-        f"{config.node_name}/Makefile": _node_makefile(),
-        f"{config.node_name}/pyproject.toml": _node_pyproject(config.node_name, config.challenge_name),
-        f"{config.node_name}/.local.env": local_env,
-        f"{config.node_name}/.local.env.example": local_env,
-        f"{config.node_name}/config/README.md": _node_config_readme(),
-        f"{config.node_name}/config/callables.env": _node_callables_env(config.callables),
-        f"{config.node_name}/config/scheduled_prediction_configs.json": _scheduled_prediction_configs(
-            config.scheduled_prediction_configs
-        ),
-        f"{config.node_name}/deployment/README.md": _node_deployment_readme(),
-        f"{config.node_name}/deployment/docker-compose-local.override.yml": _node_local_override_compose(
-            config.name,
-            config.challenge_name,
-        ),
-        f"{config.node_name}/plugins/README.md": _plugins_readme("node"),
-        f"{config.node_name}/extensions/README.md": _extensions_readme("node"),
-        f"{config.challenge_name}/README.md": _challenge_readme(config.name, config.package_module),
-        f"{config.challenge_name}/pyproject.toml": _challenge_pyproject(
-            config.challenge_name, config.package_module
-        ),
-        f"{config.challenge_name}/{config.package_module}/__init__.py": _challenge_init(),
-        f"{config.challenge_name}/{config.package_module}/tracker.py": _challenge_tracker(),
-        f"{config.challenge_name}/{config.package_module}/inference.py": _challenge_inference(),
-        f"{config.challenge_name}/{config.package_module}/validation.py": _challenge_validation(),
-        f"{config.challenge_name}/{config.package_module}/scoring.py": _challenge_scoring(),
-        f"{config.challenge_name}/{config.package_module}/reporting.py": _challenge_reporting(),
-        f"{config.challenge_name}/{config.package_module}/schemas/README.md": _schemas_readme(),
-        f"{config.challenge_name}/{config.package_module}/plugins/README.md": _plugins_readme("challenge"),
-        f"{config.challenge_name}/{config.package_module}/extensions/README.md": _extensions_readme(
-            "challenge"
-        ),
+        render_template_strict(path_template, path_values): content
+        for path_template, content in manifest
     }
 
-    if spec_path is not None:
-        files["spec.json"] = json.dumps(config.spec, indent=2)
-
-    _write_tree(workspace_dir, files)
-
-    print(f"Scaffold created: {workspace_dir}")
-    print(f"Next: cd {workspace_dir / config.node_name}")
-    return 0
-
-
-def _merge_callables(package_module: str, overrides: dict[str, Any]) -> dict[str, str]:
-    if not isinstance(overrides, dict):
-        raise ValueError("'callables' must be an object of ENV_KEY -> module:callable")
-
-    defaults = {
-        key: value.format(package_module=package_module) for key, value in _DEFAULT_CALLABLES.items()
-    }
-
-    merged = dict(defaults)
-    for key, value in overrides.items():
-        if key not in defaults:
-            allowed = ", ".join(sorted(defaults.keys()))
-            raise ValueError(f"Unknown callable key '{key}'. Allowed keys: {allowed}")
-        if not isinstance(value, str) or ":" not in value:
-            raise ValueError(f"Callable override for '{key}' must be '<module>:<callable>'")
-        merged[key] = value
-
-    return merged
-
-
-def _resolve_scheduled_prediction_configs(value: Any) -> list[dict[str, Any]]:
-    if value is None:
-        return [
-            {
-                "scope_key": "default",
-                "scope_template": {
-                    "asset": "BTC",
-                    "horizon_seconds": 60,
-                    "step_seconds": 60,
-                },
-                "schedule": {"every_seconds": 60},
-                "active": True,
-                "order": 0,
-            }
-        ]
-
-    if not isinstance(value, list) or not value:
-        raise ValueError("'scheduled_prediction_configs' must be a non-empty array")
-
-    for idx, row in enumerate(value):
-        if not isinstance(row, dict):
-            raise ValueError(f"scheduled_prediction_configs[{idx}] must be an object")
-        for field in ("scope_key", "scope_template", "schedule"):
-            if field not in row:
-                raise ValueError(f"scheduled_prediction_configs[{idx}] missing '{field}'")
-
-    return value
+    ensure_no_legacy_references(files)
+    return files
 
 
 def _write_tree(base_dir: Path, files: dict[str, str]) -> None:
@@ -252,6 +377,25 @@ def _write_tree(base_dir: Path, files: dict[str, str]) -> None:
         path = base_dir / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content.strip() + "\n", encoding="utf-8")
+
+
+def _vendor_runtime_packages(target_runtime_dir: Path) -> None:
+    import coordinator_core
+    import coordinator_runtime
+    import node_template
+
+    package_roots = {
+        "coordinator_core": Path(coordinator_core.__file__).resolve().parent,
+        "coordinator_runtime": Path(coordinator_runtime.__file__).resolve().parent,
+        "node_template": Path(node_template.__file__).resolve().parent,
+    }
+
+    target_runtime_dir.mkdir(parents=True, exist_ok=True)
+    for package_name, source_dir in package_roots.items():
+        destination = target_runtime_dir / package_name
+        if destination.exists():
+            shutil.rmtree(destination)
+        shutil.copytree(source_dir, destination)
 
 
 def _workspace_readme(name: str) -> str:
@@ -269,16 +413,16 @@ def _node_readme(name: str) -> str:
     return f"""
 # crunch-node-{name}
 
-Thin node project for `{name}`.
+Standalone node runtime workspace for `{name}`.
 
 ## What belongs here
 
-- deployment and env wiring
-- callable path configuration
-- optional node-side adapters in `plugins/`
-- optional node-side hooks in `extensions/`
+- local deployment/runtime config (`docker-compose.yml`, `Dockerfile`, `.local.env`)
+- callable path configuration (`config/callables.env`)
+- node-private adapters (`plugins/`) and overrides (`extensions/`)
+- vendored runtime packages under `runtime/`
 
-Core runtime logic should stay in `coordinator_core`.
+This folder is self-contained and runnable without referencing a parent starter repo.
 
 ## Local run
 
@@ -288,8 +432,6 @@ From this folder:
 make deploy
 make verify-e2e
 ```
-
-This profile uses root compose files with a local override to mount your challenge package.
 """
 
 
@@ -298,23 +440,20 @@ def _node_pyproject(node_name: str, challenge_name: str) -> str:
 [project]
 name = "{node_name}"
 version = "0.1.0"
-description = "Thin node workspace"
+description = "Standalone node workspace"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-  "coordinator-node-starter",
   "{challenge_name}",
 ]
 
 [tool.uv.sources]
-coordinator-node-starter = {{ path = "../../..", editable = true }}
 {challenge_name} = {{ path = "../{challenge_name}", editable = true }}
 """
 
 
 def _node_makefile() -> str:
     return """
-ROOT_DIR := ../../..
-COMPOSE := docker compose -f $(ROOT_DIR)/docker-compose.yml -f $(ROOT_DIR)/docker-compose-local.yml -f deployment/docker-compose-local.override.yml --env-file .local.env
+COMPOSE := docker compose -f docker-compose.yml --env-file .local.env
 
 .PHONY: deploy down logs verify-e2e
 
@@ -328,37 +467,336 @@ logs:
 	$(COMPOSE) logs -f
 
 verify-e2e:
-	uv run --directory $(ROOT_DIR) python scripts/verify_e2e.py
+	uv run --with requests python scripts/verify_e2e.py
 """
 
 
-def _node_local_override_compose(name: str, challenge_name: str) -> str:
-    challenge_mount = f"./crunch-implementations/{name}/{challenge_name}:/app/challenge"
+def _node_dockerfile() -> str:
+    return """
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir \
+    densitypdf>=0.1.4 \
+    fastapi>=0.121.3 \
+    model-runner-client>=0.10.0 \
+    numpy>=2.3.4 \
+    psycopg2-binary>=2.9.11 \
+    requests>=2.32.5 \
+    sqlmodel>=0.0.27 \
+    uvicorn>=0.38.0
+
+COPY runtime/coordinator_core ./coordinator_core
+COPY runtime/coordinator_runtime ./coordinator_runtime
+COPY runtime/node_template ./node_template
+
+CMD ["python", "-m", "node_template"]
+"""
+
+
+def _node_compose(node_name: str, challenge_name: str) -> str:
+    network_name = f"{node_name}-net"
     return f"""
 services:
-  init-db:
-    volumes:
-      - {challenge_mount}
+  postgres:
+    image: postgres:15
+    container_name: {node_name}-postgres
+    restart: always
+    ports:
+      - "5432:5432"
     environment:
-      PYTHONPATH: /app/challenge
+      POSTGRES_HOST: ${{POSTGRES_HOST:-postgres}}
+      POSTGRES_PORT: ${{POSTGRES_PORT:-5432}}
+      POSTGRES_USER: ${{POSTGRES_USER:-starter}}
+      POSTGRES_PASSWORD: ${{POSTGRES_PASSWORD:-starter}}
+      POSTGRES_DB: ${{POSTGRES_DB:-starter}}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d ${{POSTGRES_DB:-starter}} -U ${{POSTGRES_USER:-starter}}"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [coordinator-net]
+
+  init-db:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: {node_name}-init-db
+    command: ["python", "-m", "node_template.infrastructure.db.init_db"]
+    environment:
+      POSTGRES_HOST: ${{POSTGRES_HOST:-postgres}}
+      POSTGRES_PORT: ${{POSTGRES_PORT:-5432}}
+      POSTGRES_USER: ${{POSTGRES_USER:-starter}}
+      POSTGRES_PASSWORD: ${{POSTGRES_PASSWORD:-starter}}
+      POSTGRES_DB: ${{POSTGRES_DB:-starter}}
+      SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
+    volumes:
+      - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [coordinator-net]
 
   predict-worker:
-    volumes:
-      - {challenge_mount}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: {node_name}-predict-worker
+    restart: always
+    command: ["python", "-m", "node_template.workers.predict_worker"]
     environment:
+      POSTGRES_HOST: ${{POSTGRES_HOST:-postgres}}
+      POSTGRES_PORT: ${{POSTGRES_PORT:-5432}}
+      POSTGRES_USER: ${{POSTGRES_USER:-starter}}
+      POSTGRES_PASSWORD: ${{POSTGRES_PASSWORD:-starter}}
+      POSTGRES_DB: ${{POSTGRES_DB:-starter}}
+      MODEL_RUNNER_NODE_HOST: ${{MODEL_RUNNER_NODE_HOST:-model-orchestrator}}
+      MODEL_RUNNER_NODE_PORT: ${{MODEL_RUNNER_NODE_PORT:-9091}}
+      MODEL_RUNNER_TIMEOUT_SECONDS: ${{MODEL_RUNNER_TIMEOUT_SECONDS:-60}}
+      CHECKPOINT_INTERVAL_SECONDS: ${{CHECKPOINT_INTERVAL_SECONDS:-60}}
+      CRUNCH_ID: ${{CRUNCH_ID:-starter-challenge}}
+      MODEL_BASE_CLASSNAME: ${{MODEL_BASE_CLASSNAME:-tracker.TrackerBase}}
+      INFERENCE_INPUT_BUILDER: ${{INFERENCE_INPUT_BUILDER}}
+      INFERENCE_OUTPUT_VALIDATOR: ${{INFERENCE_OUTPUT_VALIDATOR}}
+      RAW_INPUT_PROVIDER: ${{RAW_INPUT_PROVIDER}}
+      PREDICTION_SCOPE_BUILDER: ${{PREDICTION_SCOPE_BUILDER}}
+      PREDICT_CALL_BUILDER: ${{PREDICT_CALL_BUILDER}}
       PYTHONPATH: /app/challenge
+    volumes:
+      - ../{challenge_name}:/app/challenge
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+      model-orchestrator:
+        condition: service_started
+    networks: [coordinator-net]
 
   score-worker:
-    volumes:
-      - {challenge_mount}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: {node_name}-score-worker
+    restart: always
+    command: ["python", "-m", "node_template.workers.score_worker"]
     environment:
+      POSTGRES_HOST: ${{POSTGRES_HOST:-postgres}}
+      POSTGRES_PORT: ${{POSTGRES_PORT:-5432}}
+      POSTGRES_USER: ${{POSTGRES_USER:-starter}}
+      POSTGRES_PASSWORD: ${{POSTGRES_PASSWORD:-starter}}
+      POSTGRES_DB: ${{POSTGRES_DB:-starter}}
+      CHECKPOINT_INTERVAL_SECONDS: ${{CHECKPOINT_INTERVAL_SECONDS:-60}}
+      SCORING_FUNCTION: ${{SCORING_FUNCTION}}
+      MODEL_SCORE_AGGREGATOR: ${{MODEL_SCORE_AGGREGATOR}}
+      LEADERBOARD_RANKER: ${{LEADERBOARD_RANKER}}
+      GROUND_TRUTH_RESOLVER: ${{GROUND_TRUTH_RESOLVER}}
       PYTHONPATH: /app/challenge
+    volumes:
+      - ../{challenge_name}:/app/challenge
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [coordinator-net]
 
   report-worker:
-    volumes:
-      - {challenge_mount}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: {node_name}-report-worker
+    restart: always
+    command: ["python", "-m", "node_template.workers.report_worker"]
+    ports:
+      - "8000:8000"
     environment:
+      POSTGRES_HOST: ${{POSTGRES_HOST:-postgres}}
+      POSTGRES_PORT: ${{POSTGRES_PORT:-5432}}
+      POSTGRES_USER: ${{POSTGRES_USER:-starter}}
+      POSTGRES_PASSWORD: ${{POSTGRES_PASSWORD:-starter}}
+      POSTGRES_DB: ${{POSTGRES_DB:-starter}}
+      REPORT_SCHEMA_PROVIDER: ${{REPORT_SCHEMA_PROVIDER}}
       PYTHONPATH: /app/challenge
+    volumes:
+      - ../{challenge_name}:/app/challenge
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [coordinator-net]
+
+  model-orchestrator:
+    build:
+      context: https://github.com/crunchdao/model-orchestrator.git
+    container_name: {node_name}-model-orchestrator
+    restart: unless-stopped
+    init: true
+    ports:
+      - "9091:9091"
+    environment:
+      DOCKER_NETWORK_NAME: {network_name}
+    volumes:
+      - ./deployment/model-orchestrator-local/data:/app/data
+      - ./deployment/model-orchestrator-local/config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock
+    privileged: true
+    entrypoint: ["sh", "/app/config/docker-entrypoint.sh"]
+    command:
+      [
+        "model-orchestrator",
+        "dev",
+        "--configuration-file",
+        "/app/config/orchestrator.dev.yml",
+        "--rebuild",
+        "if-code-modified",
+      ]
+    networks: [coordinator-net]
+
+  report-ui:
+    build:
+      context: https://github.com/crunchdao/coordinator-webapp.git
+      dockerfile: apps/starter/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: "http://report-worker:8000"
+        NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR: "http://model-orchestrator:8001"
+    container_name: {node_name}-report-ui
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./deployment/report-ui/config:/app/config
+      - ./deployment/report-ui/config:/app/apps/starter/config
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - report-worker
+    networks: [coordinator-net]
+
+networks:
+  coordinator-net:
+    driver: bridge
+    name: {network_name}
+
+volumes:
+  postgres-data:
+"""
+
+
+def _node_verify_e2e_script() -> str:
+    return """
+from __future__ import annotations
+
+import os
+import subprocess
+import time
+from datetime import datetime, timedelta, timezone
+
+import requests
+
+
+def _iso(dt: datetime) -> str:
+    return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _get_json(base_url: str, path: str, params: dict | None = None):
+    response = requests.get(f"{base_url}{path}", params=params, timeout=5)
+    response.raise_for_status()
+    return response.json()
+
+
+def _detect_model_runner_failure(log_text: str) -> str | None:
+    markers = ["BAD_IMPLEMENTATION", "No Inherited class found", "Import error occurred"]
+    for line in log_text.splitlines():
+        if any(marker in line for marker in markers):
+            return line.strip()
+    return None
+
+
+def _read_model_orchestrator_logs() -> str:
+    cmd = [
+        "docker",
+        "compose",
+        "-f",
+        "docker-compose.yml",
+        "--env-file",
+        ".local.env",
+        "logs",
+        "model-orchestrator",
+        "--tail",
+        "300",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    return (result.stdout or "") + "\\n" + (result.stderr or "")
+
+
+def main() -> int:
+    base_url = os.getenv("REPORT_API_URL", "http://localhost:8000")
+    timeout_seconds = int(os.getenv("E2E_VERIFY_TIMEOUT_SECONDS", "240"))
+    poll_seconds = int(os.getenv("E2E_VERIFY_POLL_SECONDS", "5"))
+
+    print(f"[verify-e2e] base_url={base_url} timeout={timeout_seconds}s")
+
+    deadline = time.time() + timeout_seconds
+    since = datetime.now(timezone.utc) - timedelta(hours=1)
+
+    last_error: str | None = None
+
+    while time.time() < deadline:
+        try:
+            model_logs = _read_model_orchestrator_logs()
+            failure = _detect_model_runner_failure(model_logs)
+            if failure is not None:
+                raise RuntimeError(f"model-runner failure detected: {failure}")
+
+            health = _get_json(base_url, "/healthz")
+            if health.get("status") != "ok":
+                raise RuntimeError(f"healthcheck not ok: {health}")
+
+            models = _get_json(base_url, "/reports/models")
+            if not models:
+                raise RuntimeError("no models registered yet")
+
+            model_id = models[0]["model_id"]
+            now = datetime.now(timezone.utc)
+            predictions = _get_json(
+                base_url,
+                "/reports/predictions",
+                params={
+                    "projectIds": model_id,
+                    "start": _iso(since),
+                    "end": _iso(now),
+                },
+            )
+            leaderboard = _get_json(base_url, "/reports/leaderboard")
+
+            scored = [
+                row
+                for row in predictions
+                if row.get("score_value") is not None and row.get("score_failed") is False
+            ]
+            if scored and leaderboard:
+                print(
+                    "[verify-e2e] success "
+                    f"models={len(models)} scored_predictions={len(scored)} leaderboard_entries={len(leaderboard)}"
+                )
+                return 0
+
+            raise RuntimeError(
+                f"waiting for scored predictions/leaderboard (predictions={len(predictions)} leaderboard={len(leaderboard)})"
+            )
+        except Exception as exc:  # noqa: BLE001
+            last_error = str(exc)
+            print(f"[verify-e2e] waiting: {last_error}")
+            time.sleep(poll_seconds)
+
+    print(f"[verify-e2e] FAILED: timeout reached. last_error={last_error}")
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
 """
 
 
@@ -399,19 +837,7 @@ def _node_config_readme() -> str:
 
 
 def _node_callables_env(callables: dict[str, str]) -> str:
-    order = [
-        "INFERENCE_INPUT_BUILDER",
-        "INFERENCE_OUTPUT_VALIDATOR",
-        "SCORING_FUNCTION",
-        "MODEL_SCORE_AGGREGATOR",
-        "REPORT_SCHEMA_PROVIDER",
-        "LEADERBOARD_RANKER",
-        "RAW_INPUT_PROVIDER",
-        "GROUND_TRUTH_RESOLVER",
-        "PREDICTION_SCOPE_BUILDER",
-        "PREDICT_CALL_BUILDER",
-    ]
-    return "\n".join(f"{key}={callables[key]}" for key in order)
+    return "\n".join(f"{key}={callables[key]}" for key in _CALLABLE_ORDER)
 
 
 def _scheduled_prediction_configs(payload: list[dict[str, Any]]) -> str:
@@ -422,10 +848,272 @@ def _node_deployment_readme() -> str:
     return """
 # deployment
 
-Place compose files and local runtime deployment assets here.
+Local deployment assets for this standalone node workspace.
 
-Start from the starter compose setup and only customize what your challenge needs.
+- `model-orchestrator-local/config`: local model-orchestrator configuration and starter submission
+- `report-ui/config`: report UI local settings
 """
+
+
+def _orchestrator_entrypoint_script() -> str:
+    return """
+#!/bin/sh
+set -e
+
+bootstrap_submission() {
+  submission_id="$1"
+  template_dir="$2"
+  submission_dir="/app/data/submissions/${submission_id}"
+
+  if [ ! -f "${submission_dir}/main.py" ] || [ ! -f "${submission_dir}/tracker.py" ]; then
+    echo "Bootstrapping local starter submission files into ${submission_dir}"
+    mkdir -p "${submission_dir}"
+    cp -f "${template_dir}"/* "${submission_dir}"/
+  fi
+}
+
+bootstrap_submission "starter-submission" "/app/config/starter-submission"
+
+exec "$@"
+"""
+
+
+def _orchestrator_dev_config(crunch_id: str) -> str:
+    return f"""
+logging:
+  level: debug
+
+infrastructure:
+  database:
+    type: sqlite
+    path: "/app/data/orchestrator.dev.db"
+
+  publishers:
+    - type: websocket
+      address: "0.0.0.0"
+      port: 9091
+
+  runner:
+    type: local
+    docker-network-name: "${{DOCKER_NETWORK_NAME}}"
+    submission-storage-path-format: "/app/data/submissions/{{id}}"
+    resource-storage-path-format: "/app/data/models/{{id}}"
+
+watcher:
+  interval: 1
+  poller:
+    type: yaml
+    path: "/app/config/models.dev.yml"
+
+crunches:
+  - id: "{crunch_id}"
+    name: "{crunch_id}"
+    infrastructure:
+      zone: "local"
+
+can-place-in-quarantine: false
+use-augmented-info: false
+"""
+
+
+def _orchestrator_models_dev(crunch_id: str) -> str:
+    return f"""
+models:
+  - id: "1"
+    submission_id: starter-submission
+    crunch_id: {crunch_id}
+    desired_state: RUNNING
+    model_name: starter-model
+    cruncher_name: local-dev
+    cruncher_id: local-0001
+"""
+
+
+def _starter_submission_main() -> str:
+    return """
+from __future__ import annotations
+
+from tracker import TrackerBase
+
+
+class LocalStarterSubmission(TrackerBase):
+    def predict(self, asset: str, horizon: int, step: int):
+        return {"score": 0.5}
+"""
+
+
+def _starter_submission_tracker() -> str:
+    return """
+from __future__ import annotations
+
+from collections import defaultdict
+from dataclasses import dataclass, field
+
+
+@dataclass
+class TrackerBase:
+    history: dict[str, list[tuple[int, float]]] = field(default_factory=lambda: defaultdict(list))
+
+    def tick(self, data: dict[str, list[tuple[int, float]]]) -> None:
+        for asset, points in (data or {}).items():
+            self.history.setdefault(asset, []).extend(points or [])
+
+    def predict(self, asset: str, horizon: int, step: int):
+        raise NotImplementedError
+"""
+
+
+def _starter_submission_requirements() -> str:
+    return """
+# Add optional model dependencies here for local model-orchestrator runs.
+"""
+
+
+def _report_ui_global_settings(node_name: str) -> str:
+    payload = {
+        "endpoints": {"leaderboard": "/reports/leaderboard"},
+        "logs": {
+            "containerNames": [
+                f"{node_name}-score-worker",
+                f"{node_name}-predict-worker",
+                f"{node_name}-report-worker",
+                f"{node_name}-model-orchestrator",
+            ]
+        },
+    }
+    return json.dumps(payload, indent=2)
+
+
+def _report_ui_leaderboard_columns() -> str:
+    payload = [
+        {
+            "id": 1,
+            "type": "MODEL",
+            "property": "model_id",
+            "format": None,
+            "displayName": "Model",
+            "tooltip": None,
+            "nativeConfiguration": {"type": "model", "statusProperty": "status"},
+            "order": 0,
+        },
+        {
+            "id": 2,
+            "type": "VALUE",
+            "property": "score_recent",
+            "format": "decimal-1",
+            "displayName": "Recent Score",
+            "tooltip": "The score of the player over the last 24 hours.",
+            "nativeConfiguration": None,
+            "order": 20,
+        },
+        {
+            "id": 3,
+            "type": "VALUE",
+            "property": "score_steady",
+            "format": "decimal-2",
+            "displayName": "Steady Score",
+            "tooltip": "The score of the player over the last 72 hours.",
+            "nativeConfiguration": None,
+            "order": 30,
+        },
+        {
+            "id": 4,
+            "type": "VALUE",
+            "property": "score_anchor",
+            "format": "decimal-3",
+            "displayName": "Anchor Score",
+            "tooltip": "The score of the player over the last 7 days.",
+            "nativeConfiguration": None,
+            "order": 40,
+        },
+    ]
+    return json.dumps(payload, indent=2)
+
+
+def _report_ui_metrics_widgets() -> str:
+    payload = [
+        {
+            "id": 1,
+            "type": "CHART",
+            "displayName": "Score Metrics",
+            "tooltip": None,
+            "order": 10,
+            "endpointUrl": "/reports/models/global",
+            "nativeConfiguration": {
+                "type": "line",
+                "xAxis": {"name": "performed_at"},
+                "yAxis": {
+                    "series": [
+                        {"name": "score_recent", "label": "Recent Score"},
+                        {"name": "score_steady", "label": "Steady Score"},
+                        {"name": "score_anchor", "label": "Anchor Score"},
+                    ],
+                    "format": "decimal-2",
+                },
+                "displayEvolution": False,
+            },
+        },
+        {
+            "id": 2,
+            "type": "CHART",
+            "displayName": "Predictions",
+            "tooltip": None,
+            "order": 30,
+            "endpointUrl": "/reports/predictions",
+            "nativeConfiguration": {
+                "type": "line",
+                "xAxis": {"name": "performed_at"},
+                "yAxis": {
+                    "series": [{"name": "score_value"}],
+                    "format": "decimal-2",
+                },
+                "alertConfig": {"reasonField": "score_failed_reason", "field": "score_success"},
+                "filterConfig": [
+                    {"type": "select", "label": "Asset", "property": "asset", "autoSelectFirst": True},
+                    {
+                        "type": "select",
+                        "label": "Horizon",
+                        "property": "horizon",
+                        "autoSelectFirst": True,
+                    },
+                ],
+                "groupByProperty": "param",
+                "displayEvolution": False,
+            },
+        },
+        {
+            "id": 3,
+            "type": "CHART",
+            "displayName": "Rolling score by parameters",
+            "tooltip": None,
+            "order": 20,
+            "endpointUrl": "/reports/models/params",
+            "nativeConfiguration": {
+                "type": "line",
+                "xAxis": {"name": "performed_at"},
+                "yAxis": {
+                    "series": [
+                        {"name": "score_recent", "label": "Recent Score"},
+                        {"name": "score_steady", "label": "Steady Score"},
+                        {"name": "score_anchor", "label": "Anchor Score"},
+                    ],
+                    "format": "decimal:2",
+                },
+                "filterConfig": [
+                    {"type": "select", "label": "Asset", "property": "asset", "autoSelectFirst": True},
+                    {
+                        "type": "select",
+                        "label": "Horizon",
+                        "property": "horizon",
+                        "autoSelectFirst": True,
+                    },
+                ],
+                "groupByProperty": "param",
+                "displayEvolution": False,
+            },
+        },
+    ]
+    return json.dumps(payload, indent=2)
 
 
 def _challenge_readme(name: str, package_module: str) -> str:
@@ -522,7 +1210,8 @@ def score_prediction(prediction, ground_truth):
 
 def aggregate_model_scores(scored_predictions, models):
     # Optional challenge-specific aggregator. Default runtime wiring uses
-    # node_template default_aggregate_model_scores unless overridden in spec.
+    # the coordinator runtime's built-in model-score aggregation unless
+    # overridden in spec.
     entries = []
     for model in models.values():
         entries.append(
@@ -636,7 +1325,7 @@ Use this folder for **node-specific callable overrides** selected via env variab
 
 ## Put code here when
 
-- default callables from `node_template` are not enough
+- default functionality from the coordinator core packages is not enough
 - override should stay private to this node deployment
 - you need custom ranking/scope/predict/report behavior
 

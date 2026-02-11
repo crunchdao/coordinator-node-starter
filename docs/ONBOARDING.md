@@ -19,13 +19,13 @@ coordinator doctor --spec path/to/spec.json
 
 This creates:
 
-- `crunch-implementations/<name>/crunch-node-<name>`
-- `crunch-implementations/<name>/crunch-<name>`
+- `<name>/crunch-node-<name>`
+- `<name>/crunch-<name>`
 
 Run from the generated node folder:
 
 ```bash
-cd crunch-implementations/<name>/crunch-node-<name>
+cd <name>/crunch-node-<name>
 make deploy
 make verify-e2e
 ```

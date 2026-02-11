@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text
@@ -40,6 +43,17 @@ def default_scheduled_prediction_configs() -> list[dict[str, Any]]:
     ]
 
 
+def load_scheduled_prediction_configs() -> list[dict[str, Any]]:
+    path = os.getenv("SCHEDULED_PREDICTION_CONFIGS_PATH")
+    if not path:
+        return default_scheduled_prediction_configs()
+
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError("SCHEDULED_PREDICTION_CONFIGS_PATH must point to a JSON array")
+    return payload
+
+
 def init_db() -> None:
     print("➡️  Resetting canonical tables...")
     with engine.begin() as conn:
@@ -51,7 +65,7 @@ def init_db() -> None:
 
     with create_session() as session:
         session.exec(delete(PredictionConfigRow))
-        for idx, config in enumerate(default_scheduled_prediction_configs(), start=1):
+        for idx, config in enumerate(load_scheduled_prediction_configs(), start=1):
             envelope = ScheduledPredictionConfigEnvelope.model_validate(config)
             session.add(
                 PredictionConfigRow(

@@ -27,9 +27,33 @@ Legacy status:
 >
 > `spec.json` must include `"spec_version": "1"`.
 >
-> This generates `crunch-implementations/<challenge-slug>/` with:
+> This generates `<challenge-slug>/` in the selected output location with:
 > - `crunch-node-<challenge-slug>` (thin node wiring)
 > - `crunch-<challenge-slug>` (challenge package stubs)
+
+## Launch a local Crunch workspace
+
+From this project root, validate a spec and scaffold a standalone workspace:
+
+```bash
+coordinator doctor --spec path/to/spec.json
+coordinator init --spec path/to/spec.json --preset realtime --output .
+```
+
+Then launch the generated local crunch runtime:
+
+```bash
+cd <challenge-slug>/crunch-node-<challenge-slug>
+make deploy
+make verify-e2e
+```
+
+`make verify-e2e` waits until scored predictions and leaderboard entries are available.
+
+Useful endpoints once running:
+
+- Report API: http://localhost:8000
+- UI: http://localhost:3000
 
 Create two repositories per Crunch:
 
@@ -89,9 +113,9 @@ Useful endpoints:
 - UI: http://localhost:3000
 - Docs: http://localhost:8080
 
-For local challenge instances inside this repo, see:
+For scaffold-first local challenge onboarding, see:
 
-- `crunch-implementations/README.md`
+- `docs/ONBOARDING.md`
 
 ## Runtime notes (current defaults)
 

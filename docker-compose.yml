@@ -36,6 +36,7 @@ services:
     <<: *common-build
     environment:
       <<: *common-db-env
+      SCHEDULED_PREDICTION_CONFIGS_PATH: ${SCHEDULED_PREDICTION_CONFIGS_PATH:-}
     # todo improve and handle migration
     command: [ "python", "-m", "node_template.infrastructure.db.init_db" ]
     depends_on:
@@ -60,6 +61,10 @@ services:
       PREDICT_CALL_BUILDER: ${PREDICT_CALL_BUILDER:-node_template.extensions.default_callables:default_build_predict_call}
       PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
       PYTH_TIMEOUT_SECONDS: ${PYTH_TIMEOUT_SECONDS:-5}
+      PYTH_ASSETS: ${PYTH_ASSETS:-BTC,ETH,SOL,BNB,XRP,ADA,DOGE,AVAX}
+      POSITIVE_CLASS_WEIGHT: ${POSITIVE_CLASS_WEIGHT:-10}
+      SB_DETECTOR_Z_THRESHOLD: ${SB_DETECTOR_Z_THRESHOLD:-3.0}
+      SB_DETECTOR_VARIANCE_RATIO_THRESHOLD: ${SB_DETECTOR_VARIANCE_RATIO_THRESHOLD:-2.5}
     restart: always
     command: [ "python", "-m", "node_template.workers.predict_worker" ]
     depends_on:
@@ -80,6 +85,10 @@ services:
       GROUND_TRUTH_RESOLVER: ${GROUND_TRUTH_RESOLVER:-node_template.extensions.default_callables:default_resolve_ground_truth}
       PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
       PYTH_TIMEOUT_SECONDS: ${PYTH_TIMEOUT_SECONDS:-5}
+      PYTH_ASSETS: ${PYTH_ASSETS:-BTC,ETH,SOL,BNB,XRP,ADA,DOGE,AVAX}
+      POSITIVE_CLASS_WEIGHT: ${POSITIVE_CLASS_WEIGHT:-10}
+      SB_DETECTOR_Z_THRESHOLD: ${SB_DETECTOR_Z_THRESHOLD:-3.0}
+      SB_DETECTOR_VARIANCE_RATIO_THRESHOLD: ${SB_DETECTOR_VARIANCE_RATIO_THRESHOLD:-2.5}
     restart: always
     command: [ "python", "-m", "node_template.workers.score_worker" ]
     depends_on:
