@@ -38,12 +38,19 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertTrue((base / "README.md").exists())
                 self.assertTrue((node / "README.md").exists())
                 self.assertTrue((node / "pyproject.toml").exists())
+                self.assertTrue((node / "Makefile").exists())
+                self.assertTrue((node / ".local.env").exists())
                 self.assertTrue((node / ".local.env.example").exists())
                 self.assertTrue((node / "config" / "callables.env").exists())
                 self.assertTrue((node / "config" / "scheduled_prediction_configs.json").exists())
                 self.assertTrue((node / "deployment" / "README.md").exists())
+                self.assertTrue((node / "deployment" / "docker-compose-local.override.yml").exists())
                 self.assertTrue((node / "plugins" / "README.md").exists())
                 self.assertTrue((node / "extensions" / "README.md").exists())
+
+                makefile = (node / "Makefile").read_text(encoding="utf-8")
+                self.assertIn("-f $(ROOT_DIR)/docker-compose.yml", makefile)
+                self.assertIn("deployment/docker-compose-local.override.yml", makefile)
 
                 self.assertTrue((challenge / "README.md").exists())
                 self.assertTrue((challenge / "pyproject.toml").exists())
@@ -130,6 +137,12 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 callables_env = Path(
                     "crunch-implementations/btc-trader/crunch-node-btc-trader/config/callables.env"
                 ).read_text(encoding="utf-8")
+                runtime_env = Path(
+                    "crunch-implementations/btc-trader/crunch-node-btc-trader/.local.env"
+                ).read_text(encoding="utf-8")
+                override_compose = Path(
+                    "crunch-implementations/btc-trader/crunch-node-btc-trader/deployment/docker-compose-local.override.yml"
+                ).read_text(encoding="utf-8")
                 self.assertIn(
                     "SCORING_FUNCTION=crunch_btc_trader.scoring:score_v2",
                     callables_env,
@@ -137,6 +150,18 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertIn(
                     "REPORT_SCHEMA_PROVIDER=crunch_btc_trader.reporting:report_schema_v2",
                     callables_env,
+                )
+                self.assertIn(
+                    "SCORING_FUNCTION=crunch_btc_trader.scoring:score_v2",
+                    runtime_env,
+                )
+                self.assertIn(
+                    "REPORT_SCHEMA_PROVIDER=crunch_btc_trader.reporting:report_schema_v2",
+                    runtime_env,
+                )
+                self.assertIn(
+                    "./crunch-implementations/btc-trader/crunch-btc-trader:/app/challenge",
+                    override_compose,
                 )
 
                 schedule_raw = Path(

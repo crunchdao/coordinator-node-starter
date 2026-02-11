@@ -15,7 +15,7 @@ _DEFAULT_CALLABLES = {
     "INFERENCE_INPUT_BUILDER": "{package_module}.inference:build_input",
     "INFERENCE_OUTPUT_VALIDATOR": "{package_module}.validation:validate_output",
     "SCORING_FUNCTION": "{package_module}.scoring:score_prediction",
-    "MODEL_SCORE_AGGREGATOR": "{package_module}.scoring:aggregate_model_scores",
+    "MODEL_SCORE_AGGREGATOR": "node_template.extensions.default_callables:default_aggregate_model_scores",
     "REPORT_SCHEMA_PROVIDER": "{package_module}.reporting:report_schema",
     "LEADERBOARD_RANKER": "node_template.extensions.default_callables:default_rank_leaderboard",
     "RAW_INPUT_PROVIDER": "node_template.extensions.default_callables:default_provide_raw_input",
@@ -145,21 +145,30 @@ def run_init(
             return 1
         shutil.rmtree(workspace_dir)
 
+    local_env = _node_local_env(
+        crunch_id=config.crunch_id,
+        base_classname=config.model_base_classname,
+        checkpoint_interval_seconds=config.checkpoint_interval_seconds,
+        callables=config.callables,
+    )
+
     files = {
         "README.md": _workspace_readme(config.name),
         f"{config.node_name}/README.md": _node_readme(config.name),
+        f"{config.node_name}/Makefile": _node_makefile(),
         f"{config.node_name}/pyproject.toml": _node_pyproject(config.node_name, config.challenge_name),
-        f"{config.node_name}/.local.env.example": _node_local_env(
-            crunch_id=config.crunch_id,
-            base_classname=config.model_base_classname,
-            checkpoint_interval_seconds=config.checkpoint_interval_seconds,
-        ),
+        f"{config.node_name}/.local.env": local_env,
+        f"{config.node_name}/.local.env.example": local_env,
         f"{config.node_name}/config/README.md": _node_config_readme(),
         f"{config.node_name}/config/callables.env": _node_callables_env(config.callables),
         f"{config.node_name}/config/scheduled_prediction_configs.json": _scheduled_prediction_configs(
             config.scheduled_prediction_configs
         ),
         f"{config.node_name}/deployment/README.md": _node_deployment_readme(),
+        f"{config.node_name}/deployment/docker-compose-local.override.yml": _node_local_override_compose(
+            config.name,
+            config.challenge_name,
+        ),
         f"{config.node_name}/plugins/README.md": _plugins_readme("node"),
         f"{config.node_name}/extensions/README.md": _extensions_readme("node"),
         f"{config.challenge_name}/README.md": _challenge_readme(config.name, config.package_module),
@@ -270,6 +279,17 @@ Thin node project for `{name}`.
 - optional node-side hooks in `extensions/`
 
 Core runtime logic should stay in `coordinator_core`.
+
+## Local run
+
+From this folder:
+
+```bash
+make deploy
+make verify-e2e
+```
+
+This profile uses root compose files with a local override to mount your challenge package.
 """
 
 
@@ -291,11 +311,65 @@ coordinator-node-starter = {{ path = "../../..", editable = true }}
 """
 
 
+def _node_makefile() -> str:
+    return """
+ROOT_DIR := ../../..
+COMPOSE := docker compose -f $(ROOT_DIR)/docker-compose.yml -f $(ROOT_DIR)/docker-compose-local.yml -f deployment/docker-compose-local.override.yml --env-file .local.env
+
+.PHONY: deploy down logs verify-e2e
+
+deploy:
+	$(COMPOSE) up -d --build
+
+down:
+	$(COMPOSE) down
+
+logs:
+	$(COMPOSE) logs -f
+
+verify-e2e:
+	uv run --directory $(ROOT_DIR) python scripts/verify_e2e.py
+"""
+
+
+def _node_local_override_compose(name: str, challenge_name: str) -> str:
+    challenge_mount = f"./crunch-implementations/{name}/{challenge_name}:/app/challenge"
+    return f"""
+services:
+  init-db:
+    volumes:
+      - {challenge_mount}
+    environment:
+      PYTHONPATH: /app/challenge
+
+  predict-worker:
+    volumes:
+      - {challenge_mount}
+    environment:
+      PYTHONPATH: /app/challenge
+
+  score-worker:
+    volumes:
+      - {challenge_mount}
+    environment:
+      PYTHONPATH: /app/challenge
+
+  report-worker:
+    volumes:
+      - {challenge_mount}
+    environment:
+      PYTHONPATH: /app/challenge
+"""
+
+
 def _node_local_env(
     crunch_id: str,
     base_classname: str,
     checkpoint_interval_seconds: int,
+    callables: dict[str, str],
 ) -> str:
+    callables_block = _node_callables_env(callables)
+
     return f"""
 POSTGRES_USER=starter
 POSTGRES_PASSWORD=starter
@@ -310,6 +384,8 @@ MODEL_RUNNER_TIMEOUT_SECONDS=60
 CRUNCH_ID={crunch_id}
 MODEL_BASE_CLASSNAME={base_classname}
 CHECKPOINT_INTERVAL_SECONDS={checkpoint_interval_seconds}
+
+{callables_block}
 """
 
 
@@ -440,20 +516,23 @@ from __future__ import annotations
 
 
 def score_prediction(prediction, ground_truth):
-    return {"score": 0.0, "payload": {"reason": "replace with challenge score"}}
+    # Replace with challenge-specific score computation.
+    return {"value": 0.0, "success": True, "failed_reason": None}
 
 
 def aggregate_model_scores(scored_predictions, models):
+    # Optional challenge-specific aggregator. Default runtime wiring uses
+    # node_template default_aggregate_model_scores unless overridden in spec.
     entries = []
-    for model in models:
+    for model in models.values():
         entries.append(
             {
                 "model_id": model.id,
                 "model_name": model.name,
                 "cruncher_name": model.player_name,
                 "score": {
-                    "metrics": {"recent": 0.0, "steady": 0.0, "anchor": 0.0},
-                    "ranking": {"key": "anchor", "direction": "desc", "value": 0.0},
+                    "metrics": {"average": 0.0},
+                    "ranking": {"key": "average", "direction": "desc", "value": 0.0},
                     "payload": {},
                 },
             }

@@ -22,6 +22,14 @@ This creates:
 - `crunch-implementations/<name>/crunch-node-<name>`
 - `crunch-implementations/<name>/crunch-<name>`
 
+Run from the generated node folder:
+
+```bash
+cd crunch-implementations/<name>/crunch-node-<name>
+make deploy
+make verify-e2e
+```
+
 Minimal `spec.json` example (note the required `spec_version`):
 
 ```json
