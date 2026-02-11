@@ -77,8 +77,11 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertFalse((package / "validation.py").exists())
                 self.assertFalse((package / "reporting.py").exists())
                 self.assertTrue((package / "schemas" / "README.md").exists())
-                self.assertTrue((package / "plugins" / "README.md").exists())
-                self.assertTrue((package / "extensions" / "README.md").exists())
+                self.assertFalse((package / "plugins" / "README.md").exists())
+                self.assertFalse((package / "extensions" / "README.md").exists())
+                self.assertTrue((package / "examples" / "__init__.py").exists())
+                self.assertTrue((package / "examples" / "README.md").exists())
+                self.assertTrue((package / "examples" / "quickstarter_tracker.py").exists())
 
                 self.assertTrue((node / "runtime_definitions" / "__init__.py").exists())
                 self.assertTrue((node / "runtime_definitions" / "inference.py").exists())
@@ -116,6 +119,7 @@ class TestCoordinatorCliInit(unittest.TestCase):
 
                 self.assertIn("tracker.py", challenge_skill)
                 self.assertIn("scoring.py", challenge_skill)
+                self.assertIn("examples/quickstarter_tracker.py", challenge_skill)
                 self.assertNotIn("crunch_btc_trader/validation.py", challenge_skill)
                 self.assertIn("../crunch-node-btc-trader/runtime_definitions", challenge_skill)
 

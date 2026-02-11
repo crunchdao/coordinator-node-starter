@@ -426,10 +426,11 @@ def _render_scaffold_files(config: InitConfig, include_spec: bool) -> dict[str, 
         ("{challenge_name}/{package_module}/tracker.py", _challenge_tracker()),
         ("{challenge_name}/{package_module}/scoring.py", _challenge_scoring()),
         ("{challenge_name}/{package_module}/schemas/README.md", _schemas_readme()),
-        ("{challenge_name}/{package_module}/plugins/README.md", _plugins_readme("challenge")),
+        ("{challenge_name}/{package_module}/examples/__init__.py", _challenge_examples_init()),
+        ("{challenge_name}/{package_module}/examples/README.md", _challenge_examples_readme()),
         (
-            "{challenge_name}/{package_module}/extensions/README.md",
-            _extensions_readme("challenge"),
+            "{challenge_name}/{package_module}/examples/quickstarter_tracker.py",
+            _challenge_quickstarter_tracker(config.package_module),
         ),
     ]
 
@@ -579,6 +580,10 @@ summary: Agent instructions for implementing challenge logic.
 - `{package_module}/tracker.py`
 - `{package_module}/scoring.py`
 
+## Quickstarters (public)
+
+- `{package_module}/examples/quickstarter_tracker.py`
+
 ## Node-private callable files
 
 - `../{node_name}/runtime_definitions/inference.py`
@@ -609,7 +614,7 @@ def _workspace_readme(name: str) -> str:
 This workspace contains:
 
 - `crunch-node-{name}`: private node runtime config/deployment wiring (including runtime callables)
-- `crunch-{name}`: public challenge package (participant tracker/scoring)
+- `crunch-{name}`: public challenge package (participant tracker/scoring/quickstarters)
 """
 
 
@@ -1465,6 +1470,7 @@ Implement participant-facing files in:
 
 - `tracker.py`
 - `scoring.py`
+- `examples/quickstarter_tracker.py`
 
 Node-private runtime callables live in:
 
@@ -1512,6 +1518,43 @@ class TrackerBase:
 
     def predict(self, **kwargs):
         raise NotImplementedError("Implement predict() in challenge quickstarters/models")
+"""
+
+
+def _challenge_examples_init() -> str:
+    return """
+from .quickstarter_tracker import QuickstarterTracker
+
+__all__ = ["QuickstarterTracker"]
+"""
+
+
+def _challenge_examples_readme() -> str:
+    return """
+# examples
+
+Public quickstarters for participants.
+
+Keep these examples simple and runnable without node-private dependencies.
+"""
+
+
+def _challenge_quickstarter_tracker(package_module: str) -> str:
+    return f"""
+from __future__ import annotations
+
+from {package_module}.tracker import TrackerBase
+
+
+class QuickstarterTracker(TrackerBase):
+    \"\"\"Minimal quickstarter tracker.
+
+    Replace this logic with your own model.
+    \"\"\"
+
+    def predict(self, **kwargs):
+        _ = kwargs
+        return {{"value": 0.0}}
 """
 
 

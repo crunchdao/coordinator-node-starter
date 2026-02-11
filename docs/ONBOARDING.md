@@ -58,11 +58,14 @@ Minimal `spec.json` example (note the required `spec_version`):
 Manual structure reference:
 
 1. **Public challenge repo**: `crunch-<name>`
-   - challenge schemas
-   - challenge callables
-   - model base class and examples
+   - model base class (`tracker.py`)
+   - scoring logic (`scoring.py`)
+   - quickstarters/examples (`examples/`)
+   - optional public schemas/helpers
 2. **Private node repo**: `crunch-node-<name>`
    - runtime/deployment config
+   - callable wiring (`config/callables.env`)
+   - runtime callables (`runtime_definitions/`)
    - worker wiring (from this starter)
 
 ## 2) Define the JSONB schemas in your challenge package
@@ -88,9 +91,9 @@ Recommended pattern:
 - core envelope stays stable (`metrics`, `ranking`, `payload`)
 - challenge payload schema lives inside `payload`
 
-## 3) Implement and export challenge callables
+## 3) Implement runtime callables in the node workspace
 
-Your challenge package should provide callable entrypoints for:
+Implement callable entrypoints in `crunch-node-<name>/runtime_definitions/` for:
 
 - inference input builder
 - inference output validator
@@ -100,10 +103,11 @@ Your challenge package should provide callable entrypoints for:
 - prediction scoring
 - model-score aggregation
 - leaderboard ranking
+- report schema provider
 
 ## 4) Wire callables via environment variables
 
-Set dotted paths in node runtime config:
+Set dotted paths in `crunch-node-<name>/config/callables.env`:
 
 - `INFERENCE_INPUT_BUILDER`
 - `INFERENCE_OUTPUT_VALIDATOR`
@@ -160,11 +164,11 @@ curl -s http://localhost:8000/reports/schema
 
 | JSONB field | Schema owner |
 |---|---|
-| `scheduled_prediction_configs.scope_template_jsonb` | challenge package |
-| `scheduled_prediction_configs.schedule_jsonb` | challenge package |
-| `predictions.scope_jsonb` | challenge package |
-| `predictions.inference_input_jsonb` | challenge package |
-| `predictions.inference_output_jsonb` | challenge package |
+| `scheduled_prediction_configs.scope_template_jsonb` | node workspace config (`config/scheduled_prediction_configs.json`) |
+| `scheduled_prediction_configs.schedule_jsonb` | node workspace config (`config/scheduled_prediction_configs.json`) |
+| `predictions.scope_jsonb` | node runtime callable (`runtime_definitions` scope builder) |
+| `predictions.inference_input_jsonb` | node runtime callable (`runtime_definitions` input builder) |
+| `predictions.inference_output_jsonb` | node runtime callable (`runtime_definitions` validator contract) |
 | `models.overall_score_jsonb` | core envelope + challenge payload |
 | `model_scores.score_payload_jsonb` | core envelope + challenge payload |
 | `leaderboards.entries_jsonb` | core entry + optional challenge extras |

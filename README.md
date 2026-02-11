@@ -60,30 +60,34 @@ Useful endpoints once running:
 Create two repositories per Crunch:
 
 1. `crunch-<name>` (public)
-   - model interface
-   - inference schemas/validation
-   - scoring callables
-   - quickstarters
+   - model interface (`tracker.py`)
+   - scoring/self-eval logic (`scoring.py`)
+   - quickstarters (`examples/`)
 2. `crunch-node-<name>` (private)
-   - copy/adapt `node_template/`
    - deployment/config for your node
+   - callable wiring (`config/callables.env`)
+   - runtime callables (`runtime_definitions/`)
 
 ## Required definition points (before implementation)
 
 Define these in your Crunch repos (not in this template):
 
-- Define Model Interface  
+- Define model interface  
   `crunch-<name>/crunch_<name>/tracker.py`
-- Define inference input  
-  `crunch-<name>/crunch_<name>/inference.py` (builder) + `crunch-node-<name>/node_template/config/extensions.py` (`INFERENCE_INPUT_BUILDER`)
-- Define inference output  
-  `crunch-<name>/crunch_<name>/validation.py` (schema/validator) + `crunch-node-<name>/node_template/config/extensions.py` (`INFERENCE_OUTPUT_VALIDATOR`)
-- Define scoring function  
-  `crunch-<name>/crunch_<name>/scoring.py` + `crunch-node-<name>/node_template/config/extensions.py` (`SCORING_FUNCTION`)
-- Define ModelScore  
-  `crunch-<name>/crunch_<name>/scoring.py` (`aggregate_model_scores`) and optionally `crunch-<name>/crunch_<name>/ranking.py` + `crunch-node-<name>/node_template/config/extensions.py` (`MODEL_SCORE_AGGREGATOR`, `LEADERBOARD_RANKER`)
+- Define participant quickstarters  
+  `crunch-<name>/crunch_<name>/examples/quickstarter_tracker.py`
+- Define scoring function for local self-eval  
+  `crunch-<name>/crunch_<name>/scoring.py`
+- Define runtime inference input  
+  `crunch-node-<name>/runtime_definitions/inference.py` (`INFERENCE_INPUT_BUILDER`)
+- Define runtime inference output validation  
+  `crunch-node-<name>/runtime_definitions/validation.py` (`INFERENCE_OUTPUT_VALIDATOR`)
+- Define runtime data + ground-truth providers  
+  `crunch-node-<name>/runtime_definitions/data.py` (`RAW_INPUT_PROVIDER`, `GROUND_TRUTH_RESOLVER`)
+- Define runtime report schema  
+  `crunch-node-<name>/runtime_definitions/reporting.py` (`REPORT_SCHEMA_PROVIDER`)
 - Define checkpoint interval  
-  `crunch-node-<name>/node_template/config/runtime.py` (`CHECKPOINT_INTERVAL_SECONDS`)
+  `crunch-node-<name>/.local.env` (`CHECKPOINT_INTERVAL_SECONDS`)
 
 ## Built-in starter profile (enabled by default)
 
