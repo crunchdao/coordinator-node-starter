@@ -346,7 +346,9 @@ def _render_scaffold_files(config: InitConfig, include_spec: bool) -> dict[str, 
 
     manifest: list[tuple[str, str]] = [
         ("README.md", _workspace_readme(config.name)),
+        ("SKILL.md", _workspace_skill(config.name, config.node_name, config.challenge_name)),
         ("{node_name}/README.md", _node_readme(config.name)),
+        ("{node_name}/SKILL.md", _node_skill(config.name, config.node_name, config.challenge_name)),
         ("{node_name}/RUNBOOK.md", _node_runbook(config.name, config.node_name, config.challenge_name)),
         ("{node_name}/Makefile", _node_makefile()),
         ("{node_name}/pyproject.toml", _node_pyproject(config.node_name, config.challenge_name)),
@@ -406,6 +408,10 @@ def _render_scaffold_files(config: InitConfig, include_spec: bool) -> dict[str, 
         ("{node_name}/plugins/README.md", _plugins_readme("node")),
         ("{node_name}/extensions/README.md", _extensions_readme("node")),
         ("{challenge_name}/README.md", _challenge_readme(config.name, config.package_module)),
+        (
+            "{challenge_name}/SKILL.md",
+            _challenge_skill(config.name, config.package_module, config.node_name, config.challenge_name),
+        ),
         (
             "{challenge_name}/pyproject.toml",
             _challenge_pyproject(config.challenge_name, config.package_module),
@@ -472,6 +478,120 @@ def _vendor_runtime_packages(target_runtime_dir: Path) -> None:
         if destination.exists():
             shutil.rmtree(destination)
         shutil.copytree(source_dir, destination)
+
+
+def _workspace_skill(name: str, node_name: str, challenge_name: str) -> str:
+    return f"""
+---
+name: {name}-workspace
+summary: Agent runbook for this generated Crunch workspace.
+---
+
+# {name} workspace skill
+
+## Fast path (from workspace root)
+
+```bash
+cd {node_name}
+make deploy
+make verify-e2e
+make logs-capture
+```
+
+## Where logs and diagnostics live
+
+- Live service logs: `cd {node_name} && make logs`
+- Captured runtime logs: `{node_name}/runtime-services.jsonl`
+- Lifecycle audit: `process-log.jsonl`
+- Additional troubleshooting: `{node_name}/RUNBOOK.md`
+
+## Where to edit code
+
+- Challenge behavior (model contract, inference, validation, scoring):
+  `{challenge_name}/`
+- Runtime wiring (.env/callables/schedules/deployment):
+  `{node_name}/`
+- Vendored runtime packages are under `{node_name}/runtime/`.
+  Avoid editing them unless intentionally patching runtime internals.
+
+## Validation after changes
+
+```bash
+cd {node_name}
+make verify-e2e
+```
+"""
+
+
+def _node_skill(name: str, node_name: str, challenge_name: str) -> str:
+    return f"""
+---
+name: {name}-node
+summary: Agent instructions for operating crunch-node-{name}.
+---
+
+# Node skill - crunch-node-{name}
+
+## Primary commands
+
+```bash
+make deploy
+make verify-e2e
+make logs
+make logs-capture
+make down
+```
+
+## Logs and artifacts
+
+- `make logs` streams all service logs from docker compose.
+- `make logs-capture` writes structured logs to `runtime-services.jsonl`.
+- Use `RUNBOOK.md` for known failure modes and recovery.
+
+## Runtime checks
+
+- Health: `http://localhost:8000/healthz`
+- Models: `http://localhost:8000/reports/models`
+- Leaderboard: `http://localhost:8000/reports/leaderboard`
+
+## Edit boundaries
+
+- Node-specific config: `.local.env`, `config/callables.env`,
+  `config/scheduled_prediction_configs.json`, `deployment/`.
+- Challenge implementation is mounted from `../{challenge_name}`.
+"""
+
+
+def _challenge_skill(name: str, package_module: str, node_name: str, challenge_name: str) -> str:
+    return f"""
+---
+name: {name}-challenge
+summary: Agent instructions for implementing challenge logic.
+---
+
+# Challenge skill - crunch-{name}
+
+## Primary implementation files
+
+- `{package_module}/tracker.py`
+- `{package_module}/inference.py`
+- `{package_module}/validation.py`
+- `{package_module}/scoring.py`
+- `{package_module}/reporting.py`
+
+## Development guidance
+
+- Keep challenge logic in this package.
+- Keep node runtime wiring in `../{node_name}`.
+- Export callable entrypoints referenced by `../{node_name}/config/callables.env`.
+
+## Validate from node workspace
+
+```bash
+cd ../{node_name}
+make verify-e2e
+```
+"""
 
 
 def _workspace_readme(name: str) -> str:

@@ -41,7 +41,9 @@ class TestCoordinatorCliInit(unittest.TestCase):
 
                 self.assertFalse(Path("crunch-implementations").exists())
                 self.assertTrue((base / "README.md").exists())
+                self.assertTrue((base / "SKILL.md").exists())
                 self.assertTrue((node / "README.md").exists())
+                self.assertTrue((node / "SKILL.md").exists())
                 self.assertTrue((node / "pyproject.toml").exists())
                 self.assertTrue((node / "Makefile").exists())
                 self.assertTrue((node / "Dockerfile").exists())
@@ -66,6 +68,7 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertIn("logs-capture", makefile)
 
                 self.assertTrue((challenge / "README.md").exists())
+                self.assertTrue((challenge / "SKILL.md").exists())
                 self.assertTrue((challenge / "pyproject.toml").exists())
                 self.assertTrue((package / "__init__.py").exists())
                 self.assertTrue((package / "tracker.py").exists())
@@ -81,6 +84,32 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertFalse((package / "private_plugins").exists())
                 self.assertTrue((node / "RUNBOOK.md").exists())
                 self.assertTrue((base / "process-log.jsonl").exists())
+
+    def test_init_generates_workspace_skill_guidance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                code = main(["init", "btc-trader"])
+                self.assertEqual(code, 0)
+
+                workspace_skill = Path("btc-trader/SKILL.md").read_text(encoding="utf-8")
+                node_skill = Path("btc-trader/crunch-node-btc-trader/SKILL.md").read_text(
+                    encoding="utf-8"
+                )
+                challenge_skill = Path("btc-trader/crunch-btc-trader/SKILL.md").read_text(
+                    encoding="utf-8"
+                )
+
+                self.assertIn("make deploy", workspace_skill)
+                self.assertIn("make verify-e2e", workspace_skill)
+                self.assertIn("process-log.jsonl", workspace_skill)
+
+                self.assertIn("make logs", node_skill)
+                self.assertIn("make logs-capture", node_skill)
+                self.assertIn("runtime-services.jsonl", node_skill)
+
+                self.assertIn("tracker.py", challenge_skill)
+                self.assertIn("validation.py", challenge_skill)
+                self.assertIn("scoring.py", challenge_skill)
 
     def test_init_generates_runbook_with_troubleshooting(self):
         with tempfile.TemporaryDirectory() as tmp:
