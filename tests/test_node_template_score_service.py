@@ -120,8 +120,8 @@ class TestNodeTemplateScoreService(unittest.TestCase):
                 {
                     "model_id": "m1",
                     "score": {
-                        "windows": {"recent": 123.0, "steady": 123.0, "anchor": 123.0},
-                        "rank_key": 123.0,
+                        "metrics": {"wealth": 123.0, "consistency": 0.81},
+                        "ranking": {"key": "wealth", "direction": "desc"},
                         "payload": {},
                     },
                     "model_name": "model-one",
@@ -157,7 +157,8 @@ class TestNodeTemplateScoreService(unittest.TestCase):
         self.assertIsNotNone(leaderboard_repo.latest)
         self.assertEqual(leaderboard_repo.latest["entries"][0]["model_id"], "m1")
         self.assertEqual(leaderboard_repo.latest["entries"][0]["rank"], 7)
-        self.assertEqual(leaderboard_repo.latest["entries"][0]["score"]["rank_key"], 123.0)
+        self.assertEqual(leaderboard_repo.latest["entries"][0]["score"]["ranking"]["key"], "wealth")
+        self.assertEqual(leaderboard_repo.latest["entries"][0]["score"]["metrics"]["wealth"], 123.0)
 
     def test_run_once_skips_predictions_without_ground_truth(self):
         prediction = PredictionRecord(
@@ -216,6 +217,46 @@ class TestNodeTemplateScoreService(unittest.TestCase):
 
         self.assertFalse(changed)
         self.assertTrue(any("No predictions ready to score" in line for line in logs.output))
+
+    def test_rank_leaderboard_honors_ascending_ranking_direction(self):
+        prediction_repo = InMemoryPredictionRepository([])
+        model_repo = InMemoryModelRepository()
+        leaderboard_repo = InMemoryLeaderboardRepository()
+
+        service = ScoreService(
+            checkpoint_interval_seconds=60,
+            scoring_function=lambda prediction, ground_truth: {"value": 0.5, "success": True, "failed_reason": None},
+            prediction_repository=prediction_repo,
+            model_repository=model_repo,
+            leaderboard_repository=leaderboard_repo,
+            model_score_aggregator=lambda scored_predictions, models: [],
+            leaderboard_ranker=None,
+            ground_truth_resolver=lambda prediction: {"y_up": True},
+        )
+
+        ranked = service._rank_leaderboard(
+            [
+                {
+                    "model_id": "m1",
+                    "score": {
+                        "metrics": {"loss": 0.4},
+                        "ranking": {"key": "loss", "direction": "asc"},
+                        "payload": {},
+                    },
+                },
+                {
+                    "model_id": "m2",
+                    "score": {
+                        "metrics": {"loss": 0.2},
+                        "ranking": {"key": "loss", "direction": "asc"},
+                        "payload": {},
+                    },
+                },
+            ]
+        )
+
+        self.assertEqual([entry["model_id"] for entry in ranked], ["m2", "m1"])
+        self.assertEqual([entry["rank"] for entry in ranked], [1, 2])
 
 
 class TestNodeTemplateScoreServiceRunLoop(unittest.IsolatedAsyncioTestCase):

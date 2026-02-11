@@ -5,14 +5,14 @@ from coordinator_core.entities.prediction import PredictionRecord, PredictionSco
 
 
 class TestCoreEntities(unittest.TestCase):
-    def test_model_score_supports_windows_rank_key_and_payload(self):
+    def test_model_score_supports_metrics_ranking_and_payload(self):
         score = ModelScore(
-            windows={"recent": 0.1, "steady": 0.2, "anchor": 0.3},
-            rank_key=0.3,
+            metrics={"wealth": 1000.0, "hit_rate": 0.7},
+            ranking={"key": "wealth", "direction": "desc", "value": 1000.0},
             payload={"crps": 0.55},
         )
-        self.assertEqual(score.windows["anchor"], 0.3)
-        self.assertEqual(score.rank_key, 0.3)
+        self.assertEqual(score.metrics["wealth"], 1000.0)
+        self.assertEqual(score.ranking["key"], "wealth")
         self.assertEqual(score.payload["crps"], 0.55)
 
     def test_model_has_jsonb_extension_payload(self):

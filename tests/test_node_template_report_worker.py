@@ -132,14 +132,22 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
                 {
                     "rank": 2,
                     "model_id": "m2",
-                    "score": {"windows": {"anchor": 0.2}, "rank_key": 0.2, "payload": {}},
+                    "score": {
+                        "metrics": {"wealth": 200.0},
+                        "ranking": {"key": "wealth", "direction": "desc"},
+                        "payload": {},
+                    },
                     "model_name": "two",
                     "cruncher_name": "bob",
                 },
                 {
                     "rank": 1,
                     "model_id": "m1",
-                    "score": {"windows": {"anchor": 0.3}, "rank_key": 0.3, "payload": {}},
+                    "score": {
+                        "metrics": {"wealth": 300.0},
+                        "ranking": {"key": "wealth", "direction": "desc"},
+                        "payload": {},
+                    },
                     "model_name": "one",
                     "cruncher_name": "alice",
                 },
@@ -151,7 +159,8 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         response = get_leaderboard(repo)
         self.assertEqual([entry["rank"] for entry in response], [1, 2])
         self.assertEqual(response[0]["model_id"], "m1")
-        self.assertEqual(response[0]["score_rank_key"], 0.3)
+        self.assertEqual(response[0]["score_metrics"]["wealth"], 300.0)
+        self.assertEqual(response[0]["score_ranking"]["key"], "wealth")
 
     def test_get_leaderboard_returns_empty_when_missing(self):
         repo = InMemoryLeaderboardRepository(None)
@@ -170,7 +179,8 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         response = get_models_global(["m1"], start, end, repo)
         self.assertEqual(len(response), 1)
         self.assertEqual(response[0]["model_id"], "m1")
-        self.assertAlmostEqual(response[0]["score_windows"]["anchor"], 0.5)
+        self.assertAlmostEqual(response[0]["score_metrics"]["average"], 0.5)
+        self.assertEqual(response[0]["score_ranking"]["direction"], "desc")
 
     def test_get_models_params_returns_grouped_entries(self):
         predictions = [
@@ -186,7 +196,8 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         response = get_models_params(["m1"], start, end, repo)
         self.assertEqual(len(response), 2)
         btc = next(item for item in response if item["scope_key"] == "BTC-60")
-        self.assertAlmostEqual(btc["score_windows"]["anchor"], 0.5)
+        self.assertAlmostEqual(btc["score_metrics"]["average"], 0.5)
+        self.assertEqual(btc["score_ranking"]["key"], "average")
 
     def test_get_predictions_requires_single_model(self):
         repo = InMemoryPredictionRepository([])

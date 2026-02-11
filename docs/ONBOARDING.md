@@ -32,7 +32,7 @@ Define typed schemas (Pydantic/dataclasses) for:
 
 Recommended pattern:
 
-- core envelope stays stable (`windows`, `rank_key`, `payload`)
+- core envelope stays stable (`metrics`, `ranking`, `payload`)
 - challenge payload schema lives inside `payload`
 
 ## 3) Implement and export challenge callables

@@ -44,9 +44,9 @@ class TestJsonbSchemaContracts(unittest.TestCase):
 
     def test_score_and_leaderboard_envelopes(self):
         score = ScoreEnvelope(
-            windows={"recent": 0.2, "steady": 0.3, "anchor": 0.4},
-            rank_key=0.4,
-            payload={"metric": "brier"},
+            metrics={"wealth": 1500.0, "hit_rate": 0.61},
+            ranking={"key": "wealth", "direction": "desc"},
+            payload={"metric": "falcon"},
         )
 
         entry = LeaderboardEntryEnvelope(
@@ -57,8 +57,17 @@ class TestJsonbSchemaContracts(unittest.TestCase):
             cruncher_name="alice",
         )
 
-        self.assertEqual(entry.score.windows["anchor"], 0.4)
+        self.assertEqual(entry.score.metrics["wealth"], 1500.0)
+        self.assertEqual(entry.score.ranking.key, "wealth")
         self.assertEqual(entry.rank, 1)
+
+    def test_score_envelope_rejects_legacy_windows_rank_key(self):
+        with self.assertRaises(ValidationError):
+            ScoreEnvelope(
+                windows={"anchor": 0.4, "recent": 0.2},
+                rank_key=0.4,
+                payload={"metric": "brier"},
+            )
 
 
 if __name__ == "__main__":

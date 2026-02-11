@@ -4,6 +4,7 @@ from .payload_contracts import (
     ScheduleEnvelope,
     ScheduledPredictionConfigEnvelope,
     ScoreEnvelope,
+    ScoreRankingEnvelope,
 )
 
 __all__ = [
@@ -11,5 +12,6 @@ __all__ = [
     "ScheduledPredictionConfigEnvelope",
     "PredictionScopeEnvelope",
     "ScoreEnvelope",
+    "ScoreRankingEnvelope",
     "LeaderboardEntryEnvelope",
 ]

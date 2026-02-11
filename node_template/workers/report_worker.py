@@ -81,38 +81,15 @@ def get_leaderboard(
 
     normalized_entries = []
     for entry in entries:
-        normalized = LeaderboardEntryEnvelope.model_validate(
-            {
-                "model_id": entry.get("model_id"),
-                "score": entry.get("score")
-                if isinstance(entry.get("score"), dict)
-                else {
-                    "windows": {
-                        "recent": entry.get("score_recent"),
-                        "steady": entry.get("score_steady"),
-                        "anchor": entry.get("score_anchor"),
-                    },
-                    "rank_key": entry.get("rank_key", entry.get("score_anchor")),
-                    "payload": {},
-                },
-                "rank": entry.get("rank"),
-                "model_name": entry.get("model_name"),
-                "cruncher_name": entry.get("cruncher_name", entry.get("player_name")),
-            }
-        )
+        normalized = LeaderboardEntryEnvelope.model_validate(entry)
 
-        windows = dict(normalized.score.windows)
         normalized_entries.append(
             {
                 "created_at": created_at,
                 "model_id": normalized.model_id,
-                "score_windows": windows,
-                "score_rank_key": normalized.score.rank_key,
+                "score_metrics": dict(normalized.score.metrics),
+                "score_ranking": normalized.score.ranking.model_dump(exclude_none=True),
                 "score_payload": dict(normalized.score.payload),
-                # backward-compatible fields
-                "score_recent": entry.get("score_recent", windows.get("recent")),
-                "score_steady": entry.get("score_steady", windows.get("steady")),
-                "score_anchor": entry.get("score_anchor", windows.get("anchor")),
                 "rank": normalized.rank if normalized.rank is not None else 999999,
                 "model_name": normalized.model_name,
                 "cruncher_name": normalized.cruncher_name,
@@ -143,12 +120,8 @@ def get_models_global(
         rows.append(
             {
                 "model_id": model_id,
-                "score_windows": {"recent": avg, "steady": avg, "anchor": avg},
-                "score_rank_key": avg,
-                # backward-compatible fields
-                "score_recent": avg,
-                "score_steady": avg,
-                "score_anchor": avg,
+                "score_metrics": {"average": avg},
+                "score_ranking": {"key": "average", "value": avg, "direction": "desc"},
                 "performed_at": performed_at,
             }
         )
@@ -186,12 +159,8 @@ def get_models_params(
                 "model_id": model_id,
                 "scope_key": scope_key,
                 "scope": scope,
-                "score_windows": {"recent": avg, "steady": avg, "anchor": avg},
-                "score_rank_key": avg,
-                # backward-compatible fields
-                "score_recent": avg,
-                "score_steady": avg,
-                "score_anchor": avg,
+                "score_metrics": {"average": avg},
+                "score_ranking": {"key": "average", "value": avg, "direction": "desc"},
                 "performed_at": performed_at,
             }
         )

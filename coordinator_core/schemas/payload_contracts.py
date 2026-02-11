@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -37,14 +37,43 @@ class PredictionScopeEnvelope(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class ScoreEnvelope(BaseModel):
-    """Canonical score envelope used in model/leaderboard JSONB payloads."""
+class ScoreRankingEnvelope(BaseModel):
+    """Ranking strategy for a score payload."""
 
-    windows: dict[str, float | None] = Field(default_factory=dict)
-    rank_key: float | None = None
-    payload: dict[str, Any] = Field(default_factory=dict)
+    key: str | None = None
+    value: float | None = None
+    direction: Literal["asc", "desc"] = "desc"
+    tie_breakers: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="allow")
+
+
+class ScoreEnvelope(BaseModel):
+    """Canonical score envelope used in model/leaderboard JSONB payloads.
+
+    - metrics: named numeric metrics (wealth, hit_rate, loss, ...)
+    - ranking: how to rank these metrics
+    - payload: challenge-specific structured details
+    """
+
+    metrics: dict[str, float | None] = Field(default_factory=dict)
+    ranking: ScoreRankingEnvelope = Field(default_factory=ScoreRankingEnvelope)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @property
+    def rank_value(self) -> float | None:
+        if self.ranking.value is not None:
+            return float(self.ranking.value)
+
+        if self.ranking.key is None:
+            return None
+
+        value = self.metrics.get(self.ranking.key)
+        if value is None:
+            return None
+        return float(value)
 
 
 class LeaderboardEntryEnvelope(BaseModel):

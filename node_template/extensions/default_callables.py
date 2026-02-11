@@ -107,12 +107,14 @@ def default_aggregate_model_scores(scored_predictions: list[Any], models: dict[s
             {
                 "model_id": model_id,
                 "score": {
-                    "windows": {
-                        "recent": average,
-                        "steady": average,
-                        "anchor": average,
+                    "metrics": {
+                        "average": average,
                     },
-                    "rank_key": average,
+                    "ranking": {
+                        "key": "average",
+                        "value": average,
+                        "direction": "desc",
+                    },
                     "payload": {},
                 },
                 "model_name": getattr(model, "name", None),
@@ -124,33 +126,29 @@ def default_aggregate_model_scores(scored_predictions: list[Any], models: dict[s
 
 
 def default_rank_leaderboard(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Default ranker: descending by score.rank_key and assign ranks."""
+    """Default ranker honoring score.ranking.direction and score.ranking key/value."""
 
     def _rank_value(entry: dict[str, Any]) -> float:
         score = entry.get("score")
-        if isinstance(score, dict):
-            rank_key = score.get("rank_key")
-            if rank_key is not None:
-                try:
-                    return float(rank_key)
-                except Exception:
-                    pass
-            windows = score.get("windows") if isinstance(score.get("windows"), dict) else {}
-            fallback = windows.get("anchor")
-            if fallback is not None:
-                try:
-                    return float(fallback)
-                except Exception:
-                    pass
+        if not isinstance(score, dict):
+            return float("-inf")
 
-        fallback = entry.get("score_anchor")
-        if fallback is not None:
-            try:
-                return float(fallback)
-            except Exception:
-                pass
+        metrics = score.get("metrics") if isinstance(score.get("metrics"), dict) else {}
+        ranking = score.get("ranking") if isinstance(score.get("ranking"), dict) else {}
+        direction = str(ranking.get("direction", "desc")).lower()
 
-        return float("-inf")
+        value = ranking.get("value")
+        if value is None:
+            ranking_key = ranking.get("key")
+            if isinstance(ranking_key, str):
+                value = metrics.get(ranking_key)
+
+        try:
+            numeric = float(value)
+        except Exception:
+            return float("-inf")
+
+        return -numeric if direction == "asc" else numeric
 
     sorted_entries = sorted(entries, key=_rank_value, reverse=True)
 
