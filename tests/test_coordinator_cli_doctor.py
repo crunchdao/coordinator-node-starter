@@ -45,7 +45,7 @@ class TestCoordinatorCliDoctor(unittest.TestCase):
                 code = main(["doctor", "--spec", "does-not-exist.json"])
                 self.assertEqual(code, 1)
 
-    def test_doctor_rejects_invalid_spec_contents(self):
+    def test_doctor_ignores_unknown_callable_keys_in_spec(self):
         with tempfile.TemporaryDirectory() as tmp:
             with _cwd(Path(tmp)):
                 Path("spec.json").write_text(
@@ -62,7 +62,7 @@ class TestCoordinatorCliDoctor(unittest.TestCase):
                 )
 
                 code = main(["doctor", "--spec", "spec.json"])
-                self.assertEqual(code, 1)
+                self.assertEqual(code, 0)
 
     def test_doctor_rejects_missing_spec_version(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -106,7 +106,7 @@ class TestCoordinatorCliDoctor(unittest.TestCase):
                             "spec_version": "1",
                             "name": "btc-trader",
                             "callables": {
-                                "MODEL_SCORE_AGGREGATOR": "node_template.extensions.default_callables:default_aggregate_model_scores"
+                                "SCORING_FUNCTION": "node_template.extensions.default_callables:default_score_prediction"
                             },
                         }
                     ),

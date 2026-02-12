@@ -12,11 +12,7 @@ _SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 SUPPORTED_SPEC_VERSION = "1"
 
-CALLABLE_ORDER = [
-    "SCORING_FUNCTION",
-    "RAW_INPUT_PROVIDER",
-    "GROUND_TRUTH_RESOLVER",
-]
+REQUIRED_CALLABLES = {"SCORING_FUNCTION", "RAW_INPUT_PROVIDER", "GROUND_TRUTH_RESOLVER"}
 
 
 @dataclass(frozen=True)
@@ -195,29 +191,29 @@ def _merge_callables(
     if not isinstance(overrides, dict):
         raise ValueError("'callables' must be an object of ENV_KEY -> module:callable")
 
-    rendered_defaults: dict[str, str] = {}
-    for key in CALLABLE_ORDER:
+    for key in REQUIRED_CALLABLES:
         if key not in defaults:
             raise ValueError(f"Pack callables missing required key '{key}'")
 
-        value = defaults[key]
+    rendered: dict[str, str] = {}
+    for key, value in defaults.items():
+        if key not in REQUIRED_CALLABLES:
+            continue
         if not isinstance(value, str):
             raise ValueError(f"Pack callable for '{key}' must be '<module>:<callable>'")
-        rendered_defaults[key] = value.format(package_module=package_module)
+        rendered[key] = value.format(package_module=package_module)
 
-    merged = dict(rendered_defaults)
     for key, value in overrides.items():
-        if key not in rendered_defaults:
-            allowed = ", ".join(sorted(rendered_defaults.keys()))
-            raise ValueError(f"Unknown callable key '{key}'. Allowed keys: {allowed}")
+        if key not in REQUIRED_CALLABLES:
+            continue
         if not isinstance(value, str) or ":" not in value:
             raise ValueError(f"Callable override for '{key}' must be '<module>:<callable>'")
-        merged[key] = value
+        rendered[key] = value
 
-    for key, value in merged.items():
+    for key, value in rendered.items():
         _validate_callable_path(key=key, value=value)
 
-    return merged
+    return rendered
 
 
 def _validate_callable_path(key: str, value: str) -> None:

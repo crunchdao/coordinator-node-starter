@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from coordinator_core.cli.init_config import CALLABLE_ORDER, InitConfig
+from coordinator_core.cli.init_config import InitConfig
 from coordinator_core.cli.pack_templates import render_pack_templates
 from coordinator_core.cli.scaffold_render import ensure_no_legacy_references, render_template_strict
 
@@ -96,7 +96,7 @@ def scheduled_prediction_configs(payload: list[dict[str, Any]]) -> str:
 
 
 def runtime_definitions_env(callables: dict[str, str]) -> str:
-    return "\n".join(f"{key}={callables[key]}" for key in CALLABLE_ORDER)
+    return "\n".join(f"{key}={value}" for key, value in sorted(callables.items()))
 
 
 def node_local_env(
