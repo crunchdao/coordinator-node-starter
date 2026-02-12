@@ -2,7 +2,9 @@
 
 Date: 2026-02-11
 Related design: `docs/plans/2026-02-11-thin-node-cli-onboarding-design.md`
-Status: Ready for implementation
+Status: Historical implementation plan (pre-delivery snapshot)
+
+> Note: This file is retained as planning history. Some checklist items have since been implemented; this document is not the source of truth for current completion state.
 
 ## Scope
 
@@ -12,7 +14,7 @@ Implement v1 CLI workflow inside `coordinator_core`:
 2. `coordinator doctor`
 3. `coordinator dev`
 
-Generate challenge workspaces into `crunch-implementations/<name>/` with minimal required files and folder-level README guidance.
+Current implemented terminology uses packs (`--pack`, `--list-packs`) and generates challenge workspaces into `<name>/` with minimal required files and folder-level README guidance.
 
 Naming convention: use `plugins/` and `extensions/` folders (do not generate `private_plugins/`).
 
@@ -43,8 +45,8 @@ Naming convention: use `plugins/` and `extensions/` folders (do not generate `pr
 
 - [ ] Add templates directory for generated files
 - [ ] Generate workspace at:
-  - `crunch-implementations/<name>/crunch-node-<name>/`
-  - `crunch-implementations/<name>/crunch-<name>/`
+  - `<name>/crunch-node-<name>/`
+  - `<name>/crunch-<name>/`
 - [ ] Generate node project files:
   - [ ] `README.md`
   - [ ] `pyproject.toml` with editable local sources:
@@ -213,7 +215,7 @@ These remain out of v1 scope to keep onboarding simple.
 
 ## Definition of Done (v1)
 
-- `coordinator init <name>` creates thin, documented workspace in `crunch-implementations/<name>/`
+- `coordinator init <name>` creates thin, documented workspace in `<name>/`
 - `coordinator doctor` catches common misconfigurations and model setup failures
 - `coordinator dev` runs local stack and verifies readiness/e2e
 - docs reflect the new onboarding default

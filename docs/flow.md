@@ -38,7 +38,7 @@ coordinator init --answers answers.json --output .
 Optional:
 
 ```bash
-coordinator init --answers answers.json --spec spec.json --preset realtime --output .
+coordinator init --answers answers.json --spec spec.json --pack realtime --output .
 ```
 
 Merge behavior:

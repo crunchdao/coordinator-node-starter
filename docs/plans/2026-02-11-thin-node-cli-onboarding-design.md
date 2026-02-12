@@ -1,7 +1,9 @@
 # Thin Node + CLI Onboarding Design
 
 Date: 2026-02-11
-Status: Draft validated in discussion
+Status: Historical design draft (retained for context; terminology kept aligned with current CLI)
+
+> Note: This is an archived planning document. Current CLI scaffolding is pack-based (`--pack`, `--list-packs`) and generates directly into `<name>/`.
 
 ## Goal
 
@@ -23,7 +25,7 @@ Adopt **Thin Node Repos** as default:
   - `crunch-node-<name>` for config/deployment/wiring
   - `crunch-<name>` for challenge logic (public package)
 - `coordinator init <name>` generates under:
-  - `crunch-implementations/<name>/...`
+  - `<name>/...`
 
 ## Ownership Model
 
@@ -61,7 +63,7 @@ Owns:
 ## Generated Workspace Layout
 
 ```text
-crunch-implementations/<name>/
+<name>/
   README.md
   crunch-node-<name>/
     README.md
@@ -118,7 +120,7 @@ Production/CI can later switch to pinned released versions.
 
 ### `coordinator init <name>`
 
-- Scaffold `crunch-implementations/<name>/...`
+- Scaffold `<name>/...`
 - Generate only required challenge stubs
 - Wire callable env vars with explicit TODOs
 - Create README breadcrumbs in every important folder

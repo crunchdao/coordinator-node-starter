@@ -428,7 +428,7 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertTrue((output / "btc-trader").exists())
                 self.assertFalse((output / "crunch-implementations").exists())
 
-    def test_init_supports_preset_flag_overriding_spec_preset(self):
+    def test_init_supports_pack_flag_overriding_spec_pack(self):
         with tempfile.TemporaryDirectory() as tmp:
             with _cwd(Path(tmp)):
                 spec_path = self._write_spec(
@@ -436,11 +436,11 @@ class TestCoordinatorCliInit(unittest.TestCase):
                     {
                         "spec_version": "1",
                         "name": "btc-trader",
-                        "preset": "in-sample",
+                        "pack": "in-sample",
                     },
                 )
 
-                code = main(["init", "--spec", str(spec_path), "--preset", "realtime"])
+                code = main(["init", "--spec", str(spec_path), "--pack", "realtime"])
                 self.assertEqual(code, 0)
 
                 node_dir = Path("btc-trader/crunch-node-btc-trader")
@@ -462,18 +462,18 @@ class TestCoordinatorCliInit(unittest.TestCase):
         code = main(["preflight", "--ports", str(port)])
         self.assertEqual(code, 0)
 
-    def test_init_rejects_unknown_preset(self):
+    def test_init_rejects_unknown_pack(self):
         with tempfile.TemporaryDirectory() as tmp:
             with _cwd(Path(tmp)):
-                code = main(["init", "btc-trader", "--preset", "unknown"])
+                code = main(["init", "btc-trader", "--pack", "unknown"])
                 self.assertEqual(code, 1)
 
-    def test_init_lists_available_presets(self):
+    def test_init_lists_available_packs(self):
         with tempfile.TemporaryDirectory() as tmp:
             with _cwd(Path(tmp)):
                 output = io.StringIO()
                 with redirect_stdout(output):
-                    code = main(["init", "--list-presets"])
+                    code = main(["init", "--list-packs"])
 
                 self.assertEqual(code, 0)
                 value = output.getvalue()

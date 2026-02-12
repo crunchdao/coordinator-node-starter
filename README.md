@@ -21,8 +21,9 @@ Legacy status:
 > Spec-driven scaffolding is also supported:
 >
 > ```bash
-> coordinator init --spec path/to/spec.json
-> coordinator doctor --spec path/to/spec.json
+> coordinator init --spec path/to/spec.json --pack realtime
+> coordinator doctor --spec path/to/spec.json --pack realtime
+> coordinator init --list-packs
 > ```
 >
 > `spec.json` must include `"spec_version": "1"`.
@@ -37,8 +38,8 @@ From this project root, run deterministic setup:
 
 ```bash
 coordinator preflight --ports 3000,5432,8000,9091
-coordinator doctor --spec path/to/spec.json
-coordinator init --answers answers.json --spec path/to/spec.json --preset realtime --output .
+coordinator doctor --spec path/to/spec.json --pack realtime
+coordinator init --answers answers.json --spec path/to/spec.json --pack realtime --output .
 ```
 
 Then launch and verify the generated local crunch runtime:

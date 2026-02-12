@@ -1,0 +1,32 @@
+{
+  "id": "in-sample",
+  "description": "In-sample tournament profile for calibration and quick iteration.",
+  "template_set": "default",
+  "checkpoint_interval_seconds": 60,
+  "callables": {
+    "INFERENCE_INPUT_BUILDER": "runtime_definitions.inference:build_input",
+    "INFERENCE_OUTPUT_VALIDATOR": "runtime_definitions.validation:validate_output",
+    "SCORING_FUNCTION": "{package_module}.scoring:score_prediction",
+    "MODEL_SCORE_AGGREGATOR": "coordinator_runtime.defaults:aggregate_model_scores",
+    "REPORT_SCHEMA_PROVIDER": "runtime_definitions.reporting:report_schema",
+    "LEADERBOARD_RANKER": "coordinator_runtime.defaults:rank_leaderboard",
+    "RAW_INPUT_PROVIDER": "runtime_definitions.data:provide_raw_input",
+    "GROUND_TRUTH_RESOLVER": "runtime_definitions.data:resolve_ground_truth",
+    "PREDICTION_SCOPE_BUILDER": "coordinator_runtime.defaults:build_prediction_scope",
+    "PREDICT_CALL_BUILDER": "coordinator_runtime.defaults:build_predict_call"
+  },
+  "scheduled_prediction_configs": [
+    {
+      "scope_key": "in-sample-btc",
+      "scope_template": {
+        "asset": "BTC",
+        "horizon_seconds": 300,
+        "step_seconds": 60,
+        "tournament_mode": "in-sample"
+      },
+      "schedule": {"every_seconds": 300},
+      "active": true,
+      "order": 0
+    }
+  ]
+}

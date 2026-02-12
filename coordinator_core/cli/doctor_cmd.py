@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from coordinator_core.cli.init_cmd import load_spec, resolve_init_config
+from coordinator_core.cli.init_config import load_spec, resolve_init_config
 
 
-def run_doctor(name: str | None, spec_path: Path | None, preset_name: str | None = None) -> int:
+def run_doctor(name: str | None, spec_path: Path | None, pack_name: str | None = None) -> int:
     if spec_path is None:
         print("coordinator doctor currently validates init specs. Use --spec path/to/spec.json")
         return 1
@@ -16,7 +16,7 @@ def run_doctor(name: str | None, spec_path: Path | None, preset_name: str | None
             name=name,
             spec=spec,
             require_spec_version=True,
-            preset_name=preset_name,
+            pack_name=pack_name,
         )
     except ValueError as exc:
         print(f"doctor failed: {exc}")
@@ -26,7 +26,7 @@ def run_doctor(name: str | None, spec_path: Path | None, preset_name: str | None
     print(f"- name: {config.name}")
     print(f"- crunch_id: {config.crunch_id}")
     print(f"- model_base_classname: {config.model_base_classname}")
-    print(f"- preset: {config.preset}")
+    print(f"- pack: {config.pack}")
     print(f"- callables: {len(config.callables)}")
     print(f"- scheduled_prediction_configs: {len(config.scheduled_prediction_configs)}")
     return 0

@@ -86,11 +86,11 @@ class TestCoordinatorCliDoctor(unittest.TestCase):
                 code = main(["doctor", "--spec", "spec.json"])
                 self.assertEqual(code, 1)
 
-    def test_doctor_rejects_unknown_preset(self):
+    def test_doctor_rejects_unknown_pack(self):
         with tempfile.TemporaryDirectory() as tmp:
             with _cwd(Path(tmp)):
                 Path("spec.json").write_text(
-                    json.dumps({"spec_version": "1", "name": "btc-trader", "preset": "unknown"}),
+                    json.dumps({"spec_version": "1", "name": "btc-trader", "pack": "unknown"}),
                     encoding="utf-8",
                 )
 

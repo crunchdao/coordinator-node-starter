@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from coordinator_core.cli.doctor_cmd import run_doctor
-from coordinator_core.cli.init_cmd import run_init
+from coordinator_core.cli.init_service import run_init
 from coordinator_core.cli.preflight_cmd import parse_ports, run_preflight
 
 
@@ -28,13 +28,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Overwrite existing target workspace if present",
     )
     init_parser.add_argument(
-        "--preset",
-        help="Preset name (baseline, realtime, in-sample, out-of-sample). Overrides spec preset.",
+        "--pack",
+        help="Pack id (e.g. baseline, realtime, in-sample, out-of-sample). Overrides spec pack.",
     )
     init_parser.add_argument(
-        "--list-presets",
+        "--list-packs",
         action="store_true",
-        help="List available built-in presets and exit.",
+        help="List available built-in packs and exit.",
     )
     init_parser.add_argument(
         "--output",
@@ -45,7 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser = subparsers.add_parser("doctor", help="Validate init spec wiring")
     doctor_parser.add_argument("name", nargs="?", help="Optional challenge slug for cross-check")
     doctor_parser.add_argument("--spec", help="Path to init spec JSON file")
-    doctor_parser.add_argument("--preset", help="Optional preset override for spec validation")
+    doctor_parser.add_argument("--pack", help="Optional pack override for spec validation")
 
     preflight_parser = subparsers.add_parser("preflight", help="Check local prerequisites")
     preflight_parser.add_argument(
@@ -71,12 +71,12 @@ def main(argv: list[str] | None = None) -> int:
             force=args.force,
             spec_path=spec_path,
             answers_path=answers_path,
-            preset_name=args.preset,
-            list_presets=args.list_presets,
+            pack_name=args.pack,
+            list_packs=args.list_packs,
         )
     if args.command == "doctor":
         spec_path = Path(args.spec) if args.spec else None
-        return run_doctor(name=args.name, spec_path=spec_path, preset_name=args.preset)
+        return run_doctor(name=args.name, spec_path=spec_path, pack_name=args.pack)
     if args.command == "preflight":
         try:
             ports = parse_ports(args.ports)

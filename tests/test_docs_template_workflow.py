@@ -26,7 +26,7 @@ class TestDocsTemplateWorkflow(unittest.TestCase):
         self.assertIn("coordinator doctor --spec path/to/spec.json", readme)
         self.assertRegex(
             readme,
-            r"coordinator init .*--spec path/to/spec\.json.*--preset realtime",
+            r"coordinator init .*--spec path/to/spec\.json.*--pack realtime",
         )
         self.assertIn("cd <challenge-slug>/crunch-node-<challenge-slug>", readme)
         self.assertIn("make deploy", readme)

@@ -1,0 +1,15 @@
+from __future__ import annotations
+
+
+def report_schema():
+    return {
+        "schema_version": "1",
+        "leaderboard_columns": [
+            {"key": "rank", "label": "Rank"},
+            {"key": "model_name", "label": "Model"},
+            {"key": "score_anchor", "label": "Anchor"},
+        ],
+        "metrics_widgets": [
+            {"key": "score_anchor", "label": "Anchor", "series": ["score_anchor"]},
+        ],
+    }

@@ -1,0 +1,27 @@
+from __future__ import annotations
+
+
+def score_prediction(prediction, ground_truth):
+    # Replace with challenge-specific score computation.
+    return {"value": 0.0, "success": True, "failed_reason": None}
+
+
+def aggregate_model_scores(scored_predictions, models):
+    # Optional challenge-specific aggregator. Default runtime wiring uses
+    # the coordinator runtime's built-in model-score aggregation unless
+    # overridden in spec.
+    entries = []
+    for model in models.values():
+        entries.append(
+            {
+                "model_id": model.id,
+                "model_name": model.name,
+                "cruncher_name": model.player_name,
+                "score": {
+                    "metrics": {"average": 0.0},
+                    "ranking": {"key": "average", "direction": "desc", "value": 0.0},
+                    "payload": {},
+                },
+            }
+        )
+    return entries
