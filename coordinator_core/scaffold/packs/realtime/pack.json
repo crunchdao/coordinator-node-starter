@@ -4,15 +4,15 @@
   "template_set": "default",
   "checkpoint_interval_seconds": 15,
   "callables": {
-    "SCORING_FUNCTION": "{package_module}.scoring:score_prediction",
-    "RAW_INPUT_PROVIDER": "runtime_definitions.data:provide_raw_input",
-    "GROUND_TRUTH_RESOLVER": "runtime_definitions.data:resolve_ground_truth"
+    "SCORING_FUNCTION": "{package_module}.scoring:score_prediction"
   },
   "scheduled_prediction_configs": [
     {
       "scope_key": "realtime-btc",
       "scope_template": {},
-      "schedule": {"every_seconds": 15},
+      "schedule": {
+        "every_seconds": 15
+      },
       "active": true,
       "order": 0
     }

@@ -4,22 +4,28 @@
   "template_set": "default",
   "checkpoint_interval_seconds": 60,
   "callables": {
-    "SCORING_FUNCTION": "{package_module}.scoring:score_prediction",
-    "RAW_INPUT_PROVIDER": "runtime_definitions.data:provide_raw_input",
-    "GROUND_TRUTH_RESOLVER": "runtime_definitions.data:resolve_ground_truth"
+    "SCORING_FUNCTION": "{package_module}.scoring:score_prediction"
   },
   "scheduled_prediction_configs": [
     {
       "scope_key": "in-sample",
-      "scope_template": {"tournament_mode": "in-sample"},
-      "schedule": {"every_seconds": 300},
+      "scope_template": {
+        "tournament_mode": "in-sample"
+      },
+      "schedule": {
+        "every_seconds": 300
+      },
       "active": true,
       "order": 0
     },
     {
       "scope_key": "out-of-sample",
-      "scope_template": {"tournament_mode": "out-of-sample"},
-      "schedule": {"every_seconds": 900},
+      "scope_template": {
+        "tournament_mode": "out-of-sample"
+      },
+      "schedule": {
+        "every_seconds": 900
+      },
       "active": true,
       "order": 1
     }

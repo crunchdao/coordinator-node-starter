@@ -78,7 +78,7 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertTrue((package / "examples" / "volatility_regime_tracker.py").exists())
 
                 self.assertTrue((node / "runtime_definitions" / "__init__.py").exists())
-                self.assertTrue((node / "runtime_definitions" / "data.py").exists())
+                self.assertTrue((node / "runtime_definitions" / "contracts.py").exists())
                 self.assertTrue((node / "runtime_definitions" / "contracts.py").exists())
                 # Removed templates — should NOT exist
                 self.assertFalse((node / "runtime_definitions" / "inference.py").exists())
@@ -206,19 +206,14 @@ class TestCoordinatorCliInit(unittest.TestCase):
                     "btc-trader/crunch-node-btc-trader/config/callables.env"
                 ).read_text(encoding="utf-8")
 
-                # Tier 1 callables present
+                # Only scoring callable present
                 self.assertIn("SCORING_FUNCTION=crunch_btc_trader.scoring:score_prediction", callables_env)
-                self.assertIn("RAW_INPUT_PROVIDER=runtime_definitions.data:provide_raw_input", callables_env)
-                self.assertIn("GROUND_TRUTH_RESOLVER=runtime_definitions.data:resolve_ground_truth", callables_env)
 
-                # Tier 2 callables removed
+                # No other callables
+                self.assertNotIn("RAW_INPUT_PROVIDER", callables_env)
+                self.assertNotIn("GROUND_TRUTH_RESOLVER", callables_env)
                 self.assertNotIn("INFERENCE_INPUT_BUILDER", callables_env)
                 self.assertNotIn("INFERENCE_OUTPUT_VALIDATOR", callables_env)
-                self.assertNotIn("MODEL_SCORE_AGGREGATOR", callables_env)
-                self.assertNotIn("LEADERBOARD_RANKER", callables_env)
-                self.assertNotIn("REPORT_SCHEMA_PROVIDER", callables_env)
-                self.assertNotIn("PREDICTION_SCOPE_BUILDER", callables_env)
-                self.assertNotIn("PREDICT_CALL_BUILDER", callables_env)
 
     def test_init_uses_realtime_pack_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:

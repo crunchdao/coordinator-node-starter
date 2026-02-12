@@ -26,7 +26,7 @@ class TestCoordinatorPackTemplates(unittest.TestCase):
         self.assertIn("crunch-node-btc-trader/Makefile", files)
         self.assertIn("crunch-node-btc-trader/Dockerfile", files)
         self.assertIn("crunch-node-btc-trader/docker-compose.yml", files)
-        self.assertIn("crunch-node-btc-trader/runtime_definitions/data.py", files)
+        self.assertIn("crunch-node-btc-trader/runtime_definitions/contracts.py", files)
         self.assertIn("crunch-node-btc-trader/scripts/verify_e2e.py", files)
         self.assertIn("crunch-node-btc-trader/scripts/capture_runtime_logs.py", files)
         self.assertIn(

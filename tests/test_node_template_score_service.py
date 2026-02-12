@@ -154,15 +154,17 @@ class TestNodeTemplateScoreService(unittest.TestCase):
         model_repo = InMemoryModelRepository()
         leaderboard_repo = InMemoryLeaderboardRepository()
 
+        class NullInputService:
+            def get_ground_truth(self, performed_at, resolvable_at, asset=None):
+                return None
+
         service = ScoreService(
             checkpoint_interval_seconds=60,
             scoring_function=lambda prediction, ground_truth: {"value": 0.5, "success": True, "failed_reason": None},
             prediction_repository=prediction_repo,
             model_repository=model_repo,
             leaderboard_repository=leaderboard_repo,
-            model_score_aggregator=lambda scored_predictions, models: [],
-            leaderboard_ranker=lambda entries: entries,
-            ground_truth_resolver=lambda prediction: None,
+            input_service=NullInputService(),
         )
 
         changed = service.run_once()

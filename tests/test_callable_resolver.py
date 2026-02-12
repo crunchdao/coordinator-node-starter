@@ -25,34 +25,15 @@ class TestCallableResolver(unittest.TestCase):
             settings.scoring_function,
             "node_template.extensions.default_callables:default_score_prediction",
         )
-        self.assertEqual(
-            settings.raw_input_provider,
-            "node_template.extensions.default_callables:default_provide_raw_input",
-        )
-        self.assertEqual(
-            settings.ground_truth_resolver,
-            "node_template.extensions.default_callables:default_resolve_ground_truth",
-        )
 
-    def test_default_tier1_callables_are_resolvable(self):
+    def test_default_scoring_callable_is_resolvable(self):
         settings = ExtensionSettings.from_env()
 
         scoring = resolve_callable(
             settings.scoring_function,
             required_params=("prediction", "ground_truth"),
         )
-        raw_input_provider = resolve_callable(
-            settings.raw_input_provider,
-            required_params=("now",),
-        )
-        ground_truth_resolver = resolve_callable(
-            settings.ground_truth_resolver,
-            required_params=("prediction",),
-        )
-
         self.assertTrue(callable(scoring))
-        self.assertTrue(callable(raw_input_provider))
-        self.assertTrue(callable(ground_truth_resolver))
 
 
 if __name__ == "__main__":

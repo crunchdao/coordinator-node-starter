@@ -18,9 +18,10 @@ class ScoreService:
         prediction_repository,
         model_repository,
         leaderboard_repository,
-        ground_truth_resolver: Callable[[Any], dict[str, Any] | None] | None,
+        input_service=None,
         contract: CrunchContract | None = None,
         # Legacy params — ignored but accepted for backward compat
+        ground_truth_resolver: Any = None,
         model_score_aggregator: Any = None,
         leaderboard_ranker: Any = None,
     ):
@@ -29,7 +30,7 @@ class ScoreService:
         self.prediction_repository = prediction_repository
         self.model_repository = model_repository
         self.leaderboard_repository = leaderboard_repository
-        self.ground_truth_resolver = ground_truth_resolver
+        self.input_service = input_service
         self.contract = contract or CrunchContract()
 
         self.logger = logging.getLogger(__name__)
@@ -104,15 +105,22 @@ class ScoreService:
         )
 
     def _resolve_ground_truth(self, prediction) -> dict[str, Any] | None:
-        if self.ground_truth_resolver is None:
+        if self.input_service is None:
             return {}
 
-        truth = self.ground_truth_resolver(prediction)
-        if truth is None:
+        performed_at = getattr(prediction, "performed_at", None)
+        resolvable_at = getattr(prediction, "resolvable_at", None)
+        if performed_at is None or resolvable_at is None:
             return None
-        if not isinstance(truth, dict):
-            raise ValueError("ground_truth_resolver must return a dictionary or None")
-        return truth
+
+        scope = getattr(prediction, "scope", {}) or {}
+        asset = scope.get("asset")
+
+        return self.input_service.get_ground_truth(
+            performed_at=performed_at,
+            resolvable_at=resolvable_at,
+            asset=asset,
+        )
 
     def _aggregate_model_scores(self, scored_predictions, models) -> list[dict[str, Any]]:
         """Aggregate scores per model using contract-defined time windows."""

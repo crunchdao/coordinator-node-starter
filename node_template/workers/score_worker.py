@@ -14,6 +14,7 @@ from node_template.infrastructure.db import (
     DBPredictionRepository,
     create_session,
 )
+from node_template.services.input_service import InputService
 from node_template.services.score_service import ScoreService
 
 
@@ -40,10 +41,6 @@ def build_service() -> ScoreService:
         extension_settings.scoring_function,
         required_params=("prediction", "ground_truth"),
     )
-    ground_truth_resolver = resolve_callable(
-        extension_settings.ground_truth_resolver,
-        required_params=("prediction",),
-    )
 
     session = create_session()
 
@@ -53,7 +50,7 @@ def build_service() -> ScoreService:
         prediction_repository=DBPredictionRepository(session),
         model_repository=DBModelRepository(session),
         leaderboard_repository=DBLeaderboardRepository(session),
-        ground_truth_resolver=ground_truth_resolver,
+        input_service=InputService.from_env(),
         contract=contract,
     )
 

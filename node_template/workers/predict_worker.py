@@ -3,11 +3,10 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from node_template.config.extensions import ExtensionSettings
 from node_template.config.runtime import RuntimeSettings
 from node_template.contracts import CrunchContract
-from node_template.extensions.callable_resolver import resolve_callable
 from node_template.infrastructure.db import DBModelRepository, DBPredictionRepository, create_session
+from node_template.services.input_service import InputService
 from node_template.services.predict_service import PredictService
 
 
@@ -20,20 +19,15 @@ def configure_logging() -> None:
 
 
 def build_service() -> PredictService:
-    extension_settings = ExtensionSettings.from_env()
     runtime_settings = RuntimeSettings.from_env()
     contract = CrunchContract()
-
-    raw_input_provider = resolve_callable(
-        extension_settings.raw_input_provider,
-        required_params=("now",),
-    )
+    input_service = InputService.from_env()
 
     session = create_session()
 
     return PredictService(
         checkpoint_interval_seconds=runtime_settings.checkpoint_interval_seconds,
-        raw_input_provider=raw_input_provider,
+        raw_input_provider=input_service.get_input,
         contract=contract,
         model_repository=DBModelRepository(session),
         prediction_repository=DBPredictionRepository(session),
