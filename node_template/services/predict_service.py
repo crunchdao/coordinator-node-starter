@@ -71,25 +71,19 @@ class PredictService:
     # ── 1. get data ──
 
     def get_data(self, now: datetime) -> InputRecord:
-        """Fetch input, validate, save to DB."""
+        """Fetch input, apply optional transform, save to DB."""
         raw = self.input_service.get_input(now)
-        inference_input = self.validate_input(raw)
+        data = self.transform(raw) if self.transform is not None else raw
 
         record = InputRecord(
             id=f"INP_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}",
-            raw_data=inference_input,
+            raw_data=data,
             received_at=now,
         )
         if self.input_repository is not None:
             self.input_repository.save(record)
 
         return record
-
-    def validate_input(self, raw_input: dict[str, Any]) -> dict[str, Any]:
-        raw_data = self.contract.raw_input_type(**raw_input)
-        if self.transform is not None:
-            return self.contract.input_type.model_validate(self.transform(raw_data)).model_dump()
-        return self.contract.input_type(**raw_data.model_dump()).model_dump()
 
     # ── 2. store predictions ──
 

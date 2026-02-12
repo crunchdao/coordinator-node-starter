@@ -36,9 +36,10 @@ class RealtimePredictService(PredictService):
 
         # 1. get data → tick models
         if raw_input is not None:
+            data = self.transform(raw_input) if self.transform is not None else raw_input
             inp = InputRecord(
                 id=f"INP_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}",
-                raw_data=self.validate_input(raw_input),
+                raw_data=data,
                 received_at=now,
             )
         else:
