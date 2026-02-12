@@ -37,7 +37,8 @@ platform:
 	$(COMPOSE) up -d --build report-ui
 
 backfill:
-	$(COMPOSE) run --rm --no-deps -e FEED_PROVIDER=$(or $(PROVIDER),pyth) \
+	$(COMPOSE) run --rm -v $$(pwd)/scripts:/app/scripts:ro \
+		-e FEED_PROVIDER=$(or $(PROVIDER),pyth) \
 		-e FEED_ASSETS=$(or $(ASSET),BTC) \
 		-e FEED_KIND=$(or $(KIND),tick) \
 		-e FEED_GRANULARITY=$(or $(GRANULARITY),1s) \

@@ -8,13 +8,17 @@ Or via make:
     make backfill FROM=2026-01-01 TO=2026-02-01
     make backfill FROM=2026-01-01 TO=2026-02-01 PROVIDER=binance ASSET=BTCUSDT KIND=candle GRANULARITY=1m
 """
-from __future__ import annotations
+import os
+import sys
+
+# Ensure app root is on sys.path when running as a script inside Docker
+_app_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _app_dir not in sys.path:
+    sys.path.insert(0, _app_dir)
 
 import argparse
 import asyncio
 import logging
-import os
-import sys
 from datetime import datetime, timezone
 
 from node_template.infrastructure.db import create_session
@@ -23,7 +27,7 @@ from node_template.services.backfill_service import BackfillService, BackfillReq
 from coordinator_runtime.data_feeds import create_default_registry
 
 
-def parse_datetime(value: str) -> datetime:
+def parse_datetime(value):
     for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ"):
         try:
             dt = datetime.strptime(value, fmt)
@@ -33,7 +37,7 @@ def parse_datetime(value: str) -> datetime:
     raise argparse.ArgumentTypeError(f"Cannot parse datetime: {value!r} (expected YYYY-MM-DD or ISO format)")
 
 
-def main() -> int:
+def main():
     parser = argparse.ArgumentParser(description="Backfill market data from a feed provider")
     parser.add_argument("--provider", default=os.getenv("FEED_PROVIDER", "pyth"), help="Feed provider (default: $FEED_PROVIDER or pyth)")
     parser.add_argument("--asset", default=os.getenv("FEED_ASSETS", "BTC"), help="Asset symbol(s), comma-separated (default: $FEED_ASSETS or BTC)")
