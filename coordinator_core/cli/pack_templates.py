@@ -48,7 +48,7 @@ def _destination_template(rel_template_path: Path) -> str:
 
     last = dest_parts[-1]
     if last.endswith(".tmpl"):
-        dest_parts[-1] = last[: -len(".tmpl")]
+        dest_parts[-1] = last[:-len(".tmpl")]
 
     return "/".join(dest_parts)
 
@@ -59,11 +59,19 @@ def render_pack_templates(template_set: str, values: dict[str, Any]) -> dict[str
         raise ValueError(f"Template set not found: {template_set}")
 
     files: dict[str, str] = {}
-    for path in sorted(root.rglob("*.tmpl")):
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        if "__pycache__" in path.parts:
+            continue
+
         rel = path.relative_to(root)
+        is_template = path.suffix == ".tmpl"
         destination_template = _destination_template(rel)
         destination = _render_tokens(destination_template, values)
-        content = _render_tokens(path.read_text(encoding="utf-8"), values)
+
+        raw = path.read_text(encoding="utf-8")
+        content = _render_tokens(raw, values) if is_template else raw
         files[destination] = content
 
     return files
