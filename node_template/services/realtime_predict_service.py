@@ -1,3 +1,4 @@
+"""Realtime predict service: time-series data, actuals resolved by time interval."""
 from __future__ import annotations
 
 import asyncio
@@ -10,12 +11,14 @@ from node_template.services.predict_service import PredictService
 
 
 class RealtimePredictService(PredictService):
-    """Realtime preset: event-driven loop, tick + predict cycle, config scheduling."""
+    """Time-series variant: event-driven loop, actuals = data at prediction + horizon."""
 
     def __init__(self, checkpoint_interval_seconds: int = 60, **kwargs):
         super().__init__(**kwargs)
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
         self._next_run: dict[str, datetime] = {}
+
+    # ── main loop ──
 
     async def run(self) -> None:
         self.logger.info("realtime predict service started")
@@ -30,17 +33,61 @@ class RealtimePredictService(PredictService):
 
     async def run_once(self, raw_input: dict[str, Any] | None = None, now: datetime | None = None) -> bool:
         now = now or datetime.now(timezone.utc)
-        if raw_input is None:
-            raw_input = self.input_service.get_input(now)
-
         await self.init_runner()
-        inference_input = self.validate_input(raw_input)
+
+        # 1. get data, send to models
+        inference_input = self.validate_input(raw_input) if raw_input else self.get_data(now)
         await self.tick_models(inference_input)
 
+        # 2. run prediction configs, store predictions
+        predictions = await self._run_configs(inference_input, now)
+        self.save_predictions(predictions)
+
+        # 3. resolve actuals for past predictions
+        self.resolve_actuals(now)
+
+        return len(predictions) > 0
+
+    # ── 3. resolve actuals (time-series) ──
+
+    def resolve_actuals(self, now: datetime) -> int:
+        """Find predictions past their horizon, look up what actually happened."""
+        if not hasattr(self.prediction_repository, "fetch_unresolved"):
+            return 0
+
+        unresolved = list(self.prediction_repository.fetch_unresolved(before=now))
+        if not unresolved:
+            return 0
+
+        resolved_count = 0
+        for prediction in unresolved:
+            scope = getattr(prediction, "scope", {}) or {}
+            asset = scope.get("asset")
+
+            actuals = self.input_service.get_ground_truth(
+                performed_at=prediction.performed_at,
+                resolvable_at=prediction.resolvable_at,
+                asset=asset,
+            )
+            if actuals is None:
+                continue
+
+            prediction.actuals = actuals
+            resolved_count += 1
+
+        if resolved_count:
+            self.prediction_repository.save_all(unresolved)
+            self.logger.info("Resolved actuals for %d predictions", resolved_count)
+
+        return resolved_count
+
+    # ── prediction configs ──
+
+    async def _run_configs(self, inference_input: dict[str, Any], now: datetime) -> list[PredictionRecord]:
         configs = self._fetch_active_configs()
         if not configs:
             self.logger.info("No active prediction configs found")
-            return False
+            return []
 
         all_predictions: list[PredictionRecord] = []
         for config in configs:
@@ -57,43 +104,7 @@ class RealtimePredictService(PredictService):
             schedule = self._parse_schedule(config)
             self._next_run[config_id] = now + timedelta(seconds=int(schedule.prediction_interval_seconds))
 
-        if all_predictions:
-            self.save_predictions(all_predictions)
-            return True
-
-        self.logger.info("No predictions produced in this cycle")
-        return False
-
-    async def _wait_for_data(self) -> None:
-        """Wait for new market data (pg NOTIFY) or fall back to timeout."""
-        try:
-            from node_template.infrastructure.db.pg_notify import wait_for_notify
-
-            # Race: stop_event vs pg notify vs timeout
-            notify_task = asyncio.create_task(
-                wait_for_notify(timeout=float(self.checkpoint_interval_seconds))
-            )
-            stop_task = asyncio.create_task(self.stop_event.wait())
-
-            done, pending = await asyncio.wait(
-                {notify_task, stop_task}, return_when=asyncio.FIRST_COMPLETED,
-            )
-            for task in pending:
-                task.cancel()
-                try:
-                    await task
-                except (asyncio.CancelledError, Exception):
-                    pass
-        except Exception:
-            # pg_notify unavailable — fall back to sleep
-            try:
-                await asyncio.wait_for(
-                    self.stop_event.wait(), timeout=self.checkpoint_interval_seconds,
-                )
-            except asyncio.TimeoutError:
-                pass
-
-    # ── realtime-specific ──
+        return all_predictions
 
     async def _predict_for_config(
         self, config: dict[str, Any], inference_input: dict[str, Any], now: datetime,
@@ -102,7 +113,7 @@ class RealtimePredictService(PredictService):
         scope_key = scope.get("scope_key", "default-scope")
         config_id = str(config.get("id")) if config.get("id") else None
 
-        responses = await self.call_predict(scope)
+        responses = await self.predict(inference_input, scope)
         resolvable_at = self._compute_resolvable_at(config, now, scope)
 
         predictions: dict[str, PredictionRecord] = {}
@@ -118,11 +129,12 @@ class RealtimePredictService(PredictService):
             validation_error = self.validate_output(output)
             if validation_error:
                 status = "FAILED"
+                output = {"_validation_error": validation_error, "raw_output": output}
 
             predictions[model.id] = self.make_prediction(
                 model_id=model.id, scope_key=scope_key, scope=scope,
-                status=status, output=output, validation_error=validation_error,
-                inference_input=inference_input, now=now, resolvable_at=resolvable_at,
+                status=status, output=output, inference_input=inference_input,
+                now=now, resolvable_at=resolvable_at,
                 exec_time_ms=float(getattr(result, "exec_time_us", 0.0)),
                 config_id=config_id,
             )
@@ -132,12 +144,13 @@ class RealtimePredictService(PredictService):
             if model_id not in predictions:
                 predictions[model_id] = self.make_prediction(
                     model_id=model_id, scope_key=scope_key, scope=scope,
-                    status="ABSENT", output={}, validation_error=None,
-                    inference_input=inference_input, now=now, resolvable_at=resolvable_at,
-                    config_id=config_id,
+                    status="ABSENT", output={}, inference_input=inference_input,
+                    now=now, resolvable_at=resolvable_at, config_id=config_id,
                 )
 
         return list(predictions.values())
+
+    # ── scope & schedule ──
 
     def _build_scope(self, config: dict[str, Any]) -> dict[str, Any]:
         scope_data = self.contract.scope.model_dump()
@@ -150,6 +163,37 @@ class RealtimePredictService(PredictService):
         if seconds is None:
             seconds = scope.get("horizon_seconds", self.contract.scope.horizon_seconds)
         return now + timedelta(seconds=max(0, int(seconds or 0)))
+
+    # ── event-driven wait ──
+
+    async def _wait_for_data(self) -> None:
+        """Wait for new market data (pg NOTIFY) or fall back to timeout."""
+        try:
+            from node_template.infrastructure.db.pg_notify import wait_for_notify
+
+            notify_task = asyncio.create_task(
+                wait_for_notify(timeout=float(self.checkpoint_interval_seconds))
+            )
+            stop_task = asyncio.create_task(self.stop_event.wait())
+
+            done, pending = await asyncio.wait(
+                {notify_task, stop_task}, return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+        except Exception:
+            try:
+                await asyncio.wait_for(
+                    self.stop_event.wait(), timeout=self.checkpoint_interval_seconds,
+                )
+            except asyncio.TimeoutError:
+                pass
+
+    # ── helpers ──
 
     def _fetch_active_configs(self) -> list[dict[str, Any]]:
         if hasattr(self.prediction_repository, "fetch_active_configs"):

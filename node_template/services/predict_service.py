@@ -1,9 +1,10 @@
+"""Base predict service: get data, store predictions, resolve actuals."""
 from __future__ import annotations
 
 import asyncio
 import contextlib
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from coordinator_core.entities.model import Model
@@ -24,7 +25,7 @@ except Exception:  # pragma: no cover
 
 
 class PredictService:
-    """Base: runner lifecycle, model management, validation, record creation."""
+    """Base: get data → run models → store predictions → resolve actuals."""
 
     def __init__(
         self,
@@ -60,6 +61,61 @@ class PredictService:
         self.logger = logging.getLogger(type(self).__name__)
         self.stop_event = asyncio.Event()
 
+    # ── 1. get data ──
+
+    def get_data(self, now: datetime) -> dict[str, Any]:
+        raw = self.input_service.get_input(now)
+        return self.validate_input(raw)
+
+    def validate_input(self, raw_input: dict[str, Any]) -> dict[str, Any]:
+        raw_data = self.contract.raw_input_type(**raw_input)
+        if self.transform is not None:
+            return self.contract.input_type.model_validate(self.transform(raw_data)).model_dump()
+        return self.contract.input_type(**raw_data.model_dump()).model_dump()
+
+    # ── 2. store predictions ──
+
+    async def predict(self, inference_input: dict[str, Any], scope: dict[str, Any]) -> dict:
+        """Send predict call to models, return raw responses."""
+        return await self._runner.call("predict", self._encode_predict(scope))
+
+    async def tick_models(self, inference_input: dict[str, Any]) -> None:
+        """Send latest data to all models."""
+        responses = await self._runner.call("tick", self._encode_tick(inference_input))
+        for model_run, _ in responses.items():
+            self.register_model(self._to_model(model_run))
+
+    def make_prediction(
+        self, *, model_id: str, scope_key: str, scope: dict[str, Any],
+        status: str, output: dict[str, Any], inference_input: dict[str, Any],
+        now: datetime, resolvable_at: datetime,
+        exec_time_ms: float = 0.0, config_id: str | None = None,
+    ) -> PredictionRecord:
+        suffix = "ABS" if status == "ABSENT" else "PRE"
+        safe_key = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in scope_key)
+        pred_id = f"{suffix}_{model_id}_{safe_key}_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}"
+
+        return PredictionRecord(
+            id=pred_id, model_id=model_id, prediction_config_id=config_id,
+            scope_key=scope_key,
+            scope={k: v for k, v in scope.items() if k != "scope_key"},
+            status=status, exec_time_ms=exec_time_ms,
+            inference_input={**inference_input, "_scope": scope},
+            inference_output=output, performed_at=now, resolvable_at=resolvable_at,
+        )
+
+    def save_predictions(self, predictions: list[PredictionRecord]) -> None:
+        if predictions:
+            self.prediction_repository.save_all(predictions)
+            self.logger.info("Saved %d predictions", len(predictions))
+
+    # ── 3. resolve actuals ──
+
+    def resolve_actuals(self, now: datetime) -> int:
+        """Check past predictions whose resolvable_at has passed, fill in actuals.
+        Subclasses define what 'actuals' means for their domain."""
+        return 0  # base does nothing — subclasses override
+
     # ── runner lifecycle ──
 
     async def init_runner(self) -> None:
@@ -90,67 +146,13 @@ class PredictService:
         self._known_models[model.id] = model
         self.model_repository.save(model)
 
-    async def tick_models(self, inference_input: dict[str, Any]) -> None:
-        responses = await self._runner.call("tick", self._encode_tick(inference_input))
-        for model_run, _ in responses.items():
-            self.register_model(self._to_model(model_run))
-
-    async def call_predict(self, scope: dict[str, Any]) -> dict:
-        args = self._encode_predict(scope)
-        return await self._runner.call("predict", args)
-
-    # ── validation ──
-
-    def validate_input(self, raw_input: dict[str, Any]) -> dict[str, Any]:
-        raw_data = self.contract.raw_input_type(**raw_input)
-        if self.transform is not None:
-            return self.contract.input_type.model_validate(self.transform(raw_data)).model_dump()
-        return self.contract.input_type(**raw_data.model_dump()).model_dump()
-
     def validate_output(self, output: dict[str, Any]) -> str | None:
-        """Returns None on success, error string on failure."""
         try:
             output.update(self.contract.output_type(**output).model_dump())
             return None
         except Exception as exc:
             self.logger.error("INFERENCE_OUTPUT_VALIDATION_ERROR: %s", exc)
             return str(exc)
-
-    # ── record creation ──
-
-    def make_prediction(
-        self, *, model_id: str, scope_key: str, scope: dict[str, Any],
-        status: str, output: dict[str, Any], validation_error: str | None,
-        inference_input: dict[str, Any], now: datetime, resolvable_at: datetime,
-        exec_time_ms: float = 0.0, config_id: str | None = None,
-    ) -> PredictionRecord:
-        suffix = "ABS" if status == "ABSENT" else "PRE"
-        safe_key = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in scope_key)
-        pred_id = f"{suffix}_{model_id}_{safe_key}_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}"
-
-        return PredictionRecord(
-            id=pred_id,
-            model_id=model_id,
-            prediction_config_id=config_id,
-            scope_key=scope_key,
-            scope={k: v for k, v in scope.items() if k != "scope_key"},
-            status=status,
-            exec_time_ms=exec_time_ms,
-            inference_input={**inference_input, "_scope": scope},
-            inference_output=(
-                {"_validation_error": validation_error, "raw_output": output}
-                if validation_error else output
-            ),
-            performed_at=now,
-            resolvable_at=resolvable_at,
-        )
-
-    def save_predictions(self, predictions: list[PredictionRecord]) -> None:
-        if predictions:
-            self.prediction_repository.save_all(predictions)
-            self.logger.info("Saved %d predictions", len(predictions))
-
-    # ── helpers ──
 
     @staticmethod
     def _to_model(model_run) -> Model:
