@@ -141,35 +141,6 @@ class LeaderboardRow(SQLModel, table=True):
     )
 
 
-class CheckpointRow(SQLModel, table=True):
-    __tablename__ = "checkpoints"
-
-    id: str = Field(primary_key=True)
-    checkpoint_kind: str = Field(index=True)
-    interval_seconds: int
-
-    last_run_at: Optional[datetime] = Field(default=None, index=True)
-    next_run_at: Optional[datetime] = Field(default=None, index=True)
-
-    meta_jsonb: dict[str, Any] = Field(
-        default_factory=dict,
-        sa_column=Column(JSONB),
-    )
-
-
-class EmissionCheckpointRow(SQLModel, table=True):
-    __tablename__ = "emission_checkpoints"
-
-    id: str = Field(primary_key=True)
-    checkpoint_id: str = Field(index=True, foreign_key="checkpoints.id")
-    emitted_at: datetime = Field(default_factory=utc_now, index=True)
-
-    payload_jsonb: dict[str, Any] = Field(
-        default_factory=dict,
-        sa_column=Column(JSONB),
-    )
-
-
 class PredictionConfigRow(SQLModel, table=True):
     __tablename__ = "scheduled_prediction_configs"
 

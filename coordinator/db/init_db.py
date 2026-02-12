@@ -17,11 +17,11 @@ MINUTE = 60
 
 def tables_to_reset() -> list[str]:
     return [
-        "emission_checkpoints",
-        "checkpoints",
+        "scores",
+        "predictions",
+        "inputs",
         "leaderboards",
         "model_scores",
-        "predictions",
         "market_records",
         "market_ingestion_state",
         "scheduled_prediction_configs",

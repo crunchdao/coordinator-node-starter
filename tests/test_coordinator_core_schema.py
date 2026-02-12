@@ -1,8 +1,7 @@
 import unittest
 
 from coordinator.db.tables import (
-    CheckpointRow,
-    EmissionCheckpointRow,
+    InputRow,
     LeaderboardRow,
     MarketIngestionStateRow,
     MarketRecordRow,
@@ -10,17 +9,18 @@ from coordinator.db.tables import (
     ModelScoreRow,
     PredictionConfigRow,
     PredictionRow,
+    ScoreRow,
 )
 
 
 class TestCoordinatorCoreSchema(unittest.TestCase):
     def test_required_table_names(self):
         self.assertEqual(ModelRow.__tablename__, "models")
+        self.assertEqual(InputRow.__tablename__, "inputs")
         self.assertEqual(PredictionRow.__tablename__, "predictions")
+        self.assertEqual(ScoreRow.__tablename__, "scores")
         self.assertEqual(ModelScoreRow.__tablename__, "model_scores")
         self.assertEqual(LeaderboardRow.__tablename__, "leaderboards")
-        self.assertEqual(CheckpointRow.__tablename__, "checkpoints")
-        self.assertEqual(EmissionCheckpointRow.__tablename__, "emission_checkpoints")
         self.assertEqual(PredictionConfigRow.__tablename__, "scheduled_prediction_configs")
         self.assertEqual(MarketRecordRow.__tablename__, "market_records")
         self.assertEqual(MarketIngestionStateRow.__tablename__, "market_ingestion_state")
@@ -30,25 +30,21 @@ class TestCoordinatorCoreSchema(unittest.TestCase):
         self.assertIn("scores_by_scope_jsonb", ModelRow.model_fields)
         self.assertIn("meta_jsonb", ModelRow.model_fields)
 
+        self.assertIn("raw_data_jsonb", InputRow.model_fields)
+        self.assertIn("actuals_jsonb", InputRow.model_fields)
+        self.assertIn("status", InputRow.model_fields)
+
         self.assertIn("inference_output_jsonb", PredictionRow.model_fields)
         self.assertIn("scope_jsonb", PredictionRow.model_fields)
-        self.assertIn("meta_jsonb", PredictionRow.model_fields)
         self.assertIn("input_id", PredictionRow.model_fields)
 
-        self.assertIn("score_payload_jsonb", ModelScoreRow.model_fields)
         self.assertIn("entries_jsonb", LeaderboardRow.model_fields)
         self.assertIn("meta_jsonb", LeaderboardRow.model_fields)
 
-        self.assertIn("meta_jsonb", CheckpointRow.model_fields)
-        self.assertIn("payload_jsonb", EmissionCheckpointRow.model_fields)
-
         self.assertIn("scope_template_jsonb", PredictionConfigRow.model_fields)
         self.assertIn("schedule_jsonb", PredictionConfigRow.model_fields)
-        self.assertIn("meta_jsonb", PredictionConfigRow.model_fields)
 
         self.assertIn("values_jsonb", MarketRecordRow.model_fields)
-        self.assertIn("meta_jsonb", MarketRecordRow.model_fields)
-        self.assertIn("meta_jsonb", MarketIngestionStateRow.model_fields)
 
     def test_prediction_protocol_columns_exist(self):
         required_prediction_fields = {
@@ -57,6 +53,10 @@ class TestCoordinatorCoreSchema(unittest.TestCase):
             "performed_at", "resolvable_at",
         }
         self.assertTrue(required_prediction_fields.issubset(PredictionRow.model_fields.keys()))
+
+    def test_score_columns_exist(self):
+        required = {"id", "prediction_id", "value", "success", "scored_at"}
+        self.assertTrue(required.issubset(ScoreRow.model_fields.keys()))
 
 
 if __name__ == "__main__":
