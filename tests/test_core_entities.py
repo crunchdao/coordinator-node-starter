@@ -25,6 +25,8 @@ class TestCoreEntities(unittest.TestCase):
     def test_input_record(self):
         record = InputRecord(id="inp1", raw_data={"symbol": "BTC", "price": 100.0})
         self.assertEqual(record.raw_data["symbol"], "BTC")
+        self.assertEqual(record.status, "RECEIVED")
+        self.assertIsNone(record.actuals)
 
     def test_prediction_record_carries_scope_and_output(self):
         prediction = PredictionRecord(
@@ -42,10 +44,10 @@ class TestCoreEntities(unittest.TestCase):
     def test_score_record(self):
         score = ScoreRecord(
             id="scr1", prediction_id="pre1",
-            actuals={"y_up": True}, value=0.42, success=True,
+            value=0.42, success=True,
         )
         self.assertEqual(score.value, 0.42)
-        self.assertEqual(score.actuals["y_up"], True)
+        self.assertTrue(score.success)
 
 
 if __name__ == "__main__":

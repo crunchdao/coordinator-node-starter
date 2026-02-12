@@ -42,10 +42,15 @@ class InputRow(SQLModel, table=True):
     __tablename__ = "inputs"
 
     id: str = Field(primary_key=True)
+    status: str = Field(default="RECEIVED", index=True)
 
     raw_data_jsonb: dict[str, Any] = Field(
         default_factory=dict,
         sa_column=Column(JSONB),
+    )
+    actuals_jsonb: Optional[dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSONB, nullable=True),
     )
     scope_jsonb: dict[str, Any] = Field(
         default_factory=dict,
@@ -57,6 +62,7 @@ class InputRow(SQLModel, table=True):
     )
 
     received_at: datetime = Field(default_factory=utc_now, index=True)
+    resolvable_at: Optional[datetime] = Field(default=None, index=True)
 
 
 class PredictionRow(SQLModel, table=True):
@@ -98,11 +104,6 @@ class ScoreRow(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     prediction_id: str = Field(index=True, foreign_key="predictions.id")
-
-    actuals_jsonb: dict[str, Any] = Field(
-        default_factory=dict,
-        sa_column=Column(JSONB),
-    )
 
     value: Optional[float] = None
     success: Optional[bool] = None

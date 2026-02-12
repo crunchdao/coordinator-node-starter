@@ -1,4 +1,4 @@
-"""Score service: resolve actuals → score predictions → save scores → rebuild leaderboard."""
+"""Score service: resolve actuals on inputs → score predictions → leaderboard."""
 from __future__ import annotations
 
 import asyncio
@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from coordinator_core.entities.prediction import ScoreRecord
 from coordinator_core.schemas import LeaderboardEntryEnvelope, ScoreEnvelope
+from coordinator_core.services.interfaces.input_repository import InputRepository
 from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
 from coordinator_core.services.interfaces.model_repository import ModelRepository
 from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
@@ -22,16 +23,18 @@ class ScoreService:
         checkpoint_interval_seconds: int,
         scoring_function: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]],
         input_service: InputService | None = None,
+        input_repository: InputRepository | None = None,
         prediction_repository: PredictionRepository | None = None,
         score_repository: ScoreRepository | None = None,
         model_repository: ModelRepository | None = None,
         leaderboard_repository: LeaderboardRepository | None = None,
         contract: CrunchContract | None = None,
-        **kwargs,
+        **kwargs: Any,
     ):
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
         self.scoring_function = scoring_function
         self.input_service = input_service
+        self.input_repository = input_repository
         self.prediction_repository = prediction_repository
         self.score_repository = score_repository
         self.model_repository = model_repository
@@ -59,10 +62,10 @@ class ScoreService:
     def run_once(self) -> bool:
         now = datetime.now(timezone.utc)
 
-        # 1. resolve actuals for predictions past their horizon
-        self._resolve_actuals(now)
+        # 1. resolve actuals on inputs past their horizon
+        self._resolve_inputs(now)
 
-        # 2. score predictions that have actuals
+        # 2. score predictions whose input has actuals
         scored = self._score_predictions(now)
         if not scored:
             self.logger.info("No predictions scored this cycle")
@@ -75,69 +78,64 @@ class ScoreService:
     async def shutdown(self) -> None:
         self.stop_event.set()
 
-    # ── 1. resolve actuals ──
+    # ── 1. resolve actuals on inputs ──
 
-    def _resolve_actuals(self, now: datetime) -> int:
-        pending = self.prediction_repository.find(
-            status="PENDING", resolvable_before=now,
+    def _resolve_inputs(self, now: datetime) -> int:
+        if self.input_repository is None or self.input_service is None:
+            return 0
+
+        unresolved = self.input_repository.find(
+            status="RECEIVED", resolvable_before=now,
         )
-        if not pending:
+        if not unresolved:
             return 0
 
         resolved = 0
-        for prediction in pending:
-            if self.input_service is None:
-                continue
-
-            scope = prediction.scope or {}
+        for inp in unresolved:
             actuals = self.input_service.get_ground_truth(
-                performed_at=prediction.performed_at,
-                resolvable_at=prediction.resolvable_at,
-                asset=scope.get("asset"),
+                performed_at=inp.received_at,
+                resolvable_at=inp.resolvable_at,
+                asset=inp.scope.get("asset"),
             )
             if actuals is None:
                 continue
 
-            # Save a score record with actuals but no score yet
-            if self.score_repository is not None:
-                self.score_repository.save(ScoreRecord(
-                    id=f"SCR_{prediction.id}",
-                    prediction_id=prediction.id,
-                    actuals=actuals,
-                    value=None, success=True, failed_reason=None,
-                    scored_at=now,
-                ))
-
-            # Mark prediction as resolved
-            prediction.status = "RESOLVED"
-            self.prediction_repository.save(prediction)
+            inp.actuals = actuals
+            inp.status = "RESOLVED"
+            self.input_repository.save(inp)
             resolved += 1
 
         if resolved:
-            self.logger.info("Resolved actuals for %d predictions", resolved)
+            self.logger.info("Resolved actuals for %d inputs", resolved)
         return resolved
 
     # ── 2. score predictions ──
 
     def _score_predictions(self, now: datetime) -> list[ScoreRecord]:
-        predictions = self.prediction_repository.find(status="RESOLVED")
+        predictions = self.prediction_repository.find(status="PENDING")
         if not predictions:
             return []
 
+        # Build input lookup for actuals
+        input_ids = {p.input_id for p in predictions}
+        inputs_by_id: dict[str, Any] = {}
+        if self.input_repository is not None:
+            for inp in self.input_repository.find(status="RESOLVED"):
+                if inp.id in input_ids:
+                    inputs_by_id[inp.id] = inp
+
         scored: list[ScoreRecord] = []
         for prediction in predictions:
-            # Get actuals from score record
-            actuals = self._get_actuals(prediction.id)
-            if actuals is None:
-                continue
+            inp = inputs_by_id.get(prediction.input_id)
+            if inp is None or inp.actuals is None:
+                continue  # actuals not yet available
 
-            result = self.scoring_function(prediction.inference_output, actuals)
+            result = self.scoring_function(prediction.inference_output, inp.actuals)
             validated = self.contract.score_type(**result)
 
             score = ScoreRecord(
                 id=f"SCR_{prediction.id}",
                 prediction_id=prediction.id,
-                actuals=actuals,
                 value=validated.value,
                 success=validated.success,
                 failed_reason=validated.failed_reason,
@@ -155,29 +153,18 @@ class ScoreService:
             self.logger.info("Scored %d predictions", len(scored))
         return scored
 
-    def _get_actuals(self, prediction_id: str) -> dict[str, Any] | None:
-        if self.score_repository is None:
-            return None
-        records = self.score_repository.find(prediction_id=prediction_id, limit=1)
-        if records and records[0].actuals:
-            return records[0].actuals
-        return None
-
     # ── 3. leaderboard ──
 
     def _rebuild_leaderboard(self) -> None:
         scores = self.score_repository.find() if self.score_repository else []
         models = self.model_repository.fetch_all()
 
-        # Build prediction_id → score mapping
         score_by_pred: dict[str, ScoreRecord] = {}
         for s in scores:
             if s.value is not None and s.success:
                 score_by_pred[s.prediction_id] = s
 
-        # Get all scored predictions for timestamps and model_ids
         scored_predictions = self.prediction_repository.find(status="SCORED")
-
         aggregated = self._aggregate(scored_predictions, score_by_pred, models)
         ranked = self._rank(aggregated)
 
@@ -185,7 +172,7 @@ class ScoreService:
             ranked, meta={"generated_by": "node_template.score_service"},
         )
 
-    def _aggregate(self, predictions, score_by_pred, models) -> list[dict[str, Any]]:
+    def _aggregate(self, predictions: Any, score_by_pred: dict, models: dict) -> list[dict[str, Any]]:
         now = datetime.now(timezone.utc)
         aggregation = self.contract.aggregation
 
@@ -240,11 +227,11 @@ class ScoreService:
             entry["rank"] = idx
         return ranked
 
-    # keep old name for test compat
     _rank_leaderboard = _rank
 
     def _rollback_repositories(self) -> None:
-        for name, repo in [("prediction", self.prediction_repository),
+        for name, repo in [("input", self.input_repository),
+                           ("prediction", self.prediction_repository),
                            ("score", self.score_repository),
                            ("model", self.model_repository),
                            ("leaderboard", self.leaderboard_repository)]:

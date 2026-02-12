@@ -83,6 +83,13 @@ class RealtimePredictService(PredictService):
                 resolve_seconds = scope.get("horizon_seconds", self.contract.scope.horizon_seconds)
             resolvable_at = now + timedelta(seconds=max(0, int(resolve_seconds or 0)))
 
+            # set resolvable_at on input (earliest horizon wins)
+            if inp.resolvable_at is None or resolvable_at < inp.resolvable_at:
+                inp.resolvable_at = resolvable_at
+                inp.scope = {k: v for k, v in scope.items() if k != "scope_key"}
+                if self.input_repository is not None:
+                    self.input_repository.save(inp)
+
             # call models
             responses = await self._call_models(scope)
             seen: set[str] = set()

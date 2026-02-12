@@ -25,10 +25,20 @@ class MemInputRepository:
         self.records: list[InputRecord] = []
 
     def save(self, record: InputRecord) -> None:
+        for i, r in enumerate(self.records):
+            if r.id == record.id:
+                self.records[i] = record
+                return
         self.records.append(record)
 
-    def find(self, **kwargs: Any) -> list[InputRecord]:
-        return list(self.records)
+    def find(self, *, status: str | None = None, resolvable_before: datetime | None = None,
+             **kwargs: Any) -> list[InputRecord]:
+        results = list(self.records)
+        if status is not None:
+            results = [r for r in results if r.status == status]
+        if resolvable_before is not None:
+            results = [r for r in results if r.resolvable_at and r.resolvable_at <= resolvable_before]
+        return results
 
 
 class MemPredictionRepository:
@@ -85,7 +95,8 @@ class MemScoreRepository:
                 return
         self.scores.append(record)
 
-    def find(self, *, prediction_id: str | None = None, **kwargs: Any) -> list[ScoreRecord]:
+    def find(self, *, prediction_id: str | None = None, since: datetime | None = None,
+             until: datetime | None = None, **kwargs: Any) -> list[ScoreRecord]:
         results = list(self.scores)
         if prediction_id is not None:
             results = [s for s in results if s.prediction_id == prediction_id]
@@ -189,6 +200,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
             checkpoint_interval_seconds=60,
             scoring_function=self._score_fn,
             input_service=FakeInputService({"symbol": "BTC", "asof_ts": 100}),
+            input_repository=self.input_repo,
             prediction_repository=self.pred_repo,
             score_repository=self.score_repo,
             model_repository=self.model_repo,
@@ -233,12 +245,16 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         scored_preds = self.pred_repo.find(status="SCORED")
         self.assertEqual(len(scored_preds), 2)
 
+        # input has actuals resolved
+        resolved_inputs = self.input_repo.find(status="RESOLVED")
+        self.assertEqual(len(resolved_inputs), 1)
+        self.assertIn("actual_value", resolved_inputs[0].actuals)
+
         # score records created
         self.assertEqual(len(self.score_repo.scores), 2)
         for score in self.score_repo.scores:
             self.assertIsNotNone(score.value)
             self.assertTrue(score.success)
-            self.assertIn("actual_value", score.actuals)
 
         # leaderboard rebuilt with both models ranked
         self.assertEqual(len(self.lb_repo.entries), 2)

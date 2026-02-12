@@ -131,18 +131,33 @@ class DBInputRepository(InputRepository):
     def save(self, record: InputRecord) -> None:
         row = InputRow(
             id=record.id,
+            status=record.status,
             raw_data_jsonb=record.raw_data,
+            actuals_jsonb=record.actuals,
             scope_jsonb=record.scope,
             meta_jsonb=record.meta,
             received_at=record.received_at,
+            resolvable_at=record.resolvable_at,
         )
         existing = self._session.get(InputRow, row.id)
         if existing is None:
             self._session.add(row)
+        else:
+            existing.status = row.status
+            existing.actuals_jsonb = row.actuals_jsonb
+            existing.meta_jsonb = row.meta_jsonb
         self._session.commit()
 
-    def find(self, *, since=None, until=None, limit=None) -> list[InputRecord]:
+    def find(
+        self, *, status: str | None = None, resolvable_before: datetime | None = None,
+        since: datetime | None = None, until: datetime | None = None,
+        limit: int | None = None,
+    ) -> list[InputRecord]:
         stmt = select(InputRow).order_by(InputRow.received_at.asc())
+        if status is not None:
+            stmt = stmt.where(InputRow.status == status)
+        if resolvable_before is not None:
+            stmt = stmt.where(InputRow.resolvable_at <= resolvable_before)
         if since is not None:
             stmt = stmt.where(InputRow.received_at >= since)
         if until is not None:
@@ -151,8 +166,10 @@ class DBInputRepository(InputRepository):
             stmt = stmt.limit(max(1, int(limit)))
         rows = self._session.exec(stmt).all()
         return [InputRecord(
-            id=r.id, raw_data=r.raw_data_jsonb or {}, scope=r.scope_jsonb or {},
+            id=r.id, status=r.status, raw_data=r.raw_data_jsonb or {},
+            actuals=r.actuals_jsonb, scope=r.scope_jsonb or {},
             meta=r.meta_jsonb or {}, received_at=r.received_at,
+            resolvable_at=r.resolvable_at,
         ) for r in rows]
 
 
@@ -270,7 +287,6 @@ class DBScoreRepository(ScoreRepository):
         row = ScoreRow(
             id=record.id,
             prediction_id=record.prediction_id,
-            actuals_jsonb=record.actuals,
             value=record.value,
             success=record.success,
             failed_reason=record.failed_reason,
@@ -280,7 +296,6 @@ class DBScoreRepository(ScoreRepository):
         if existing is None:
             self._session.add(row)
         else:
-            existing.actuals_jsonb = row.actuals_jsonb
             existing.value = row.value
             existing.success = row.success
             existing.failed_reason = row.failed_reason
@@ -301,12 +316,10 @@ class DBScoreRepository(ScoreRepository):
             stmt = stmt.where(ScoreRow.scored_at <= until)
         if limit is not None:
             stmt = stmt.limit(max(1, int(limit)))
-        # model_id requires join — skip for now, filter in caller
         stmt = stmt.order_by(ScoreRow.scored_at.asc())
         rows = self._session.exec(stmt).all()
         return [ScoreRecord(
-            id=r.id, prediction_id=r.prediction_id,
-            actuals=r.actuals_jsonb or {}, value=r.value,
+            id=r.id, prediction_id=r.prediction_id, value=r.value,
             success=bool(r.success), failed_reason=r.failed_reason,
             scored_at=r.scored_at,
         ) for r in rows]

@@ -8,6 +8,7 @@ from node_template.config.runtime import RuntimeSettings
 from node_template.contracts import CrunchContract
 from node_template.extensions.callable_resolver import resolve_callable
 from node_template.infrastructure.db import (
+    DBInputRepository,
     DBLeaderboardRepository,
     DBModelRepository,
     DBPredictionRepository,
@@ -41,6 +42,7 @@ def build_service() -> ScoreService:
         checkpoint_interval_seconds=runtime_settings.checkpoint_interval_seconds,
         scoring_function=scoring_function,
         input_service=InputService.from_env(),
+        input_repository=DBInputRepository(session),
         prediction_repository=DBPredictionRepository(session),
         score_repository=DBScoreRepository(session),
         model_repository=DBModelRepository(session),

@@ -7,11 +7,14 @@ from typing import Any
 
 @dataclass
 class InputRecord:
-    """A data point received from the feed. Always saved regardless of predictions."""
+    """A data point received from the feed. Actuals filled in after horizon passes."""
     id: str
     raw_data: dict[str, Any] = field(default_factory=dict)
+    actuals: dict[str, Any] | None = None
+    status: str = "RECEIVED"  # RECEIVED → RESOLVED
     scope: dict[str, Any] = field(default_factory=dict)
     received_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    resolvable_at: datetime | None = None
     meta: dict[str, Any] = field(default_factory=dict)
 
 
@@ -44,10 +47,9 @@ class PredictionRecord:
 
 @dataclass
 class ScoreRecord:
-    """Scoring result for a prediction. Links to the prediction it scored."""
+    """Scoring result for a prediction."""
     id: str
     prediction_id: str
-    actuals: dict[str, Any] = field(default_factory=dict)
     value: float | None = None
     success: bool = True
     failed_reason: str | None = None
