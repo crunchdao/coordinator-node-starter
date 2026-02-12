@@ -1,45 +1,39 @@
-from __future__ import annotations
-
-import asyncio
 import unittest
 from datetime import datetime, timezone
 
 from coordinator_core.entities.model import Model
 from coordinator_core.entities.prediction import PredictionRecord
+from node_template.contracts import CrunchContract, InferenceInput, InferenceOutput
 from node_template.services.predict_service import PredictService
 
 
 class FakeModelRun:
-    def __init__(self, model_id: str, model_name: str, deployment_id: str = "dep-1"):
+    def __init__(self, model_id, model_name="model-1", deployment_id="dep-1"):
         self.model_id = model_id
         self.model_name = model_name
         self.deployment_id = deployment_id
-        self.infos = {"cruncher_id": "player-1", "cruncher_name": "alice"}
+        self.infos = {"cruncher_id": "p1", "cruncher_name": "alice"}
 
 
 class FakePredictionResult:
-    def __init__(self, status: str = "SUCCESS", result=None, exec_time_us: float = 10.0):
+    def __init__(self, result=None, status="SUCCESS", exec_time_us=100):
+        self.result = result or {"value": 0.5}
         self.status = status
-        self.result = result if result is not None else {"prediction": 1}
         self.exec_time_us = exec_time_us
 
 
 class FakeRunner:
     def __init__(self):
-        self.tick_model = FakeModelRun("m1", "model-one")
+        self._initialized = False
 
     async def init(self):
-        return None
+        self._initialized = True
 
     async def sync(self):
-        await asyncio.sleep(3600)
+        pass
 
-    async def call(self, method: str, args, model_runs=None):
-        if method == "tick":
-            return {self.tick_model: FakePredictionResult(status="SUCCESS", result={})}
-        if method == "predict":
-            return {self.tick_model: FakePredictionResult(status="SUCCESS", result={"distribution": []})}
-        return {}
+    async def call(self, method, args):
+        return {FakeModelRun("m1"): FakePredictionResult()}
 
 
 class InMemoryModelRepository:
@@ -48,12 +42,6 @@ class InMemoryModelRepository:
 
     def fetch_all(self):
         return self.models
-
-    def fetch_by_ids(self, ids):
-        return {k: v for k, v in self.models.items() if k in ids}
-
-    def fetch(self, model_id):
-        return self.models.get(model_id)
 
     def save(self, model: Model):
         self.models[model.id] = model
@@ -102,21 +90,22 @@ class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
         service = PredictService(
             checkpoint_interval_seconds=60,
             raw_input_provider=None,
-            inference_input_builder=lambda raw_input: {"wrapped": raw_input},
-            inference_output_validator=lambda inference_output: {"validated": True, **inference_output},
+            contract=CrunchContract(),
             model_repository=model_repo,
             prediction_repository=prediction_repo,
             runner=FakeRunner(),
         )
 
-        await service.run_once(raw_input={"x": 1}, now=datetime.now(timezone.utc))
+        await service.run_once(raw_input={"symbol": "BTC", "asof_ts": 123}, now=datetime.now(timezone.utc))
 
         self.assertIn("m1", model_repo.models)
         self.assertGreaterEqual(len(prediction_repo.saved_predictions), 1)
         self.assertEqual(prediction_repo.saved_predictions[0].scope_key, "BTC-60-60")
         self.assertEqual(prediction_repo.saved_predictions[0].scope.get("asset"), "BTC")
-        self.assertIn("wrapped", prediction_repo.saved_predictions[0].inference_input)
-        self.assertTrue(prediction_repo.saved_predictions[0].inference_output.get("validated"))
+        # Contract validates input — symbol should be present
+        self.assertEqual(prediction_repo.saved_predictions[0].inference_input["symbol"], "BTC")
+        # Contract validates output — value should be present
+        self.assertIn("value", prediction_repo.saved_predictions[0].inference_output)
 
     async def test_run_once_uses_raw_input_provider_when_input_not_given(self):
         model_repo = InMemoryModelRepository()
@@ -124,9 +113,8 @@ class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
 
         service = PredictService(
             checkpoint_interval_seconds=60,
-            raw_input_provider=lambda now: {"source": "provider", "ts": now.isoformat()},
-            inference_input_builder=lambda raw_input: {"wrapped": raw_input},
-            inference_output_validator=None,
+            raw_input_provider=lambda now: {"symbol": "ETH", "asof_ts": int(now.timestamp())},
+            contract=CrunchContract(),
             model_repository=model_repo,
             prediction_repository=prediction_repo,
             runner=FakeRunner(),
@@ -136,9 +124,7 @@ class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
         await service.run_once(now=now)
 
         self.assertGreaterEqual(len(prediction_repo.saved_predictions), 1)
-        wrapped = prediction_repo.saved_predictions[0].inference_input["wrapped"]
-        self.assertEqual(wrapped["source"], "provider")
-        self.assertEqual(wrapped["ts"], now.isoformat())
+        self.assertEqual(prediction_repo.saved_predictions[0].inference_input["symbol"], "ETH")
 
     async def test_run_once_logs_when_no_active_configs(self):
         model_repo = InMemoryModelRepository()
@@ -147,47 +133,53 @@ class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
         service = PredictService(
             checkpoint_interval_seconds=60,
             raw_input_provider=None,
-            inference_input_builder=lambda raw_input: {"wrapped": raw_input},
-            inference_output_validator=None,
+            contract=CrunchContract(),
             model_repository=model_repo,
             prediction_repository=prediction_repo,
             runner=FakeRunner(),
         )
 
         with self.assertLogs("node_template.services.predict_service", level="INFO") as logs:
-            changed = await service.run_once(raw_input={"x": 1}, now=datetime.now(timezone.utc))
+            changed = await service.run_once(raw_input={"symbol": "BTC"}, now=datetime.now(timezone.utc))
 
         self.assertFalse(changed)
         self.assertEqual(len(prediction_repo.saved_predictions), 0)
         self.assertTrue(any("No active prediction configs" in line for line in logs.output))
 
-    async def test_run_once_logs_structured_output_validation_error(self):
+    async def test_run_once_logs_output_validation_error(self):
+        """When model output doesn't match contract, prediction is marked FAILED."""
         model_repo = InMemoryModelRepository()
         prediction_repo = InMemoryPredictionRepository()
 
-        def failing_validator(_output):
-            raise ValueError("missing 'expected_return'")
+        # Use a strict contract that rejects non-numeric values
+        from pydantic import BaseModel, Field
+
+        class StrictOutput(BaseModel):
+            value: float = Field(ge=0.0, le=1.0)
+
+        contract = CrunchContract(output_type=StrictOutput)
+
+        # FakeRunner returns {"value": 0.5} which is valid, so let's make it invalid
+        class BadRunner(FakeRunner):
+            async def call(self, method, args):
+                return {FakeModelRun("m1"): FakePredictionResult(result={"value": "not-a-number"})}
 
         service = PredictService(
             checkpoint_interval_seconds=60,
             raw_input_provider=None,
-            inference_input_builder=lambda raw_input: {"wrapped": raw_input},
-            inference_output_validator=failing_validator,
+            contract=contract,
             model_repository=model_repo,
             prediction_repository=prediction_repo,
-            runner=FakeRunner(),
+            runner=BadRunner(),
         )
 
         with self.assertLogs("node_template.services.predict_service", level="ERROR") as logs:
-            changed = await service.run_once(raw_input={"x": 1}, now=datetime.now(timezone.utc))
+            changed = await service.run_once(raw_input={"symbol": "BTC"}, now=datetime.now(timezone.utc))
 
         self.assertTrue(changed)
         self.assertGreaterEqual(len(prediction_repo.saved_predictions), 1)
         self.assertEqual(prediction_repo.saved_predictions[0].status, "FAILED")
-        self.assertEqual(
-            prediction_repo.saved_predictions[0].inference_output.get("_validation_error"),
-            "missing 'expected_return'",
-        )
+        self.assertIn("_validation_error", prediction_repo.saved_predictions[0].inference_output)
         self.assertTrue(any("INFERENCE_OUTPUT_VALIDATION_ERROR" in line for line in logs.output))
 
 

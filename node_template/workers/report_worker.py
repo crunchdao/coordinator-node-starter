@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import logging
-import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Generator
 
 import uvicorn
@@ -14,11 +13,7 @@ from coordinator_core.services.interfaces.leaderboard_repository import Leaderbo
 from coordinator_core.services.interfaces.market_record_repository import MarketRecordRepository
 from coordinator_core.services.interfaces.model_repository import ModelRepository
 from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
-from node_template.extensions.callable_resolver import resolve_callable
-from node_template.extensions.default_callables import (
-    default_compute_window_metrics,
-    default_flatten_report_metrics,
-)
+from node_template.contracts import CrunchContract
 from node_template.infrastructure.db import (
     DBLeaderboardRepository,
     DBMarketRecordRepository,
@@ -29,11 +24,136 @@ from node_template.infrastructure.db import (
 
 app = FastAPI(title="Node Template Report Worker")
 
+CONTRACT = CrunchContract()
+
+
+def auto_report_schema(contract: CrunchContract) -> dict[str, Any]:
+    """Auto-generate report schema from the CrunchContract aggregation config."""
+    aggregation = contract.aggregation
+
+    # Leaderboard columns: Model column + one per aggregation window
+    columns: list[dict[str, Any]] = [
+        {
+            "id": 1,
+            "type": "MODEL",
+            "property": "model_id",
+            "format": None,
+            "displayName": "Model",
+            "tooltip": None,
+            "nativeConfiguration": {"type": "model", "statusProperty": "status"},
+            "order": 0,
+        },
+    ]
+    for i, (window_name, window) in enumerate(aggregation.windows.items()):
+        display = window_name.replace("_", " ").title()
+        columns.append({
+            "id": i + 2,
+            "type": "VALUE",
+            "property": window_name,
+            "format": "decimal-2",
+            "displayName": display,
+            "tooltip": f"Rolling score over {window.hours}h",
+            "nativeConfiguration": None,
+            "order": (i + 1) * 10,
+        })
+
+    # Chart series from the same windows
+    series = [
+        {"name": name, "label": name.replace("_", " ").title()}
+        for name in aggregation.windows
+    ]
+
+    widgets: list[dict[str, Any]] = [
+        {
+            "id": 1,
+            "type": "CHART",
+            "displayName": "Score Metrics",
+            "tooltip": None,
+            "order": 10,
+            "endpointUrl": "/reports/models/global",
+            "nativeConfiguration": {
+                "type": "line",
+                "xAxis": {"name": "performed_at"},
+                "yAxis": {"series": series, "format": "decimal-2"},
+                "displayEvolution": False,
+            },
+        },
+        {
+            "id": 2,
+            "type": "CHART",
+            "displayName": "Predictions",
+            "tooltip": None,
+            "order": 30,
+            "endpointUrl": "/reports/predictions",
+            "nativeConfiguration": {
+                "type": "line",
+                "xAxis": {"name": "performed_at"},
+                "yAxis": {
+                    "series": [{"name": "score_value"}],
+                    "format": "decimal-2",
+                },
+                "alertConfig": {
+                    "reasonField": "score_failed_reason",
+                    "field": "score_success",
+                },
+                "filterConfig": [
+                    {"type": "select", "label": "Asset", "property": "asset", "autoSelectFirst": True},
+                    {"type": "select", "label": "Horizon", "property": "horizon", "autoSelectFirst": True},
+                ],
+                "groupByProperty": "param",
+                "displayEvolution": False,
+            },
+        },
+        {
+            "id": 3,
+            "type": "CHART",
+            "displayName": "Rolling score by parameters",
+            "tooltip": None,
+            "order": 20,
+            "endpointUrl": "/reports/models/params",
+            "nativeConfiguration": {
+                "type": "line",
+                "xAxis": {"name": "performed_at"},
+                "yAxis": {"series": series, "format": "decimal-2"},
+                "filterConfig": [
+                    {"type": "select", "label": "Asset", "property": "asset", "autoSelectFirst": True},
+                    {"type": "select", "label": "Horizon", "property": "horizon", "autoSelectFirst": True},
+                ],
+                "groupByProperty": "param",
+                "displayEvolution": False,
+            },
+        },
+    ]
+
+    schema = {"schema_version": "1", "leaderboard_columns": columns, "metrics_widgets": widgets}
+
+    # Validate against typed contracts
+    validated = ReportSchemaEnvelope.model_validate(schema)
+    return validated.model_dump()
+
+
+def _flatten_metrics(metrics: dict[str, Any]) -> dict[str, float | None]:
+    flattened: dict[str, float | None] = {}
+    for key, value in metrics.items():
+        try:
+            flattened[f"score_{key}"] = float(value) if value is not None else None
+        except Exception:
+            flattened[f"score_{key}"] = None
+    return flattened
+
+
+def _compute_window_metrics(scores: list[tuple[datetime, float]], contract: CrunchContract) -> dict[str, float]:
+    """Compute windowed metrics from timestamped scores using contract aggregation."""
+    now = datetime.now(timezone.utc)
+    metrics: dict[str, float] = {}
+    for window_name, window in contract.aggregation.windows.items():
+        cutoff = now - timedelta(hours=window.hours)
+        window_values = [v for ts, v in scores if ts >= cutoff]
+        metrics[window_name] = sum(window_values) / len(window_values) if window_values else 0.0
+    return metrics
+
 
 def _normalize_project_ids(raw_ids: list[str]) -> list[str]:
-    """Normalize projectIds: the FE may send comma-separated (e.g. '1,2,3')
-    or repeated params (e.g. projectIds=1&projectIds=2).
-    This handles both forms."""
     normalized: list[str] = []
     for item in raw_ids:
         for part in item.split(","):
@@ -41,6 +161,9 @@ def _normalize_project_ids(raw_ids: list[str]) -> list[str]:
             if stripped:
                 normalized.append(stripped)
     return normalized
+
+
+REPORT_SCHEMA = auto_report_schema(CONTRACT)
 
 
 def get_db_session() -> Generator[Session, Any, None]:
@@ -70,38 +193,6 @@ def get_market_record_repository(
     session_db: Annotated[Session, Depends(get_db_session)]
 ) -> MarketRecordRepository:
     return DBMarketRecordRepository(session_db)
-
-
-def resolve_report_schema(provider_path: str | None = None) -> dict[str, Any]:
-    configured_path = provider_path or os.getenv(
-        "REPORT_SCHEMA_PROVIDER",
-        "node_template.extensions.default_callables:default_report_schema",
-    )
-    provider = resolve_callable(configured_path)
-    schema = provider()
-    if not isinstance(schema, dict):
-        raise ValueError("REPORT_SCHEMA_PROVIDER must return a dictionary")
-
-    # Validate against typed contracts matching the coordinator-webapp FE types.
-    # This catches missing/wrong fields at startup instead of crashing the FE
-    # at render time (e.g. missing 'type' → TypeError: Cannot read properties
-    # of undefined reading 'toLowerCase').
-    try:
-        validated = ReportSchemaEnvelope.model_validate(schema)
-    except Exception as exc:
-        raise ValueError(
-            f"REPORT_SCHEMA_PROVIDER returned an invalid schema. "
-            f"Each leaderboard column must have: id, type (MODEL|VALUE|USERNAME|CHART), "
-            f"property, displayName, order. "
-            f"Each metric widget must have: id, type (CHART|IFRAME), displayName, "
-            f"endpointUrl, order. "
-            f"Validation error: {exc}"
-        ) from exc
-
-    return validated.model_dump()
-
-
-REPORT_SCHEMA = resolve_report_schema()
 
 
 @app.get("/healthz")
@@ -165,7 +256,7 @@ def get_leaderboard(
                 "score_metrics": metrics,
                 "score_ranking": normalized.score.ranking.model_dump(exclude_none=True),
                 "score_payload": dict(normalized.score.payload),
-                **default_flatten_report_metrics(metrics),
+                **_flatten_metrics(metrics),
                 "rank": normalized.rank if normalized.rank is not None else 999999,
                 "model_name": normalized.model_name,
                 "cruncher_name": normalized.cruncher_name,
@@ -187,11 +278,15 @@ def get_models_global(
 
     rows: list[dict] = []
     for model_id, predictions in predictions_by_model.items():
-        scores = [p.score.value for p in predictions if p.score and p.score.success and p.score.value is not None]
-        if not scores:
+        timed_scores = [
+            (p.performed_at, float(p.score.value))
+            for p in predictions
+            if p.score and p.score.success and p.score.value is not None
+        ]
+        if not timed_scores:
             continue
 
-        metrics = default_compute_window_metrics([float(value) for value in scores])
+        metrics = _compute_window_metrics(timed_scores, CONTRACT)
         performed_at = max((p.performed_at for p in predictions), default=end)
 
         rows.append(
@@ -199,11 +294,11 @@ def get_models_global(
                 "model_id": model_id,
                 "score_metrics": metrics,
                 "score_ranking": {
-                    "key": "anchor",
-                    "value": metrics.get("anchor"),
-                    "direction": "desc",
+                    "key": CONTRACT.aggregation.ranking_key,
+                    "value": metrics.get(CONTRACT.aggregation.ranking_key),
+                    "direction": CONTRACT.aggregation.ranking_direction,
                 },
-                **default_flatten_report_metrics(metrics),
+                **_flatten_metrics(metrics),
                 "performed_at": performed_at,
             }
         )
@@ -229,11 +324,15 @@ def get_models_params(
 
     rows: list[dict] = []
     for (model_id, scope_key), predictions in grouped.items():
-        scores = [p.score.value for p in predictions if p.score and p.score.success and p.score.value is not None]
-        if not scores:
+        timed_scores = [
+            (p.performed_at, float(p.score.value))
+            for p in predictions
+            if p.score and p.score.success and p.score.value is not None
+        ]
+        if not timed_scores:
             continue
 
-        metrics = default_compute_window_metrics([float(value) for value in scores])
+        metrics = _compute_window_metrics(timed_scores, CONTRACT)
         performed_at = max((p.performed_at for p in predictions), default=end)
         scope = predictions[-1].scope if predictions else {}
 
@@ -244,11 +343,11 @@ def get_models_params(
                 "scope": scope,
                 "score_metrics": metrics,
                 "score_ranking": {
-                    "key": "anchor",
-                    "value": metrics.get("anchor"),
-                    "direction": "desc",
+                    "key": CONTRACT.aggregation.ranking_key,
+                    "value": metrics.get(CONTRACT.aggregation.ranking_key),
+                    "direction": CONTRACT.aggregation.ranking_direction,
                 },
-                **default_flatten_report_metrics(metrics),
+                **_flatten_metrics(metrics),
                 "performed_at": performed_at,
             }
         )

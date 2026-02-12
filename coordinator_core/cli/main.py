@@ -13,29 +13,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="coordinator", description="Coordinator workspace CLI")
     subparsers = parser.add_subparsers(dest="command")
 
-    init_parser = subparsers.add_parser("init", help="Scaffold a thin challenge workspace")
-    init_parser.add_argument("name", nargs="?", help="Challenge slug, e.g. btc-trader")
-    init_parser.add_argument(
-        "--spec",
-        help="Path to init spec JSON file. Can define name/callables/schedule/env defaults.",
-    )
-    init_parser.add_argument(
-        "--answers",
-        help="Path to upfront answers file (JSON or YAML). Merged before spec overrides.",
-    )
+    init_parser = subparsers.add_parser("init", help="Initialize a coordinator folder")
+    init_parser.add_argument("name", nargs="?", help="Challenge slug, e.g. btc-trader (default: current directory name)")
     init_parser.add_argument(
         "--force",
         action="store_true",
         help="Overwrite existing target workspace if present",
-    )
-    init_parser.add_argument(
-        "--pack",
-        help="Pack id (e.g. baseline, realtime, tournament). Overrides spec pack.",
-    )
-    init_parser.add_argument(
-        "--list-packs",
-        action="store_true",
-        help="List available built-in packs and exit.",
     )
     init_parser.add_argument(
         "--output",
@@ -76,8 +59,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Start the stack immediately after scaffolding",
     )
 
-    subparsers.add_parser("dev", help="Run local dev lifecycle (coming in PR3)")
     return parser
+
+
+def _slugify_dirname(path: Path) -> str:
+    """Convert a directory name to a valid challenge slug."""
+    import re
+    name = path.resolve().name.lower()
+    name = re.sub(r"[^a-z0-9]+", "-", name)
+    name = name.strip("-")
+    return name or "my-crunch"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -85,16 +76,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "init":
-        spec_path = Path(args.spec) if args.spec else None
-        answers_path = Path(args.answers) if args.answers else None
+        name = args.name or _slugify_dirname(Path(args.output))
         return run_init(
-            name=args.name,
+            name=name,
             project_root=Path(args.output).resolve(),
             force=args.force,
-            spec_path=spec_path,
-            answers_path=answers_path,
-            pack_name=args.pack,
-            list_packs=args.list_packs,
+            spec_path=None,
+            answers_path=None,
+            pack_name="realtime",
+            list_packs=False,
         )
     if args.command == "doctor":
         spec_path = Path(args.spec) if args.spec else None
@@ -114,9 +104,6 @@ def main(argv: list[str] | None = None) -> int:
             webapp_path=webapp_path,
             start=args.start,
         )
-    if args.command == "dev":
-        print("coordinator dev is planned for PR3")
-        return 0
 
     parser.print_help()
     return 1

@@ -1,9 +1,0 @@
-from __future__ import annotations
-
-
-def build_input(raw_input):
-    if raw_input is None:
-        return {}
-    if not isinstance(raw_input, dict):
-        raise ValueError("raw_input must be a dictionary")
-    return raw_input

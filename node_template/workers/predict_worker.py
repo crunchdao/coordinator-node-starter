@@ -5,6 +5,7 @@ import logging
 
 from node_template.config.extensions import ExtensionSettings
 from node_template.config.runtime import RuntimeSettings
+from node_template.contracts import CrunchContract
 from node_template.extensions.callable_resolver import resolve_callable
 from node_template.infrastructure.db import DBModelRepository, DBPredictionRepository, create_session
 from node_template.services.predict_service import PredictService
@@ -21,26 +22,11 @@ def configure_logging() -> None:
 def build_service() -> PredictService:
     extension_settings = ExtensionSettings.from_env()
     runtime_settings = RuntimeSettings.from_env()
+    contract = CrunchContract()
 
-    inference_input_builder = resolve_callable(
-        extension_settings.inference_input_builder,
-        required_params=("raw_input",),
-    )
-    inference_output_validator = resolve_callable(
-        extension_settings.inference_output_validator,
-        required_params=("inference_output",),
-    )
     raw_input_provider = resolve_callable(
         extension_settings.raw_input_provider,
         required_params=("now",),
-    )
-    prediction_scope_builder = resolve_callable(
-        extension_settings.prediction_scope_builder,
-        required_params=("config", "inference_input"),
-    )
-    predict_call_builder = resolve_callable(
-        extension_settings.predict_call_builder,
-        required_params=("config", "inference_input", "scope"),
     )
 
     session = create_session()
@@ -48,10 +34,7 @@ def build_service() -> PredictService:
     return PredictService(
         checkpoint_interval_seconds=runtime_settings.checkpoint_interval_seconds,
         raw_input_provider=raw_input_provider,
-        inference_input_builder=inference_input_builder,
-        inference_output_validator=inference_output_validator,
-        prediction_scope_builder=prediction_scope_builder,
-        predict_call_builder=predict_call_builder,
+        contract=contract,
         model_repository=DBModelRepository(session),
         prediction_repository=DBPredictionRepository(session),
         model_runner_node_host=runtime_settings.model_runner_node_host,

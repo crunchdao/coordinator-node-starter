@@ -87,6 +87,12 @@ def run_init(
         ],
     )
 
-    print(f"Scaffold created: {workspace_dir}")
-    print(f"Next: cd {workspace_dir / config.node_name}")
+    print()
+    print(f"✅ Coordinator folder initiated: {workspace_dir}")
+    print()
+    print(f"  cd {workspace_dir}")
+    print()
+    print("Start your agent within the folder and say:")
+    print('  "create the crunch with me"')
+    print("It will step you through the process.")
     return 0

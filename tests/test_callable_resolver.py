@@ -26,22 +26,6 @@ class TestCallableResolver(unittest.TestCase):
             "node_template.extensions.default_callables:default_score_prediction",
         )
         self.assertEqual(
-            settings.inference_input_builder,
-            "node_template.extensions.default_callables:default_build_inference_input",
-        )
-        self.assertEqual(
-            settings.inference_output_validator,
-            "node_template.extensions.default_callables:default_validate_inference_output",
-        )
-        self.assertEqual(
-            settings.model_score_aggregator,
-            "node_template.extensions.default_callables:default_aggregate_model_scores",
-        )
-        self.assertEqual(
-            settings.leaderboard_ranker,
-            "node_template.extensions.default_callables:default_rank_leaderboard",
-        )
-        self.assertEqual(
             settings.raw_input_provider,
             "node_template.extensions.default_callables:default_provide_raw_input",
         )
@@ -50,28 +34,12 @@ class TestCallableResolver(unittest.TestCase):
             "node_template.extensions.default_callables:default_resolve_ground_truth",
         )
 
-    def test_default_inference_builder_callable_is_resolvable(self):
-        settings = ExtensionSettings.from_env()
-        fn = resolve_callable(
-            settings.inference_input_builder,
-            required_params=("raw_input",),
-        )
-        self.assertTrue(callable(fn))
-
-    def test_default_extension_callables_are_resolvable(self):
+    def test_default_tier1_callables_are_resolvable(self):
         settings = ExtensionSettings.from_env()
 
-        validator = resolve_callable(
-            settings.inference_output_validator,
-            required_params=("inference_output",),
-        )
-        aggregator = resolve_callable(
-            settings.model_score_aggregator,
-            required_params=("scored_predictions", "models"),
-        )
-        ranker = resolve_callable(
-            settings.leaderboard_ranker,
-            required_params=("entries",),
+        scoring = resolve_callable(
+            settings.scoring_function,
+            required_params=("prediction", "ground_truth"),
         )
         raw_input_provider = resolve_callable(
             settings.raw_input_provider,
@@ -82,9 +50,7 @@ class TestCallableResolver(unittest.TestCase):
             required_params=("prediction",),
         )
 
-        self.assertTrue(callable(validator))
-        self.assertTrue(callable(aggregator))
-        self.assertTrue(callable(ranker))
+        self.assertTrue(callable(scoring))
         self.assertTrue(callable(raw_input_provider))
         self.assertTrue(callable(ground_truth_resolver))
 

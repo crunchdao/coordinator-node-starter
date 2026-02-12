@@ -7,14 +7,8 @@ import os
 @dataclass(frozen=True)
 class ExtensionSettings:
     scoring_function: str
-    inference_input_builder: str
-    inference_output_validator: str | None
-    model_score_aggregator: str | None
-    leaderboard_ranker: str | None
     raw_input_provider: str | None
     ground_truth_resolver: str | None
-    prediction_scope_builder: str | None
-    predict_call_builder: str | None
 
     @classmethod
     def from_env(cls) -> "ExtensionSettings":
@@ -23,22 +17,6 @@ class ExtensionSettings:
                 "SCORING_FUNCTION",
                 "node_template.extensions.default_callables:default_score_prediction",
             ),
-            inference_input_builder=os.getenv(
-                "INFERENCE_INPUT_BUILDER",
-                "node_template.extensions.default_callables:default_build_inference_input",
-            ),
-            inference_output_validator=os.getenv(
-                "INFERENCE_OUTPUT_VALIDATOR",
-                "node_template.extensions.default_callables:default_validate_inference_output",
-            ),
-            model_score_aggregator=os.getenv(
-                "MODEL_SCORE_AGGREGATOR",
-                "node_template.extensions.default_callables:default_aggregate_model_scores",
-            ),
-            leaderboard_ranker=os.getenv(
-                "LEADERBOARD_RANKER",
-                "node_template.extensions.default_callables:default_rank_leaderboard",
-            ),
             raw_input_provider=os.getenv(
                 "RAW_INPUT_PROVIDER",
                 "node_template.extensions.default_callables:default_provide_raw_input",
@@ -46,13 +24,5 @@ class ExtensionSettings:
             ground_truth_resolver=os.getenv(
                 "GROUND_TRUTH_RESOLVER",
                 "node_template.extensions.default_callables:default_resolve_ground_truth",
-            ),
-            prediction_scope_builder=os.getenv(
-                "PREDICTION_SCOPE_BUILDER",
-                "node_template.extensions.default_callables:default_build_prediction_scope",
-            ),
-            predict_call_builder=os.getenv(
-                "PREDICT_CALL_BUILDER",
-                "node_template.extensions.default_callables:default_build_predict_call",
             ),
         )

@@ -28,3 +28,8 @@ packages = ["coordinator_core", "coordinator_runtime", "node_template"]
 
 [tool.uv]
 package = true
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

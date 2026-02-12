@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from coordinator_core.entities.model import Model
 from coordinator_core.entities.prediction import PredictionRecord
+from node_template.contracts import Aggregation, AggregationWindow, CrunchContract
 from node_template.services.score_service import ScoreService
 
 
@@ -113,40 +114,14 @@ class TestNodeTemplateScoreService(unittest.TestCase):
         model_repo = InMemoryModelRepository()
         leaderboard_repo = InMemoryLeaderboardRepository()
 
-        def model_score_aggregator(scored_predictions, models):
-            self.assertEqual(len(scored_predictions), 1)
-            self.assertIn("m1", models)
-            return [
-                {
-                    "model_id": "m1",
-                    "score": {
-                        "metrics": {"wealth": 123.0, "consistency": 0.81},
-                        "ranking": {"key": "wealth", "direction": "desc"},
-                        "payload": {},
-                    },
-                    "model_name": "model-one",
-                    "cruncher_name": "alice",
-                }
-            ]
-
-        def leaderboard_ranker(entries):
-            return [
-                {
-                    **entry,
-                    "rank": 7,
-                }
-                for entry in entries
-            ]
-
         service = ScoreService(
             checkpoint_interval_seconds=60,
             scoring_function=lambda prediction, ground_truth: {"value": 0.5, "success": True, "failed_reason": None},
             prediction_repository=prediction_repo,
             model_repository=model_repo,
             leaderboard_repository=leaderboard_repo,
-            model_score_aggregator=model_score_aggregator,
-            leaderboard_ranker=leaderboard_ranker,
             ground_truth_resolver=lambda prediction: {"y_up": True},
+            contract=CrunchContract(),
         )
 
         changed = service.run_once()
@@ -156,9 +131,9 @@ class TestNodeTemplateScoreService(unittest.TestCase):
         self.assertIsNotNone(prediction_repo.saved_predictions[0].score)
         self.assertIsNotNone(leaderboard_repo.latest)
         self.assertEqual(leaderboard_repo.latest["entries"][0]["model_id"], "m1")
-        self.assertEqual(leaderboard_repo.latest["entries"][0]["rank"], 7)
-        self.assertEqual(leaderboard_repo.latest["entries"][0]["score"]["ranking"]["key"], "wealth")
-        self.assertEqual(leaderboard_repo.latest["entries"][0]["score"]["metrics"]["wealth"], 123.0)
+        self.assertEqual(leaderboard_repo.latest["entries"][0]["rank"], 1)
+        self.assertEqual(leaderboard_repo.latest["entries"][0]["score"]["ranking"]["key"], "score_recent")
+        self.assertIn("score_recent", leaderboard_repo.latest["entries"][0]["score"]["metrics"])
 
     def test_run_once_skips_predictions_without_ground_truth(self):
         prediction = PredictionRecord(
@@ -223,15 +198,22 @@ class TestNodeTemplateScoreService(unittest.TestCase):
         model_repo = InMemoryModelRepository()
         leaderboard_repo = InMemoryLeaderboardRepository()
 
+        asc_contract = CrunchContract(
+            aggregation=Aggregation(
+                windows={"loss": AggregationWindow(hours=24)},
+                ranking_key="loss",
+                ranking_direction="asc",
+            )
+        )
+
         service = ScoreService(
             checkpoint_interval_seconds=60,
             scoring_function=lambda prediction, ground_truth: {"value": 0.5, "success": True, "failed_reason": None},
             prediction_repository=prediction_repo,
             model_repository=model_repo,
             leaderboard_repository=leaderboard_repo,
-            model_score_aggregator=lambda scored_predictions, models: [],
-            leaderboard_ranker=None,
             ground_truth_resolver=lambda prediction: {"y_up": True},
+            contract=asc_contract,
         )
 
         ranked = service._rank_leaderboard(

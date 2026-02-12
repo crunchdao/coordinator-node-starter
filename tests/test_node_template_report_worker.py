@@ -3,15 +3,15 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from fastapi import HTTPException
-
 from coordinator_core.entities.market_record import MarketRecord
 from coordinator_core.entities.model import Model
 from coordinator_core.entities.prediction import PredictionRecord, PredictionScore
 from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
 from coordinator_core.services.interfaces.model_repository import ModelRepository
 from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
+from node_template.contracts import CrunchContract
 from node_template.workers.report_worker import (
+    auto_report_schema,
     get_feeds,
     get_feeds_tail,
     get_leaderboard,
@@ -22,7 +22,6 @@ from node_template.workers.report_worker import (
     get_report_schema,
     get_report_schema_leaderboard_columns,
     get_report_schema_metrics_widgets,
-    resolve_report_schema,
 )
 
 
@@ -210,9 +209,9 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         response = get_models_global(["m1"], start, end, repo)
         self.assertEqual(len(response), 1)
         self.assertEqual(response[0]["model_id"], "m1")
-        self.assertIn("anchor", response[0]["score_metrics"])
-        self.assertEqual(response[0]["score_ranking"]["key"], "anchor")
-        self.assertIn("score_anchor", response[0])
+        self.assertIn("score_recent", response[0]["score_metrics"])
+        self.assertEqual(response[0]["score_ranking"]["key"], "score_recent")
+        self.assertIn("score_score_recent", response[0])
 
     def test_get_models_params_returns_grouped_entries(self):
         predictions = [
@@ -228,9 +227,9 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         response = get_models_params(["m1"], start, end, repo)
         self.assertEqual(len(response), 2)
         btc = next(item for item in response if item["scope_key"] == "BTC-60")
-        self.assertIn("anchor", btc["score_metrics"])
-        self.assertEqual(btc["score_ranking"]["key"], "anchor")
-        self.assertIn("score_anchor", btc)
+        self.assertIn("score_recent", btc["score_metrics"])
+        self.assertEqual(btc["score_ranking"]["key"], "score_recent")
+        self.assertIn("score_score_recent", btc)
 
     def test_get_predictions_allows_multiple_models(self):
         predictions = [
@@ -308,17 +307,20 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         self.assertIsInstance(get_report_schema_leaderboard_columns(), list)
         self.assertIsInstance(get_report_schema_metrics_widgets(), list)
 
-    def test_resolve_report_schema_for_risk_profile(self):
-        schema = resolve_report_schema(
-            "node_template.extensions.risk_adjusted_callables:risk_adjusted_report_schema"
-        )
-        leaderboard_props = {
-            col.get("property")
-            for col in schema["leaderboard_columns"]
-            if isinstance(col, dict)
-        }
-        self.assertIn("score_sharpe_like", leaderboard_props)
-        self.assertIn("score_wealth", leaderboard_props)
+    def test_auto_report_schema_generates_from_contract(self):
+        contract = CrunchContract()
+        schema = auto_report_schema(contract)
+        self.assertIn("schema_version", schema)
+
+        columns = schema["leaderboard_columns"]
+        props = {col["property"] for col in columns}
+        self.assertIn("model_id", props)
+        self.assertIn("score_recent", props)
+        self.assertIn("score_steady", props)
+        self.assertIn("score_anchor", props)
+
+        widgets = schema["metrics_widgets"]
+        self.assertTrue(len(widgets) >= 1)
 
 
 if __name__ == "__main__":

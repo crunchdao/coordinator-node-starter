@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from coordinator_core.entities.prediction import PredictionScore
 from coordinator_core.schemas import LeaderboardEntryEnvelope, ScoreEnvelope
+from node_template.contracts import CrunchContract
 
 
 class ScoreService:
@@ -17,18 +18,19 @@ class ScoreService:
         prediction_repository,
         model_repository,
         leaderboard_repository,
-        model_score_aggregator: Callable[[list[Any], dict[str, Any]], list[dict[str, Any]]] | None,
-        leaderboard_ranker: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None,
         ground_truth_resolver: Callable[[Any], dict[str, Any] | None] | None,
+        contract: CrunchContract | None = None,
+        # Legacy params — ignored but accepted for backward compat
+        model_score_aggregator: Any = None,
+        leaderboard_ranker: Any = None,
     ):
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
         self.scoring_function = scoring_function
         self.prediction_repository = prediction_repository
         self.model_repository = model_repository
         self.leaderboard_repository = leaderboard_repository
-        self.model_score_aggregator = model_score_aggregator
-        self.leaderboard_ranker = leaderboard_ranker
         self.ground_truth_resolver = ground_truth_resolver
+        self.contract = contract or CrunchContract()
 
         self.logger = logging.getLogger(__name__)
         self.stop_event = asyncio.Event()
@@ -66,10 +68,13 @@ class ScoreService:
 
             result = self.scoring_function(prediction.inference_output, ground_truth)
 
+            # Validate score via contract type
+            validated = self.contract.score_type(**result)
+
             prediction.score = PredictionScore(
-                value=self._to_float(result.get("value")),
-                success=bool(result.get("success", True)),
-                failed_reason=result.get("failed_reason"),
+                value=validated.value,
+                success=validated.success,
+                failed_reason=validated.failed_reason,
                 scored_at=now,
             )
             scored_predictions.append(prediction)
@@ -110,36 +115,42 @@ class ScoreService:
         return truth
 
     def _aggregate_model_scores(self, scored_predictions, models) -> list[dict[str, Any]]:
-        if self.model_score_aggregator is not None:
-            return [self._normalize_score_entry(entry) for entry in self.model_score_aggregator(scored_predictions, models)]
+        """Aggregate scores per model using contract-defined time windows."""
+        now = datetime.now(timezone.utc)
+        aggregation = self.contract.aggregation
 
-        by_model: dict[str, list[float]] = {}
+        # Group scores by model with timestamps
+        by_model: dict[str, list[tuple[datetime, float]]] = {}
         for prediction in scored_predictions:
-            if prediction.score is None:
+            if prediction.score is None or not prediction.score.success or prediction.score.value is None:
                 continue
-            if not prediction.score.success:
-                continue
-            if prediction.score.value is None:
-                continue
-
-            by_model.setdefault(prediction.model_id, []).append(float(prediction.score.value))
+            by_model.setdefault(str(prediction.model_id), []).append(
+                (prediction.performed_at, float(prediction.score.value))
+            )
 
         entries: list[dict[str, Any]] = []
-        for model_id, scores in by_model.items():
-            if not scores:
+        for model_id, timed_scores in by_model.items():
+            if not timed_scores:
                 continue
 
-            avg_score = sum(scores) / len(scores)
+            # Compute each window metric
+            metrics: dict[str, float] = {}
+            for window_name, window in aggregation.windows.items():
+                cutoff = now - timedelta(hours=window.hours)
+                window_scores = [v for ts, v in timed_scores if ts >= cutoff]
+                metrics[window_name] = (
+                    sum(window_scores) / len(window_scores) if window_scores else 0.0
+                )
+
+            ranking_value = metrics.get(aggregation.ranking_key, 0.0)
             model = models.get(model_id)
 
             score_envelope = ScoreEnvelope(
-                metrics={
-                    "average": avg_score,
-                },
+                metrics=metrics,
                 ranking={
-                    "key": "average",
-                    "value": avg_score,
-                    "direction": "desc",
+                    "key": aggregation.ranking_key,
+                    "value": ranking_value,
+                    "direction": aggregation.ranking_direction,
                 },
                 payload={},
             )
@@ -151,16 +162,27 @@ class ScoreService:
             )
             entries.append(entry_envelope.model_dump(exclude_none=True))
 
-        return [self._normalize_score_entry(entry) for entry in entries]
+        return entries
 
     def _rank_leaderboard(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        if self.leaderboard_ranker is not None:
-            return list(self.leaderboard_ranker(entries))
+        """Rank leaderboard using contract-defined ranking key and direction."""
+        aggregation = self.contract.aggregation
+        reverse = aggregation.ranking_direction == "desc"
 
-        ranked_entries = sorted(entries, key=self._entry_rank_sort_value, reverse=True)
-        for idx, entry in enumerate(ranked_entries, start=1):
+        def sort_key(entry: dict[str, Any]) -> float:
+            score = entry.get("score")
+            if not isinstance(score, dict):
+                return float("-inf")
+            metrics = score.get("metrics") or {}
+            try:
+                return float(metrics.get(aggregation.ranking_key, 0.0))
+            except Exception:
+                return float("-inf")
+
+        ranked = sorted(entries, key=sort_key, reverse=reverse)
+        for idx, entry in enumerate(ranked, start=1):
             entry["rank"] = idx
-        return ranked_entries
+        return ranked
 
     def _collect_scored_predictions(self, recent_predictions):
         if hasattr(self.prediction_repository, "fetch_scored_predictions"):
@@ -183,52 +205,3 @@ class ScoreService:
                 rollback()
             except Exception as exc:
                 self.logger.warning("Rollback failed for %s repository: %s", repo_name, exc)
-
-    @staticmethod
-    def _normalize_score_entry(entry: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(entry, dict):
-            raise ValueError("Model score aggregator entries must be dictionaries")
-
-        score = entry.get("score")
-        if not isinstance(score, dict):
-            raise ValueError("Model score aggregator entries must include a 'score' dictionary")
-
-        normalized_score = ScoreEnvelope.model_validate(score)
-        normalized_entry = LeaderboardEntryEnvelope.model_validate(
-            {
-                "model_id": entry.get("model_id"),
-                "score": normalized_score.model_dump(),
-                "rank": entry.get("rank"),
-                "model_name": entry.get("model_name"),
-                "cruncher_name": entry.get("cruncher_name"),
-            }
-        )
-
-        return normalized_entry.model_dump(exclude_none=True)
-
-    @classmethod
-    def _entry_rank_sort_value(cls, entry: dict[str, Any]) -> float:
-        score_payload = entry.get("score") if isinstance(entry, dict) else None
-
-        if not isinstance(score_payload, dict):
-            return float("-inf")
-
-        try:
-            normalized = ScoreEnvelope.model_validate(score_payload)
-        except Exception:
-            return float("-inf")
-
-        value = normalized.rank_value
-        if value is None:
-            return float("-inf")
-
-        return -float(value) if normalized.ranking.direction == "asc" else float(value)
-
-    @staticmethod
-    def _to_float(value: Any) -> float | None:
-        if value is None:
-            return None
-        try:
-            return float(value)
-        except Exception:
-            return None

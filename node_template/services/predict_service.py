@@ -9,6 +9,7 @@ from typing import Any, Callable
 from coordinator_core.entities.model import Model
 from coordinator_core.entities.prediction import PredictionRecord
 from coordinator_core.schemas import PredictionScopeEnvelope, ScheduleEnvelope
+from node_template.contracts import CrunchContract
 
 try:
     from model_runner_client.grpc.generated.commons_pb2 import Argument, Variant, VariantType
@@ -27,25 +28,24 @@ class PredictService:
         self,
         checkpoint_interval_seconds: int,
         raw_input_provider: Callable[[datetime], dict[str, Any]] | None,
-        inference_input_builder: Callable[[dict[str, Any]], dict[str, Any]],
-        inference_output_validator: Callable[[dict[str, Any]], dict[str, Any]] | None,
-        model_repository,
-        prediction_repository,
-        prediction_scope_builder: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None,
-        predict_call_builder: Callable[[dict[str, Any], dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None,
+        contract: CrunchContract | None = None,
+        model_repository=None,
+        prediction_repository=None,
         runner=None,
         model_runner_node_host: str = "model-orchestrator",
         model_runner_node_port: int = 9091,
         model_runner_timeout_seconds: float = 60,
         crunch_id: str = "starter-challenge",
         base_classname: str = "tracker.TrackerBase",
+        # Legacy params — ignored but accepted for backward compat
+        inference_input_builder: Any = None,
+        inference_output_validator: Any = None,
+        prediction_scope_builder: Any = None,
+        predict_call_builder: Any = None,
     ):
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
         self.raw_input_provider = raw_input_provider
-        self.inference_input_builder = inference_input_builder
-        self.inference_output_validator = inference_output_validator
-        self.prediction_scope_builder = prediction_scope_builder
-        self.predict_call_builder = predict_call_builder
+        self.contract = contract or CrunchContract()
         self.model_repository = model_repository
         self.prediction_repository = prediction_repository
 
@@ -89,7 +89,8 @@ class PredictService:
         await self._ensure_runner_initialized()
         await self._ensure_models_loaded()
 
-        inference_input = self.inference_input_builder(raw_input)
+        # Validate input via contract type
+        inference_input = self.contract.input_type(**raw_input).model_dump()
         tick_responses = await self._call_runner_tick(inference_input)
         self._save_models_from_responses(tick_responses)
 
@@ -172,10 +173,10 @@ class PredictService:
         return await self._runner.call("tick", args)
 
     async def _predict_for_config(self, config: dict[str, Any], inference_input: dict[str, Any], now: datetime):
-        scope_object = self._build_scope(config=config, inference_input=inference_input)
+        scope_object = self._build_scope(config=config)
         scope_key = str(scope_object.get("scope_key") or config.get("scope_key") or "default-scope")
 
-        call_spec = self._build_predict_call(config=config, inference_input=inference_input, scope=scope_object)
+        call_spec = self._build_predict_call(config=config, scope=scope_object)
         args = self._build_predict_args(call_spec)
 
         responses = await self._runner.call("predict", args)
@@ -192,7 +193,9 @@ class PredictService:
 
             validation_error: str | None = None
             try:
-                inference_output = self._validate_inference_output(inference_output)
+                # Validate output via contract type
+                validated = self.contract.output_type(**inference_output)
+                inference_output = validated.model_dump()
             except Exception as exc:
                 validation_error = str(exc)
                 status = "FAILED"
@@ -294,55 +297,30 @@ class PredictService:
             return output
         return {"result": output}
 
-    def _validate_inference_output(self, inference_output: dict[str, Any]) -> dict[str, Any]:
-        if self.inference_output_validator is None:
-            return inference_output
-
-        validated = self.inference_output_validator(inference_output)
-        if validated is None:
-            return inference_output
-        if not isinstance(validated, dict):
-            raise ValueError("inference_output_validator must return a dictionary")
-        return validated
-
-    def _build_scope(self, config: dict[str, Any], inference_input: dict[str, Any]) -> dict[str, Any]:
-        if self.prediction_scope_builder is None:
-            envelope = PredictionScopeEnvelope.model_validate(
-                {
-                    "scope_key": str(config.get("scope_key") or "default-scope"),
-                    "scope": dict(config.get("scope_template") or {}),
-                }
-            )
-            return envelope.model_dump()
-
-        scope = self.prediction_scope_builder(config, inference_input)
-        if not isinstance(scope, dict):
-            raise ValueError("prediction_scope_builder must return a dictionary")
-
+    def _build_scope(self, config: dict[str, Any]) -> dict[str, Any]:
+        """Build prediction scope from config template — no callable needed."""
         envelope = PredictionScopeEnvelope.model_validate(
             {
-                "scope_key": str(scope.get("scope_key") or config.get("scope_key") or "default-scope"),
-                "scope": dict(scope.get("scope") or {}),
+                "scope_key": str(config.get("scope_key") or "default-scope"),
+                "scope": dict(config.get("scope_template") or {}),
             }
         )
         return envelope.model_dump()
 
-    def _build_predict_call(self, config: dict[str, Any], inference_input: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
-        if self.predict_call_builder is None:
-            return {"args": [], "kwargs": {}}
+    def _build_predict_call(self, config: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
+        """Build model predict invocation args from scope — no callable needed."""
+        scope_payload = scope.get("scope") if isinstance(scope, dict) else {}
+        if not isinstance(scope_payload, dict):
+            scope_payload = {}
 
-        call_spec = self.predict_call_builder(config, inference_input, scope)
-        if not isinstance(call_spec, dict):
-            raise ValueError("predict_call_builder must return a dictionary")
+        asset = scope_payload.get("asset", "BTC")
+        horizon = int(scope_payload.get("horizon", scope_payload.get("horizon_seconds", 60)))
+        step = int(scope_payload.get("step", scope_payload.get("step_seconds", horizon)))
 
-        args = call_spec.get("args") or []
-        kwargs = call_spec.get("kwargs") or {}
-        if not isinstance(args, (list, tuple)):
-            raise ValueError("predict_call_builder result field 'args' must be a list or tuple")
-        if not isinstance(kwargs, dict):
-            raise ValueError("predict_call_builder result field 'kwargs' must be a dictionary")
-
-        return {"args": list(args), "kwargs": kwargs}
+        return {
+            "args": [asset, horizon, step],
+            "kwargs": {},
+        }
 
     @staticmethod
     def _resolve_resolvable_at(config: dict[str, Any], now: datetime, scope: dict[str, Any]) -> datetime:

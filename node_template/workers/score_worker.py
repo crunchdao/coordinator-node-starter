@@ -6,6 +6,7 @@ import logging
 
 from node_template.config.extensions import ExtensionSettings
 from node_template.config.runtime import RuntimeSettings
+from node_template.contracts import CrunchContract
 from node_template.extensions.callable_resolver import resolve_callable
 from node_template.infrastructure.db import (
     DBLeaderboardRepository,
@@ -33,18 +34,11 @@ def parse_arguments():
 def build_service() -> ScoreService:
     extension_settings = ExtensionSettings.from_env()
     runtime_settings = RuntimeSettings.from_env()
+    contract = CrunchContract()
 
     scoring_function = resolve_callable(
         extension_settings.scoring_function,
         required_params=("prediction", "ground_truth"),
-    )
-    model_score_aggregator = resolve_callable(
-        extension_settings.model_score_aggregator,
-        required_params=("scored_predictions", "models"),
-    )
-    leaderboard_ranker = resolve_callable(
-        extension_settings.leaderboard_ranker,
-        required_params=("entries",),
     )
     ground_truth_resolver = resolve_callable(
         extension_settings.ground_truth_resolver,
@@ -59,9 +53,8 @@ def build_service() -> ScoreService:
         prediction_repository=DBPredictionRepository(session),
         model_repository=DBModelRepository(session),
         leaderboard_repository=DBLeaderboardRepository(session),
-        model_score_aggregator=model_score_aggregator,
-        leaderboard_ranker=leaderboard_ranker,
         ground_truth_resolver=ground_truth_resolver,
+        contract=contract,
     )
 
 
