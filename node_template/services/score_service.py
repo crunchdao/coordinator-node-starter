@@ -7,7 +7,11 @@ from typing import Any, Callable
 
 from coordinator_core.entities.prediction import PredictionScore
 from coordinator_core.schemas import LeaderboardEntryEnvelope, ScoreEnvelope
+from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
+from coordinator_core.services.interfaces.model_repository import ModelRepository
+from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
 from node_template.contracts import CrunchContract
+from node_template.services.input_service import InputService
 
 
 class ScoreService:
@@ -15,10 +19,10 @@ class ScoreService:
         self,
         checkpoint_interval_seconds: int,
         scoring_function: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]],
-        prediction_repository,
-        model_repository,
-        leaderboard_repository,
-        input_service=None,
+        prediction_repository: PredictionRepository | None = None,
+        model_repository: ModelRepository | None = None,
+        leaderboard_repository: LeaderboardRepository | None = None,
+        input_service: InputService | None = None,
         contract: CrunchContract | None = None,
         # Legacy params — ignored but accepted for backward compat
         ground_truth_resolver: Any = None,
