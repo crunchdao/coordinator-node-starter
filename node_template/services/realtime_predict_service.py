@@ -5,7 +5,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from coordinator_core.entities.prediction import PredictionRecord
+from coordinator_core.entities.prediction import InputRecord, PredictionRecord
 from coordinator_core.schemas import ScheduleEnvelope
 from node_template.services.predict_service import PredictService
 
@@ -39,21 +39,24 @@ class RealtimePredictService(PredictService):
 
         # 1. get data, save input, send to models
         if raw_input is not None:
-            inference_input = self.validate_input(raw_input)
-            input_id = f"INP_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}"
+            inp = InputRecord(
+                id=f"INP_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}",
+                raw_data=self.validate_input(raw_input),
+                received_at=now,
+            )
         else:
-            input_id, inference_input = self.get_data(now)
-        await self._tick_models(inference_input)
+            inp = self.get_data(now)
+        await self._tick_models(inp.raw_data)
 
         # 2. run prediction configs, store predictions
-        predictions = await self._run_configs(input_id, inference_input, now)
+        predictions = await self._run_configs(inp, now)
         self._save(predictions)
 
         return len(predictions) > 0
 
     # ── prediction configs ──
 
-    async def _run_configs(self, input_id: str, inference_input: dict[str, Any], now: datetime) -> list[PredictionRecord]:
+    async def _run_configs(self, inp: InputRecord, now: datetime) -> list[PredictionRecord]:
         configs = self._fetch_active_configs()
         if not configs:
             self.logger.info("No active prediction configs found")
@@ -68,7 +71,7 @@ class RealtimePredictService(PredictService):
             if now < self._next_run.get(config_id, now):
                 continue
 
-            predictions = await self._predict_for_config(config, input_id, inference_input, now)
+            predictions = await self._predict_for_config(config, inp, now)
             all_predictions.extend(predictions)
 
             schedule = self._parse_schedule(config)
@@ -77,13 +80,13 @@ class RealtimePredictService(PredictService):
         return all_predictions
 
     async def _predict_for_config(
-        self, config: dict[str, Any], input_id: str, inference_input: dict[str, Any], now: datetime,
+        self, config: dict[str, Any], inp: InputRecord, now: datetime,
     ) -> list[PredictionRecord]:
         scope = self._build_scope(config)
         scope_key = scope.get("scope_key", "default-scope")
         config_id = str(config.get("id")) if config.get("id") else None
 
-        responses = await self._call_models(inference_input, scope)
+        responses = await self._call_models(inp.raw_data, scope)
         resolvable_at = self._compute_resolvable_at(config, now, scope)
 
         predictions: dict[str, PredictionRecord] = {}
@@ -106,7 +109,7 @@ class RealtimePredictService(PredictService):
                 status = runner_status
 
             predictions[model.id] = self._build_record(
-                model_id=model.id, input_id=input_id, scope_key=scope_key,
+                model_id=model.id, input_id=inp.id, scope_key=scope_key,
                 scope=scope, status=status, output=output,
                 now=now, resolvable_at=resolvable_at,
                 exec_time_ms=float(getattr(result, "exec_time_us", 0.0)),
@@ -117,7 +120,7 @@ class RealtimePredictService(PredictService):
         for model_id in self._known_models:
             if model_id not in predictions:
                 predictions[model_id] = self._build_record(
-                    model_id=model_id, input_id=input_id, scope_key=scope_key,
+                    model_id=model_id, input_id=inp.id, scope_key=scope_key,
                     scope=scope, status="ABSENT", output={},
                     now=now, resolvable_at=resolvable_at, config_id=config_id,
                 )

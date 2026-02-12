@@ -70,18 +70,20 @@ class PredictService:
 
     # ── 1. get data ──
 
-    def get_data(self, now: datetime) -> tuple[str, dict[str, Any]]:
-        """Fetch input, validate, save to DB. Returns (input_id, inference_input)."""
+    def get_data(self, now: datetime) -> InputRecord:
+        """Fetch input, validate, save to DB."""
         raw = self.input_service.get_input(now)
         inference_input = self.validate_input(raw)
 
-        input_id = f"INP_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}"
+        record = InputRecord(
+            id=f"INP_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}",
+            raw_data=inference_input,
+            received_at=now,
+        )
         if self.input_repository is not None:
-            self.input_repository.save(InputRecord(
-                id=input_id, raw_data=inference_input, received_at=now,
-            ))
+            self.input_repository.save(record)
 
-        return input_id, inference_input
+        return record
 
     def validate_input(self, raw_input: dict[str, Any]) -> dict[str, Any]:
         raw_data = self.contract.raw_input_type(**raw_input)
