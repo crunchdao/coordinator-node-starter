@@ -93,7 +93,7 @@ class PredictService:
 
     # ── 2. store predictions ──
 
-    async def _call_models(self, inference_input: dict[str, Any], scope: dict[str, Any]) -> dict:
+    async def _call_models(self, scope: dict[str, Any]) -> dict:
         """Send predict call to model runner, return raw responses."""
         return await self._runner.call("predict", self._encode_predict(scope))
 
@@ -128,13 +128,6 @@ class PredictService:
         if predictions:
             self.prediction_repository.save_all(predictions)
             self.logger.info("Saved %d predictions", len(predictions))
-
-    # ── 3. resolve actuals ──
-
-    def resolve_actuals(self, now: datetime) -> int:
-        """Check past predictions whose resolvable_at has passed, fill in actuals.
-        Subclasses define what 'actuals' means for their domain."""
-        return 0  # base does nothing — subclasses override
 
     # ── runner lifecycle ──
 

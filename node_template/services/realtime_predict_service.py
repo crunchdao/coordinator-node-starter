@@ -1,4 +1,4 @@
-"""Realtime predict service: time-series data, actuals resolved by time interval."""
+"""Realtime predict service: event-driven loop, config-based scheduling."""
 from __future__ import annotations
 
 import asyncio
@@ -11,7 +11,6 @@ from node_template.services.predict_service import PredictService
 
 
 class RealtimePredictService(PredictService):
-    """Time-series variant: event-driven loop, actuals = data at prediction + horizon."""
 
     def __init__(self, checkpoint_interval_seconds: int = 60, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -31,13 +30,11 @@ class RealtimePredictService(PredictService):
                 self.logger.exception("predict loop error: %s", exc)
             await self._wait_for_data()
 
-    # ── 3. resolve actuals moved to score service ──
-
     async def run_once(self, raw_input: dict[str, Any] | None = None, now: datetime | None = None) -> bool:
         now = now or datetime.now(timezone.utc)
         await self.init_runner()
 
-        # 1. get data, save input, send to models
+        # 1. get data → tick models
         if raw_input is not None:
             inp = InputRecord(
                 id=f"INP_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}",
@@ -48,126 +45,109 @@ class RealtimePredictService(PredictService):
             inp = self.get_data(now)
         await self._tick_models(inp.raw_data)
 
-        # 2. run prediction configs, store predictions
-        predictions = await self._run_configs(inp, now)
+        # 2. run configs → build records → save
+        predictions = await self._predict_all_configs(inp, now)
         self._save(predictions)
-
         return len(predictions) > 0
 
-    # ── prediction configs ──
+    # ── predict across configs ──
 
-    async def _run_configs(self, inp: InputRecord, now: datetime) -> list[PredictionRecord]:
+    async def _predict_all_configs(self, inp: InputRecord, now: datetime) -> list[PredictionRecord]:
         configs = self._fetch_active_configs()
         if not configs:
             self.logger.info("No active prediction configs found")
             return []
 
         all_predictions: list[PredictionRecord] = []
+
         for config in configs:
             if not config.get("active", True):
                 continue
 
-            config_id = str(config.get("id") or self._config_identity(config))
+            schedule = ScheduleEnvelope.model_validate(config.get("schedule") or {})
+            config_id = str(config.get("id") or self._config_key(config))
+
             if now < self._next_run.get(config_id, now):
                 continue
 
-            predictions = await self._predict_for_config(config, inp, now)
-            all_predictions.extend(predictions)
+            # scope + timing
+            scope = {
+                "scope_key": str(config.get("scope_key") or "default-scope"),
+                **self.contract.scope.model_dump(),
+                **(config.get("scope_template") or {}),
+            }
+            scope_key = scope["scope_key"]
+            resolve_seconds = schedule.resolve_after_seconds
+            if resolve_seconds is None:
+                resolve_seconds = scope.get("horizon_seconds", self.contract.scope.horizon_seconds)
+            resolvable_at = now + timedelta(seconds=max(0, int(resolve_seconds or 0)))
 
-            schedule = self._parse_schedule(config)
+            # call models
+            responses = await self._call_models(scope)
+            seen: set[str] = set()
+
+            for model_run, result in responses.items():
+                model = self._to_model(model_run)
+                self.register_model(model)
+                seen.add(model.id)
+
+                raw_status = getattr(result, "status", "UNKNOWN")
+                runner_status = str(raw_status.value) if hasattr(raw_status, "value") else str(raw_status)
+
+                output = getattr(result, "result", {})
+                output = output if isinstance(output, dict) else {"result": output}
+
+                validation_error = self.validate_output(output)
+                if validation_error:
+                    status = "FAILED"
+                    output = {"_validation_error": validation_error, "raw_output": output}
+                elif runner_status == "SUCCESS":
+                    status = "PENDING"
+                else:
+                    status = runner_status
+
+                all_predictions.append(self._build_record(
+                    model_id=model.id, input_id=inp.id, scope_key=scope_key,
+                    scope=scope, status=status, output=output,
+                    now=now, resolvable_at=resolvable_at,
+                    exec_time_ms=float(getattr(result, "exec_time_us", 0.0)),
+                    config_id=config_id,
+                ))
+
+            # absent models
+            for model_id in self._known_models:
+                if model_id not in seen:
+                    all_predictions.append(self._build_record(
+                        model_id=model_id, input_id=inp.id, scope_key=scope_key,
+                        scope=scope, status="ABSENT", output={},
+                        now=now, resolvable_at=resolvable_at, config_id=config_id,
+                    ))
+
             self._next_run[config_id] = now + timedelta(seconds=int(schedule.prediction_interval_seconds))
 
         return all_predictions
 
-    async def _predict_for_config(
-        self, config: dict[str, Any], inp: InputRecord, now: datetime,
-    ) -> list[PredictionRecord]:
-        scope = self._build_scope(config)
-        scope_key = scope.get("scope_key", "default-scope")
-        config_id = str(config.get("id")) if config.get("id") else None
-
-        responses = await self._call_models(inp.raw_data, scope)
-        resolvable_at = self._compute_resolvable_at(config, now, scope)
-
-        predictions: dict[str, PredictionRecord] = {}
-
-        for model_run, result in responses.items():
-            model = self._to_model(model_run)
-            self.register_model(model)
-
-            runner_status = self._extract_status(result)
-            output = getattr(result, "result", {})
-            output = output if isinstance(output, dict) else {"result": output}
-
-            validation_error = self.validate_output(output)
-            if validation_error:
-                status = "FAILED"
-                output = {"_validation_error": validation_error, "raw_output": output}
-            elif runner_status == "SUCCESS":
-                status = "PENDING"  # awaiting actuals
-            else:
-                status = runner_status
-
-            predictions[model.id] = self._build_record(
-                model_id=model.id, input_id=inp.id, scope_key=scope_key,
-                scope=scope, status=status, output=output,
-                now=now, resolvable_at=resolvable_at,
-                exec_time_ms=float(getattr(result, "exec_time_us", 0.0)),
-                config_id=config_id,
-            )
-
-        # Mark absent models
-        for model_id in self._known_models:
-            if model_id not in predictions:
-                predictions[model_id] = self._build_record(
-                    model_id=model_id, input_id=inp.id, scope_key=scope_key,
-                    scope=scope, status="ABSENT", output={},
-                    now=now, resolvable_at=resolvable_at, config_id=config_id,
-                )
-
-        return list(predictions.values())
-
-    # ── scope & schedule ──
-
-    def _build_scope(self, config: dict[str, Any]) -> dict[str, Any]:
-        scope_data = self.contract.scope.model_dump()
-        scope_data.update(config.get("scope_template") or {})
-        return {"scope_key": str(config.get("scope_key") or "default-scope"), **scope_data}
-
-    def _compute_resolvable_at(self, config: dict[str, Any], now: datetime, scope: dict[str, Any]) -> datetime:
-        schedule = self._parse_schedule(config)
-        seconds = schedule.resolve_after_seconds
-        if seconds is None:
-            seconds = scope.get("horizon_seconds", self.contract.scope.horizon_seconds)
-        return now + timedelta(seconds=max(0, int(seconds or 0)))
-
     # ── event-driven wait ──
 
     async def _wait_for_data(self) -> None:
-        """Wait for new market data (pg NOTIFY) or fall back to timeout."""
+        """Wait for pg NOTIFY or fall back to polling timeout."""
+        timeout = float(self.checkpoint_interval_seconds)
         try:
             from node_template.infrastructure.db.pg_notify import wait_for_notify
-
-            notify_task = asyncio.create_task(
-                wait_for_notify(timeout=float(self.checkpoint_interval_seconds))
-            )
-            stop_task = asyncio.create_task(self.stop_event.wait())
-
-            done, pending = await asyncio.wait(
-                {notify_task, stop_task}, return_when=asyncio.FIRST_COMPLETED,
-            )
-            for task in pending:
-                task.cancel()
-                try:
-                    await task
-                except (asyncio.CancelledError, Exception):
-                    pass
+            await self._race_stop(wait_for_notify(timeout=timeout))
         except Exception:
+            await self._race_stop(asyncio.sleep(timeout))
+
+    async def _race_stop(self, coro: Any) -> None:
+        """Run coro until it completes or stop_event fires."""
+        task = asyncio.create_task(coro)
+        stop = asyncio.create_task(self.stop_event.wait())
+        done, pending = await asyncio.wait({task, stop}, return_when=asyncio.FIRST_COMPLETED)
+        for p in pending:
+            p.cancel()
             try:
-                await asyncio.wait_for(
-                    self.stop_event.wait(), timeout=self.checkpoint_interval_seconds,
-                )
-            except asyncio.TimeoutError:
+                await p
+            except (asyncio.CancelledError, Exception):
                 pass
 
     # ── helpers ──
@@ -178,17 +158,7 @@ class RealtimePredictService(PredictService):
         return []
 
     @staticmethod
-    def _extract_status(result) -> str:
-        status = getattr(result, "status", "UNKNOWN")
-        return str(status.value) if hasattr(status, "value") else str(status)
-
-    @staticmethod
-    def _parse_schedule(config: dict[str, Any]) -> ScheduleEnvelope:
-        raw = config.get("schedule") if isinstance(config.get("schedule"), dict) else {}
-        return ScheduleEnvelope.model_validate(raw)
-
-    @staticmethod
-    def _config_identity(config: dict[str, Any]) -> str:
+    def _config_key(config: dict[str, Any]) -> str:
         scope_key = str(config.get("scope_key") or "default-scope")
         interval = (config.get("schedule") or {}).get("prediction_interval_seconds")
         return f"{scope_key}-{interval}"
