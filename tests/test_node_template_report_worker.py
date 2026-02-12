@@ -5,12 +5,15 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 
+from coordinator_core.entities.market_record import MarketRecord
 from coordinator_core.entities.model import Model
 from coordinator_core.entities.prediction import PredictionRecord, PredictionScore
 from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
 from coordinator_core.services.interfaces.model_repository import ModelRepository
 from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
 from node_template.workers.report_worker import (
+    get_feeds,
+    get_feeds_tail,
     get_leaderboard,
     get_models,
     get_models_global,
@@ -84,6 +87,29 @@ class InMemoryPredictionRepository(PredictionRepository):
                 continue
             result.setdefault(prediction.model_id, []).append(prediction)
         return result
+
+
+class InMemoryMarketRecordRepository:
+    def __init__(self, records: list[MarketRecord], summaries: list[dict] | None = None):
+        self._records = records
+        self._summaries = summaries or []
+
+    def list_indexed_feeds(self):
+        return list(self._summaries)
+
+    def tail_records(self, *, provider=None, asset=None, kind=None, granularity=None, limit=20):
+        rows = list(self._records)
+        if provider is not None:
+            rows = [row for row in rows if row.provider == provider]
+        if asset is not None:
+            rows = [row for row in rows if row.asset == asset]
+        if kind is not None:
+            rows = [row for row in rows if row.kind == kind]
+        if granularity is not None:
+            rows = [row for row in rows if row.granularity == granularity]
+
+        rows.sort(key=lambda item: item.ts_event, reverse=True)
+        return rows[:limit]
 
 
 class TestNodeTemplateReportWorker(unittest.TestCase):
@@ -225,6 +251,49 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         self.assertEqual(response[0]["model_id"], "m1")
         self.assertEqual(response[0]["scope_key"], "BTC-60")
         self.assertEqual(response[0]["score_value"], 0.4)
+
+    def test_get_feeds_returns_indexed_feed_summaries(self):
+        summaries = [
+            {
+                "provider": "pyth",
+                "asset": "BTC",
+                "kind": "tick",
+                "granularity": "1s",
+                "record_count": 123,
+                "oldest_ts": "2026-01-01T00:00:00+00:00",
+                "newest_ts": "2026-01-02T00:00:00+00:00",
+                "watermark_ts": "2026-01-02T00:00:00+00:00",
+                "watermark_updated_at": "2026-01-02T00:00:01+00:00",
+            }
+        ]
+        repo = InMemoryMarketRecordRepository(records=[], summaries=summaries)
+
+        response = get_feeds(repo)
+        self.assertEqual(response, summaries)
+
+    def test_get_feeds_tail_returns_recent_samples(self):
+        base = datetime.now(timezone.utc)
+        records = [
+            MarketRecord(
+                provider="pyth",
+                asset="BTC",
+                kind="tick",
+                granularity="1s",
+                ts_event=base - timedelta(seconds=idx),
+                values={"price": 50_000.0 + idx},
+                meta={"sample": idx},
+            )
+            for idx in range(30)
+        ]
+        repo = InMemoryMarketRecordRepository(records=records)
+
+        response = get_feeds_tail(provider="pyth", asset="BTC", kind="tick", granularity="1s", limit=20, market_repo=repo)
+
+        self.assertEqual(len(response), 20)
+        self.assertEqual(response[0]["provider"], "pyth")
+        self.assertEqual(response[0]["asset"], "BTC")
+        self.assertIn("values", response[0])
+        self.assertIn("meta", response[0])
 
     def test_report_schema_endpoints_return_expected_shape(self):
         schema = get_report_schema()

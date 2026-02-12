@@ -7,10 +7,26 @@ from typing import Any, Callable
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+try:  # pragma: no cover - exercised via injected client in tests
+    from binance.client import Client as BinanceSDKClient
+except Exception:  # pragma: no cover - keep compatibility if package unavailable
+    BinanceSDKClient = None
+
 BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
 
 
-def fetch_binance_klines(symbol: str, interval: str, limit: int) -> list[dict[str, float]]:
+def fetch_binance_klines(
+    symbol: str,
+    interval: str,
+    limit: int,
+    *,
+    client: Any | None = None,
+) -> list[dict[str, float]]:
+    sdk_client = client or _build_public_binance_client()
+    if sdk_client is not None:
+        payload = sdk_client.get_klines(symbol=symbol, interval=interval, limit=int(limit))
+        return _parse_klines_payload(payload)
+
     query = urlencode({"symbol": symbol, "interval": interval, "limit": int(limit)})
     request = Request(
         f"{BINANCE_KLINES_URL}?{query}",
@@ -20,29 +36,7 @@ def fetch_binance_klines(symbol: str, interval: str, limit: int) -> list[dict[st
     with urlopen(request, timeout=8.0) as response:  # noqa: S310
         payload = json.loads(response.read().decode("utf-8"))
 
-    if not isinstance(payload, list):
-        return []
-
-    rows: list[dict[str, float]] = []
-    for entry in payload:
-        if not isinstance(entry, list) or len(entry) < 6:
-            continue
-
-        try:
-            rows.append(
-                {
-                    "ts": int(entry[0]) // 1000,
-                    "open": float(entry[1]),
-                    "high": float(entry[2]),
-                    "low": float(entry[3]),
-                    "close": float(entry[4]),
-                    "volume": float(entry[5]),
-                }
-            )
-        except Exception:
-            continue
-
-    return rows
+    return _parse_klines_payload(payload)
 
 
 def fetch_recent_closes_from_binance(symbol: str, count: int, interval: str = "1m") -> list[float]:
@@ -184,3 +178,44 @@ def _is_positive_number(value: Any) -> bool:
         return False
 
     return parsed > 0.0
+
+
+def _build_public_binance_client() -> Any | None:
+    if BinanceSDKClient is None:
+        return None
+
+    try:
+        return BinanceSDKClient(
+            api_key=None,
+            api_secret=None,
+            requests_params={"timeout": 8.0},
+            ping=False,
+        )
+    except Exception:
+        return None
+
+
+def _parse_klines_payload(payload: Any) -> list[dict[str, float]]:
+    if not isinstance(payload, list):
+        return []
+
+    rows: list[dict[str, float]] = []
+    for entry in payload:
+        if not isinstance(entry, list) or len(entry) < 6:
+            continue
+
+        try:
+            rows.append(
+                {
+                    "ts": int(entry[0]) // 1000,
+                    "open": float(entry[1]),
+                    "high": float(entry[2]),
+                    "low": float(entry[3]),
+                    "close": float(entry[4]),
+                    "volume": float(entry[5]),
+                }
+            )
+        except Exception:
+            continue
+
+    return rows

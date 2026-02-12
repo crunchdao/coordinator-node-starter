@@ -11,6 +11,7 @@ from sqlmodel import Session
 
 from coordinator_core.schemas import LeaderboardEntryEnvelope
 from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
+from coordinator_core.services.interfaces.market_record_repository import MarketRecordRepository
 from coordinator_core.services.interfaces.model_repository import ModelRepository
 from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
 from node_template.extensions.callable_resolver import resolve_callable
@@ -20,6 +21,7 @@ from node_template.extensions.default_callables import (
 )
 from node_template.infrastructure.db import (
     DBLeaderboardRepository,
+    DBMarketRecordRepository,
     DBModelRepository,
     DBPredictionRepository,
     create_session,
@@ -49,6 +51,12 @@ def get_prediction_repository(
     session_db: Annotated[Session, Depends(get_db_session)]
 ) -> PredictionRepository:
     return DBPredictionRepository(session_db)
+
+
+def get_market_record_repository(
+    session_db: Annotated[Session, Depends(get_db_session)]
+) -> MarketRecordRepository:
+    return DBMarketRecordRepository(session_db)
 
 
 def resolve_report_schema(provider_path: str | None = None) -> dict[str, Any]:
@@ -262,6 +270,48 @@ def get_predictions(
             )
 
     return sorted(rows, key=lambda row: row["performed_at"])
+
+
+@app.get("/reports/feeds")
+def get_feeds(
+    market_repo: Annotated[MarketRecordRepository, Depends(get_market_record_repository)],
+) -> list[dict[str, Any]]:
+    return market_repo.list_indexed_feeds()
+
+
+@app.get("/reports/feeds/tail")
+def get_feeds_tail(
+    market_repo: Annotated[MarketRecordRepository, Depends(get_market_record_repository)],
+    provider: Annotated[str | None, Query()] = None,
+    asset: Annotated[str | None, Query()] = None,
+    kind: Annotated[str | None, Query()] = None,
+    granularity: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 20,
+) -> list[dict[str, Any]]:
+    records = market_repo.tail_records(
+        provider=provider,
+        asset=asset,
+        kind=kind,
+        granularity=granularity,
+        limit=limit,
+    )
+
+    rows: list[dict[str, Any]] = []
+    for record in records:
+        rows.append(
+            {
+                "provider": record.provider,
+                "asset": record.asset,
+                "kind": record.kind,
+                "granularity": record.granularity,
+                "ts_event": record.ts_event,
+                "ts_ingested": record.ts_ingested,
+                "values": record.values,
+                "meta": record.meta,
+            }
+        )
+
+    return rows
 
 
 if __name__ == "__main__":

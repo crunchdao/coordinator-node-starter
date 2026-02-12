@@ -18,6 +18,11 @@ class TestNodeTemplateRuntimeSettings(unittest.TestCase):
         self.assertEqual(settings.crunch_id, "starter-challenge")
         self.assertEqual(settings.base_classname, "tracker.TrackerBase")
 
+    def test_default_feed_provider_and_market_ttl(self):
+        settings = RuntimeSettings.from_env()
+        self.assertEqual(settings.feed_provider, "pyth")
+        self.assertEqual(settings.market_record_ttl_days, 90)
+
     def test_checkpoint_interval_override(self):
         previous = os.environ.get("CHECKPOINT_INTERVAL_SECONDS")
         os.environ["CHECKPOINT_INTERVAL_SECONDS"] = "123"
@@ -41,6 +46,26 @@ class TestNodeTemplateRuntimeSettings(unittest.TestCase):
                 os.environ.pop("MODEL_RUNNER_TIMEOUT_SECONDS", None)
             else:
                 os.environ["MODEL_RUNNER_TIMEOUT_SECONDS"] = previous
+
+    def test_feed_provider_and_market_ttl_accept_overrides(self):
+        previous_provider = os.environ.get("FEED_PROVIDER")
+        previous_ttl = os.environ.get("MARKET_RECORD_TTL_DAYS")
+        os.environ["FEED_PROVIDER"] = "binance"
+        os.environ["MARKET_RECORD_TTL_DAYS"] = "120"
+        try:
+            settings = RuntimeSettings.from_env()
+            self.assertEqual(settings.feed_provider, "binance")
+            self.assertEqual(settings.market_record_ttl_days, 120)
+        finally:
+            if previous_provider is None:
+                os.environ.pop("FEED_PROVIDER", None)
+            else:
+                os.environ["FEED_PROVIDER"] = previous_provider
+
+            if previous_ttl is None:
+                os.environ.pop("MARKET_RECORD_TTL_DAYS", None)
+            else:
+                os.environ["MARKET_RECORD_TTL_DAYS"] = previous_ttl
 
 
 if __name__ == "__main__":

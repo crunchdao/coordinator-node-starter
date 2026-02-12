@@ -4,7 +4,7 @@ import logging
 import unittest
 
 from node_template.infrastructure.db.init_db import default_scheduled_prediction_configs, tables_to_reset
-from node_template.workers import predict_worker, report_worker, score_worker
+from node_template.workers import market_data_worker, predict_worker, report_worker, score_worker
 
 
 class TestNodeTemplateRuntimeWiring(unittest.TestCase):
@@ -26,6 +26,8 @@ class TestNodeTemplateRuntimeWiring(unittest.TestCase):
         tables = set(tables_to_reset())
         self.assertIn("models", tables)
         self.assertIn("predictions", tables)
+        self.assertIn("market_records", tables)
+        self.assertIn("market_ingestion_state", tables)
         self.assertIn("model_scores", tables)
         self.assertIn("leaderboards", tables)
         self.assertIn("scheduled_prediction_configs", tables)
@@ -33,12 +35,14 @@ class TestNodeTemplateRuntimeWiring(unittest.TestCase):
     def test_worker_entrypoints_expose_async_main(self):
         self.assertTrue(inspect.iscoroutinefunction(predict_worker.main))
         self.assertTrue(inspect.iscoroutinefunction(score_worker.main))
+        self.assertTrue(inspect.iscoroutinefunction(market_data_worker.main))
 
     def test_report_worker_exposes_app(self):
         self.assertTrue(hasattr(report_worker, "app"))
 
     def test_predict_worker_build_service_callable(self):
         self.assertTrue(callable(predict_worker.build_service))
+        self.assertTrue(callable(market_data_worker.build_service))
 
     def test_workers_configure_info_logging(self):
         predict_worker.configure_logging()

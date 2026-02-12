@@ -113,9 +113,9 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertTrue((node / "runtime_definitions" / "contracts.py").exists())
 
                 runtime_data = (node / "runtime_definitions" / "data.py").read_text(encoding="utf-8")
-                self.assertIn("provide_binance_raw_input", runtime_data)
-                self.assertIn("resolve_binance_ground_truth", runtime_data)
-                self.assertIn('symbol="BTCUSDT"', runtime_data)
+                self.assertIn("create_default_registry", runtime_data)
+                self.assertIn("DBMarketRecordRepository", runtime_data)
+                self.assertIn("def resolve_ground_truth", runtime_data)
 
                 self.assertFalse((node / "private_plugins").exists())
                 self.assertFalse((package / "private_plugins").exists())
@@ -436,7 +436,7 @@ class TestCoordinatorCliInit(unittest.TestCase):
                     {
                         "spec_version": "1",
                         "name": "btc-trader",
-                        "pack": "in-sample",
+                        "pack": "tournament",
                     },
                 )
 
@@ -477,10 +477,9 @@ class TestCoordinatorCliInit(unittest.TestCase):
 
                 self.assertEqual(code, 0)
                 value = output.getvalue()
-                self.assertIn("baseline", value)
-                self.assertIn("realtime", value)
-                self.assertIn("in-sample", value)
-                self.assertIn("out-of-sample", value)
+                self.assertIn("- baseline:", value)
+                self.assertIn("- realtime:", value)
+                self.assertIn("- tournament:", value)
 
     def test_init_uses_node_private_callables_for_runtime_data_paths_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -542,6 +541,37 @@ class TestCoordinatorCliInit(unittest.TestCase):
 
                 code = main(["init", "--spec", str(spec_path)])
                 self.assertEqual(code, 1)
+
+    def test_demo_creates_btc_up_workspace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                code = main(["demo"])
+                self.assertEqual(code, 0)
+
+                workspace = Path("btc-up")
+                node_dir = workspace / "crunch-node-btc-up"
+                compose = (node_dir / "docker-compose.yml").read_text(encoding="utf-8")
+
+                self.assertTrue(workspace.exists())
+                self.assertTrue(node_dir.exists())
+                self.assertIn(
+                    "${REPORT_UI_BUILD_CONTEXT:-https://github.com/crunchdao/coordinator-webapp.git}",
+                    compose,
+                )
+
+    def test_demo_can_pin_local_webapp_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                local_webapp = Path("../coordinator-webapp").resolve()
+                local_webapp.mkdir(parents=True, exist_ok=True)
+
+                code = main(["demo", "--webapp-path", str(local_webapp)])
+                self.assertEqual(code, 0)
+
+                node_env = Path("btc-up/crunch-node-btc-up/.local.env").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn(f"REPORT_UI_BUILD_CONTEXT={local_webapp}", node_env)
 
 
 if __name__ == "__main__":

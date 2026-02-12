@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from coordinator_core.cli.demo_cmd import run_demo
 from coordinator_core.cli.doctor_cmd import run_doctor
 from coordinator_core.cli.init_service import run_init
 from coordinator_core.cli.preflight_cmd import parse_ports, run_preflight
@@ -29,7 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init_parser.add_argument(
         "--pack",
-        help="Pack id (e.g. baseline, realtime, in-sample, out-of-sample). Overrides spec pack.",
+        help="Pack id (e.g. baseline, realtime, tournament). Overrides spec pack.",
     )
     init_parser.add_argument(
         "--list-packs",
@@ -52,6 +53,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--ports",
         default="3000,5432,8000,9091",
         help="Comma-separated ports that must be free (default: 3000,5432,8000,9091)",
+    )
+
+    demo_parser = subparsers.add_parser("demo", help="Render a default btc-up demo workspace")
+    demo_parser.add_argument(
+        "--output",
+        default=".",
+        help="Output root directory where btc-up/ will be created (default: current directory).",
+    )
+    demo_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing btc-up workspace if present",
+    )
+    demo_parser.add_argument(
+        "--webapp-path",
+        help="Optional local coordinator-webapp path for report-ui build context",
+    )
+    demo_parser.add_argument(
+        "--start",
+        action="store_true",
+        help="Start the stack immediately after scaffolding",
     )
 
     subparsers.add_parser("dev", help="Run local dev lifecycle (coming in PR3)")
@@ -84,6 +106,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"preflight failed: {exc}")
             return 1
         return run_preflight(ports=ports)
+    if args.command == "demo":
+        webapp_path = Path(args.webapp_path) if args.webapp_path else None
+        return run_demo(
+            output_root=Path(args.output).resolve(),
+            force=args.force,
+            webapp_path=webapp_path,
+            start=args.start,
+        )
     if args.command == "dev":
         print("coordinator dev is planned for PR3")
         return 0

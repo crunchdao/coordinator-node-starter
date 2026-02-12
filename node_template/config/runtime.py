@@ -12,6 +12,8 @@ class RuntimeSettings:
     model_runner_timeout_seconds: float
     crunch_id: str
     base_classname: str
+    feed_provider: str
+    market_record_ttl_days: int
 
     @classmethod
     def from_env(cls) -> "RuntimeSettings":
@@ -22,4 +24,6 @@ class RuntimeSettings:
             model_runner_timeout_seconds=float(os.getenv("MODEL_RUNNER_TIMEOUT_SECONDS", "60")),
             crunch_id=os.getenv("CRUNCH_ID", "starter-challenge"),
             base_classname=os.getenv("MODEL_BASE_CLASSNAME", "tracker.TrackerBase"),
+            feed_provider=os.getenv("FEED_PROVIDER", "pyth"),
+            market_record_ttl_days=int(os.getenv("MARKET_RECORD_TTL_DAYS", "90")),
         )

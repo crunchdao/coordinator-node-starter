@@ -22,6 +22,8 @@ def tables_to_reset() -> list[str]:
         "leaderboards",
         "model_scores",
         "predictions",
+        "market_records",
+        "market_ingestion_state",
         "scheduled_prediction_configs",
         "models",
     ]

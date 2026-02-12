@@ -6,12 +6,51 @@ from types import SimpleNamespace
 import unittest
 
 from coordinator_runtime.data_sources.binance import (
+    fetch_binance_klines,
     provide_binance_raw_input,
     resolve_binance_ground_truth,
 )
 
 
 class TestCoordinatorRuntimeBinance(unittest.TestCase):
+    def test_fetch_binance_klines_uses_sdk_client_when_provided(self):
+        class StubBinanceClient:
+            def __init__(self):
+                self.last_kwargs = None
+
+            def get_klines(self, **kwargs):
+                self.last_kwargs = kwargs
+                return [
+                    [
+                        1700000000000,
+                        "100.0",
+                        "101.0",
+                        "99.0",
+                        "100.5",
+                        "123.0",
+                    ]
+                ]
+
+        client = StubBinanceClient()
+
+        rows = fetch_binance_klines(
+            symbol="BTCUSDT",
+            interval="1m",
+            limit=1,
+            client=client,
+        )
+
+        self.assertEqual(
+            client.last_kwargs,
+            {
+                "symbol": "BTCUSDT",
+                "interval": "1m",
+                "limit": 1,
+            },
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertAlmostEqual(rows[0]["close"], 100.5)
+
     def test_provide_binance_raw_input_shapes_payload(self):
         def fetch_klines(symbol: str, interval: str, limit: int):
             self.assertEqual(symbol, "BTCUSDT")

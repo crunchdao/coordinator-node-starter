@@ -51,6 +51,26 @@ make verify-e2e
 make logs-capture
 ```
 
+## One-shot demo template (btc-up)
+
+Render a default `btc-up` workspace (no spec/answers prompts):
+
+```bash
+uv run python -m coordinator_core.cli.main demo
+```
+
+Use a local coordinator-webapp checkout for the report UI build context:
+
+```bash
+uv run python -m coordinator_core.cli.main demo --webapp-path /absolute/path/to/coordinator-webapp
+```
+
+Optionally start immediately:
+
+```bash
+uv run python -m coordinator_core.cli.main demo --webapp-path /absolute/path/to/coordinator-webapp --start
+```
+
 `make verify-e2e` waits until scored predictions and leaderboard entries are available.
 
 Useful endpoints once running:

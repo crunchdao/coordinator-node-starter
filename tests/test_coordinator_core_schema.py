@@ -4,6 +4,8 @@ from coordinator_core.infrastructure.db.db_tables import (
     CheckpointRow,
     EmissionCheckpointRow,
     LeaderboardRow,
+    MarketIngestionStateRow,
+    MarketRecordRow,
     ModelRow,
     ModelScoreRow,
     PredictionConfigRow,
@@ -20,6 +22,8 @@ class TestCoordinatorCoreSchema(unittest.TestCase):
         self.assertEqual(CheckpointRow.__tablename__, "checkpoints")
         self.assertEqual(EmissionCheckpointRow.__tablename__, "emission_checkpoints")
         self.assertEqual(PredictionConfigRow.__tablename__, "scheduled_prediction_configs")
+        self.assertEqual(MarketRecordRow.__tablename__, "market_records")
+        self.assertEqual(MarketIngestionStateRow.__tablename__, "market_ingestion_state")
 
     def test_jsonb_extension_fields_exist(self):
         self.assertIn("overall_score_jsonb", ModelRow.model_fields)
@@ -41,6 +45,10 @@ class TestCoordinatorCoreSchema(unittest.TestCase):
         self.assertIn("scope_template_jsonb", PredictionConfigRow.model_fields)
         self.assertIn("schedule_jsonb", PredictionConfigRow.model_fields)
         self.assertIn("meta_jsonb", PredictionConfigRow.model_fields)
+
+        self.assertIn("values_jsonb", MarketRecordRow.model_fields)
+        self.assertIn("meta_jsonb", MarketRecordRow.model_fields)
+        self.assertIn("meta_jsonb", MarketIngestionStateRow.model_fields)
 
     def test_prediction_protocol_columns_exist(self):
         required_prediction_fields = {
