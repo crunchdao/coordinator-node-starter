@@ -179,6 +179,11 @@ class _RepositorySink:
                 meta={"phase": "listen"},
             )
         )
+        try:
+            from node_template.infrastructure.db.pg_notify import notify
+            notify()
+        except Exception:
+            pass
 
 
 def _feed_to_domain(default_provider: str, record: FeedMarketRecord) -> MarketRecord:
