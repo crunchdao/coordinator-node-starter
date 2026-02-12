@@ -8,6 +8,16 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 
+_MODEL_FAILURE_MARKERS = [
+    "BAD_IMPLEMENTATION",
+    "No Inherited class found",
+    "Import error occurred",
+    "BuilderStatus.FAILURE",
+    "ModuleNotFoundError",
+    "SyntaxError",
+]
+
+
 def _iso(dt: datetime) -> str:
     return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -19,9 +29,8 @@ def _get_json(base_url: str, path: str, params: dict | None = None):
 
 
 def _detect_model_runner_failure(log_text: str) -> str | None:
-    markers = ["BAD_IMPLEMENTATION", "No Inherited class found", "Import error occurred"]
     for line in log_text.splitlines():
-        if any(marker in line for marker in markers):
+        if any(marker in line for marker in _MODEL_FAILURE_MARKERS):
             return line.strip()
     return None
 
@@ -37,10 +46,18 @@ def _read_model_orchestrator_logs() -> str:
         "logs",
         "model-orchestrator",
         "--tail",
-        "300",
+        "500",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     return (result.stdout or "") + "\n" + (result.stderr or "")
+
+
+def _print_model_failure_context(log_text: str) -> None:
+    print()
+    print("[verify-e2e] === MODEL ORCHESTRATOR LOGS (last 30 lines) ===")
+    for line in log_text.splitlines()[-30:]:
+        print(f"  {line}")
+    print()
 
 
 def main() -> int:
@@ -57,10 +74,14 @@ def main() -> int:
 
     while time.time() < deadline:
         try:
+            # Fail fast on model build/setup errors
             model_logs = _read_model_orchestrator_logs()
             failure = _detect_model_runner_failure(model_logs)
             if failure is not None:
-                raise RuntimeError(f"model-runner failure detected: {failure}")
+                print(f"[verify-e2e] FAILED: model error detected — not retryable")
+                print(f"  {failure}")
+                _print_model_failure_context(model_logs)
+                return 1
 
             health = _get_json(base_url, "/healthz")
             if health.get("status") != "ok":
@@ -98,12 +119,18 @@ def main() -> int:
             raise RuntimeError(
                 f"waiting for scored predictions/leaderboard (predictions={len(predictions)} leaderboard={len(leaderboard)})"
             )
+        except RuntimeError as exc:
+            last_error = str(exc)
+            print(f"[verify-e2e] waiting: {last_error}")
+            time.sleep(poll_seconds)
         except Exception as exc:  # noqa: BLE001
             last_error = str(exc)
             print(f"[verify-e2e] waiting: {last_error}")
             time.sleep(poll_seconds)
 
     print(f"[verify-e2e] FAILED: timeout reached. last_error={last_error}")
+    model_logs = _read_model_orchestrator_logs()
+    _print_model_failure_context(model_logs)
     return 1
 
 

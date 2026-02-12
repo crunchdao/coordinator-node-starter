@@ -559,6 +559,32 @@ class TestCoordinatorCliInit(unittest.TestCase):
                     compose,
                 )
 
+    def test_scaffold_generates_check_models_script(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                code = main(["init", "btc-trader"])
+                self.assertEqual(code, 0)
+
+                script = Path("btc-trader/crunch-node-btc-trader/scripts/check_models.py")
+                self.assertTrue(script.exists())
+                py_compile.compile(str(script), doraise=True)
+
+                content = script.read_text(encoding="utf-8")
+                self.assertIn("BAD_IMPLEMENTATION", content)
+                self.assertIn("No Inherited class found", content)
+                self.assertIn("RUNNING", content)
+
+    def test_scaffold_makefile_has_check_models_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                code = main(["init", "btc-trader"])
+                self.assertEqual(code, 0)
+
+                makefile = Path("btc-trader/crunch-node-btc-trader/Makefile").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn("check-models", makefile)
+
     def test_demo_can_pin_local_webapp_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             with _cwd(Path(tmp)):

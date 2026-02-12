@@ -1,6 +1,6 @@
 COMPOSE := docker compose -f docker-compose.yml --env-file .local.env
 
-.PHONY: deploy down logs logs-capture verify-e2e
+.PHONY: deploy down logs logs-capture verify-e2e check-models
 
 deploy:
 	$(COMPOSE) up -d --build
@@ -14,5 +14,8 @@ logs:
 logs-capture:
 	uv run python scripts/capture_runtime_logs.py --output runtime-services.jsonl
 
-verify-e2e:
+check-models:
+	uv run python scripts/check_models.py
+
+verify-e2e: check-models
 	uv run --with requests python scripts/verify_e2e.py
