@@ -11,12 +11,7 @@
   "scheduled_prediction_configs": [
     {
       "scope_key": "realtime-btc",
-      "scope_template": {
-        "asset": "BTC",
-        "horizon_seconds": 60,
-        "step_seconds": 15,
-        "tournament_mode": "realtime"
-      },
+      "scope_template": {},
       "schedule": {"every_seconds": 15},
       "active": true,
       "order": 0

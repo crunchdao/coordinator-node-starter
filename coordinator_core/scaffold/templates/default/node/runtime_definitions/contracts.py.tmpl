@@ -27,6 +27,16 @@ class ScoreResult(BaseModel):
     failed_reason: str | None = None
 
 
+class PredictionScope(BaseModel):
+    """What defines a single prediction context — passed to model.predict()."""
+
+    model_config = ConfigDict(extra="allow")
+
+    asset: str = "BTC"
+    horizon_seconds: int = Field(default=60, ge=1)
+    step_seconds: int = Field(default=15, ge=1)
+
+
 class AggregationWindow(BaseModel):
     """A rolling time window for score aggregation."""
 
@@ -53,4 +63,5 @@ class CrunchContract(BaseModel):
     input_type: type[BaseModel] = InferenceInput
     output_type: type[BaseModel] = InferenceOutput
     score_type: type[BaseModel] = ScoreResult
+    scope: PredictionScope = Field(default_factory=PredictionScope)
     aggregation: Aggregation = Field(default_factory=Aggregation)

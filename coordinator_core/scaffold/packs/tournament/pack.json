@@ -10,25 +10,15 @@
   },
   "scheduled_prediction_configs": [
     {
-      "scope_key": "in-sample-btc",
-      "scope_template": {
-        "asset": "BTC",
-        "horizon_seconds": 300,
-        "step_seconds": 60,
-        "tournament_mode": "in-sample"
-      },
+      "scope_key": "in-sample",
+      "scope_template": {"tournament_mode": "in-sample"},
       "schedule": {"every_seconds": 300},
       "active": true,
       "order": 0
     },
     {
-      "scope_key": "out-of-sample-btc",
-      "scope_template": {
-        "asset": "BTC",
-        "horizon_seconds": 900,
-        "step_seconds": 300,
-        "tournament_mode": "out-of-sample"
-      },
+      "scope_key": "out-of-sample",
+      "scope_template": {"tournament_mode": "out-of-sample"},
       "schedule": {"every_seconds": 900},
       "active": true,
       "order": 1

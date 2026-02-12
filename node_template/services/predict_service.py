@@ -298,24 +298,30 @@ class PredictService:
         return {"result": output}
 
     def _build_scope(self, config: dict[str, Any]) -> dict[str, Any]:
-        """Build prediction scope from config template — no callable needed."""
+        """Build prediction scope from contract + config schedule key."""
+        scope_data = self.contract.scope.model_dump()
+        # Allow schedule config to override scope fields
+        scope_template = config.get("scope_template") or {}
+        scope_data.update(scope_template)
+
         envelope = PredictionScopeEnvelope.model_validate(
             {
                 "scope_key": str(config.get("scope_key") or "default-scope"),
-                "scope": dict(config.get("scope_template") or {}),
+                "scope": scope_data,
             }
         )
         return envelope.model_dump()
 
     def _build_predict_call(self, config: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
-        """Build model predict invocation args from scope — no callable needed."""
+        """Build model predict invocation args from contract scope."""
         scope_payload = scope.get("scope") if isinstance(scope, dict) else {}
         if not isinstance(scope_payload, dict):
             scope_payload = {}
 
-        asset = scope_payload.get("asset", "BTC")
-        horizon = int(scope_payload.get("horizon", scope_payload.get("horizon_seconds", 60)))
-        step = int(scope_payload.get("step", scope_payload.get("step_seconds", horizon)))
+        contract_scope = self.contract.scope
+        asset = scope_payload.get("asset", contract_scope.asset)
+        horizon = int(scope_payload.get("horizon_seconds", contract_scope.horizon_seconds))
+        step = int(scope_payload.get("step_seconds", contract_scope.step_seconds))
 
         return {
             "args": [asset, horizon, step],

@@ -11,11 +11,7 @@
   "scheduled_prediction_configs": [
     {
       "scope_key": "default",
-      "scope_template": {
-        "asset": "BTC",
-        "horizon_seconds": 60,
-        "step_seconds": 60
-      },
+      "scope_template": {},
       "schedule": {"every_seconds": 60},
       "active": true,
       "order": 0
