@@ -100,9 +100,9 @@ class DBModelRepository(ModelRepository):
             return {}
         envelope = ScoreEnvelope.model_validate(
             {
-                "windows": score.windows,
-                "rank_key": score.rank_key,
-                "payload": score.payload,
+                "metrics": dict(score.metrics),
+                "ranking": dict(score.ranking),
+                "payload": dict(score.payload),
             }
         )
         return envelope.model_dump()
@@ -114,8 +114,8 @@ class DBModelRepository(ModelRepository):
 
         envelope = ScoreEnvelope.model_validate(score_payload)
         return ModelScore(
-            windows=dict(envelope.windows),
-            rank_key=envelope.rank_key,
+            metrics=dict(envelope.metrics),
+            ranking=envelope.ranking.model_dump(exclude_none=True),
             payload=dict(envelope.payload),
         )
 

@@ -7,8 +7,8 @@ from typing import Any
 
 @dataclass
 class ModelScore:
-    windows: dict[str, float | None] = field(default_factory=dict)
-    rank_key: float | None = None
+    metrics: dict[str, float | None] = field(default_factory=dict)
+    ranking: dict[str, Any] = field(default_factory=dict)
     payload: dict[str, Any] = field(default_factory=dict)
 
 

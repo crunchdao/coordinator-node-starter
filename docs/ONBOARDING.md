@@ -4,12 +4,68 @@ This is the canonical onboarding flow for a new challenge using the generic coor
 
 ## 1) Create the two repositories
 
+You can scaffold both with the CLI:
+
+```bash
+coordinator init <name>
+```
+
+Or use a spec file (JSON) for agent-generated setup:
+
+```bash
+coordinator init --spec path/to/spec.json
+coordinator doctor --spec path/to/spec.json
+```
+
+This creates:
+
+- `<name>/crunch-node-<name>`
+- `<name>/crunch-<name>`
+
+Run from the generated node folder:
+
+```bash
+cd <name>/crunch-node-<name>
+make deploy
+make verify-e2e
+```
+
+Minimal `spec.json` example (note the required `spec_version`):
+
+```json
+{
+  "spec_version": "1",
+  "name": "btc-trader",
+  "crunch_id": "starter-challenge",
+  "model_base_classname": "crunch_btc_trader.tracker.TrackerBase",
+  "checkpoint_interval_seconds": 60,
+  "callables": {
+    "SCORING_FUNCTION": "crunch_btc_trader.scoring:score_prediction",
+    "REPORT_SCHEMA_PROVIDER": "crunch_btc_trader.reporting:report_schema"
+  },
+  "scheduled_prediction_configs": [
+    {
+      "scope_key": "default",
+      "scope_template": {"asset": "BTC", "horizon_seconds": 60, "step_seconds": 60},
+      "schedule": {"every_seconds": 60},
+      "active": true,
+      "order": 0
+    }
+  ]
+}
+```
+
+Manual structure reference:
+
 1. **Public challenge repo**: `crunch-<name>`
-   - challenge schemas
-   - challenge callables
-   - model base class and examples
+   - model base class (`tracker.py`)
+   - scoring logic (`scoring.py`)
+   - quickstarters/examples (`examples/`)
+   - optional public schemas/helpers
 2. **Private node repo**: `crunch-node-<name>`
    - runtime/deployment config
+   - callable wiring (`config/callables.env`)
+   - runtime callables (`runtime_definitions/`)
    - worker wiring (from this starter)
 
 ## 2) Define the JSONB schemas in your challenge package
@@ -32,12 +88,12 @@ Define typed schemas (Pydantic/dataclasses) for:
 
 Recommended pattern:
 
-- core envelope stays stable (`windows`, `rank_key`, `payload`)
+- core envelope stays stable (`metrics`, `ranking`, `payload`)
 - challenge payload schema lives inside `payload`
 
-## 3) Implement and export challenge callables
+## 3) Implement runtime callables in the node workspace
 
-Your challenge package should provide callable entrypoints for:
+Implement callable entrypoints in `crunch-node-<name>/runtime_definitions/` for:
 
 - inference input builder
 - inference output validator
@@ -47,10 +103,11 @@ Your challenge package should provide callable entrypoints for:
 - prediction scoring
 - model-score aggregation
 - leaderboard ranking
+- report schema provider
 
 ## 4) Wire callables via environment variables
 
-Set dotted paths in node runtime config:
+Set dotted paths in `crunch-node-<name>/config/callables.env`:
 
 - `INFERENCE_INPUT_BUILDER`
 - `INFERENCE_OUTPUT_VALIDATOR`
@@ -60,6 +117,7 @@ Set dotted paths in node runtime config:
 - `SCORING_FUNCTION`
 - `MODEL_SCORE_AGGREGATOR`
 - `LEADERBOARD_RANKER`
+- `REPORT_SCHEMA_PROVIDER`
 
 ## 5) Configure scheduled prediction configs
 
@@ -76,24 +134,41 @@ Predict worker reads active rows, builds scope/predict calls, and writes predict
 - `scope_key`
 - `scope_jsonb`
 
-## 6) Verify end-to-end
+## 6) Define report schema contract for UI sync
+
+Expose canonical report schema from backend through `REPORT_SCHEMA_PROVIDER`.
+
+The report worker serves:
+
+- `GET /reports/schema`
+- `GET /reports/schema/leaderboard-columns`
+- `GET /reports/schema/metrics-widgets`
+
+Recommended FE behavior:
+
+1. fetch backend schema (canonical)
+2. merge local override files (labels/order/visibility)
+3. warn when override keys are unknown to backend schema
+
+## 7) Verify end-to-end
 
 ```bash
 make deploy
 curl -s http://localhost:8000/healthz
 curl -s http://localhost:8000/reports/models
 curl -s http://localhost:8000/reports/leaderboard
+curl -s http://localhost:8000/reports/schema
 ```
 
 ## JSONB ownership summary
 
 | JSONB field | Schema owner |
 |---|---|
-| `scheduled_prediction_configs.scope_template_jsonb` | challenge package |
-| `scheduled_prediction_configs.schedule_jsonb` | challenge package |
-| `predictions.scope_jsonb` | challenge package |
-| `predictions.inference_input_jsonb` | challenge package |
-| `predictions.inference_output_jsonb` | challenge package |
+| `scheduled_prediction_configs.scope_template_jsonb` | node workspace config (`config/scheduled_prediction_configs.json`) |
+| `scheduled_prediction_configs.schedule_jsonb` | node workspace config (`config/scheduled_prediction_configs.json`) |
+| `predictions.scope_jsonb` | node runtime callable (`runtime_definitions` scope builder) |
+| `predictions.inference_input_jsonb` | node runtime callable (`runtime_definitions` input builder) |
+| `predictions.inference_output_jsonb` | node runtime callable (`runtime_definitions` validator contract) |
 | `models.overall_score_jsonb` | core envelope + challenge payload |
 | `model_scores.score_payload_jsonb` | core envelope + challenge payload |
 | `leaderboards.entries_jsonb` | core entry + optional challenge extras |

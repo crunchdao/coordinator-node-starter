@@ -1,0 +1,7 @@
+from __future__ import annotations
+
+from runtime_definitions.contracts import normalize_output_payload
+
+
+def validate_output(inference_output):
+    return normalize_output_payload(inference_output)

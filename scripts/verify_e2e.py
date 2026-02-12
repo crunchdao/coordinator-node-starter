@@ -8,6 +8,10 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 
+class FatalVerificationError(RuntimeError):
+    """Raised when verification should stop immediately."""
+
+
 def _iso(dt: datetime) -> str:
     return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -24,6 +28,14 @@ def _detect_model_runner_failure(log_text: str) -> str | None:
         "No Inherited class found",
         "Import error occurred",
     ]
+    for line in log_text.splitlines():
+        if any(marker in line for marker in markers):
+            return line.strip()
+    return None
+
+
+def _detect_prediction_validation_failure(log_text: str) -> str | None:
+    markers = ["INFERENCE_OUTPUT_VALIDATION_ERROR"]
     for line in log_text.splitlines():
         if any(marker in line for marker in markers):
             return line.strip()
@@ -49,6 +61,25 @@ def _read_model_orchestrator_logs() -> str:
     return (result.stdout or "") + "\n" + (result.stderr or "")
 
 
+def _read_predict_worker_logs() -> str:
+    cmd = [
+        "docker",
+        "compose",
+        "-f",
+        "docker-compose.yml",
+        "-f",
+        "docker-compose-local.yml",
+        "--env-file",
+        ".local.env",
+        "logs",
+        "predict-worker",
+        "--tail",
+        "300",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    return (result.stdout or "") + "\n" + (result.stderr or "")
+
+
 def main() -> int:
     base_url = os.getenv("REPORT_API_URL", "http://localhost:8000")
     timeout_seconds = int(os.getenv("E2E_VERIFY_TIMEOUT_SECONDS", "240"))
@@ -67,7 +98,12 @@ def main() -> int:
                 model_logs = _read_model_orchestrator_logs()
                 failure = _detect_model_runner_failure(model_logs)
                 if failure is not None:
-                    raise RuntimeError(f"model-runner failure detected: {failure}")
+                    raise FatalVerificationError(f"model-runner failure detected: {failure}")
+
+            predict_worker_logs = _read_predict_worker_logs()
+            validation_failure = _detect_prediction_validation_failure(predict_worker_logs)
+            if validation_failure is not None:
+                raise FatalVerificationError(f"prediction validation failure detected: {validation_failure}")
 
             health = _get_json(base_url, "/healthz")
             if health.get("status") != "ok":
@@ -101,6 +137,9 @@ def main() -> int:
             raise RuntimeError(
                 f"waiting for scored predictions/leaderboard (predictions={len(predictions)} leaderboard={len(leaderboard)})"
             )
+        except FatalVerificationError as exc:
+            print(f"[verify-e2e] FAILED: fatal error: {exc}")
+            return 1
         except Exception as exc:  # noqa: BLE001
             last_error = str(exc)
             print(f"[verify-e2e] waiting: {last_error}")

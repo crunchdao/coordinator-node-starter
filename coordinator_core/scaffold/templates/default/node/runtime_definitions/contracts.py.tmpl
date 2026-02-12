@@ -1,0 +1,22 @@
+from __future__ import annotations
+
+from typing import Any, TypedDict
+
+
+class InferenceOutputContract(TypedDict):
+    # Node-private output payload contract.
+    value: float
+
+
+def normalize_output_payload(payload: dict[str, Any] | None) -> InferenceOutputContract:
+    if payload is None:
+        raise ValueError("inference_output cannot be None")
+    if not isinstance(payload, dict):
+        raise ValueError("inference_output must be a dictionary")
+
+    try:
+        value = float(payload.get("value", 0.0))
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError("value must be numeric") from exc
+
+    return {"value": value}

@@ -12,3 +12,7 @@ Responsibilities:
 - persist prediction scores
 - aggregate ModelScore entries
 - apply leaderboard ranker and persist leaderboard
+
+Default profile behavior:
+- default aggregation emits score metrics `recent`, `steady`, `anchor`
+- default ranking uses `anchor` descending

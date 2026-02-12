@@ -133,12 +133,14 @@ class ScoreService:
             model = models.get(model_id)
 
             score_envelope = ScoreEnvelope(
-                windows={
-                    "recent": avg_score,
-                    "steady": avg_score,
-                    "anchor": avg_score,
+                metrics={
+                    "average": avg_score,
                 },
-                rank_key=avg_score,
+                ranking={
+                    "key": "average",
+                    "value": avg_score,
+                    "direction": "desc",
+                },
                 payload={},
             )
             entry_envelope = LeaderboardEntryEnvelope(
@@ -155,7 +157,7 @@ class ScoreService:
         if self.leaderboard_ranker is not None:
             return list(self.leaderboard_ranker(entries))
 
-        ranked_entries = sorted(entries, key=self._entry_rank_value, reverse=True)
+        ranked_entries = sorted(entries, key=self._entry_rank_sort_value, reverse=True)
         for idx, entry in enumerate(ranked_entries, start=1):
             entry["rank"] = idx
         return ranked_entries
@@ -189,60 +191,38 @@ class ScoreService:
 
         score = entry.get("score")
         if not isinstance(score, dict):
-            score = {
-                "windows": {
-                    "recent": entry.get("score_recent"),
-                    "steady": entry.get("score_steady"),
-                    "anchor": entry.get("score_anchor"),
-                },
-                "rank_key": entry.get("rank_key", entry.get("score_anchor")),
-                "payload": {},
-            }
+            raise ValueError("Model score aggregator entries must include a 'score' dictionary")
 
         normalized_score = ScoreEnvelope.model_validate(score)
         normalized_entry = LeaderboardEntryEnvelope.model_validate(
             {
                 "model_id": entry.get("model_id"),
-                "score": normalized_score,
+                "score": normalized_score.model_dump(),
                 "rank": entry.get("rank"),
                 "model_name": entry.get("model_name"),
                 "cruncher_name": entry.get("cruncher_name"),
             }
         )
 
-        return {
-            **entry,
-            **normalized_entry.model_dump(exclude_none=True),
-            "score": normalized_score.model_dump(),
-        }
+        return normalized_entry.model_dump(exclude_none=True)
 
     @classmethod
-    def _entry_rank_value(cls, entry: dict[str, Any]) -> float:
-        score = entry.get("score") if isinstance(entry, dict) else None
-        if isinstance(score, dict):
-            rank_key = score.get("rank_key")
-            if rank_key is not None:
-                try:
-                    return float(rank_key)
-                except Exception:
-                    pass
+    def _entry_rank_sort_value(cls, entry: dict[str, Any]) -> float:
+        score_payload = entry.get("score") if isinstance(entry, dict) else None
 
-            windows = score.get("windows") if isinstance(score.get("windows"), dict) else {}
-            anchor = windows.get("anchor")
-            if anchor is not None:
-                try:
-                    return float(anchor)
-                except Exception:
-                    pass
+        if not isinstance(score_payload, dict):
+            return float("-inf")
 
-        fallback = entry.get("score_anchor") if isinstance(entry, dict) else None
-        if fallback is not None:
-            try:
-                return float(fallback)
-            except Exception:
-                pass
+        try:
+            normalized = ScoreEnvelope.model_validate(score_payload)
+        except Exception:
+            return float("-inf")
 
-        return float("-inf")
+        value = normalized.rank_value
+        if value is None:
+            return float("-inf")
+
+        return -float(value) if normalized.ranking.direction == "asc" else float(value)
 
     @staticmethod
     def _to_float(value: Any) -> float | None:

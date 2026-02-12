@@ -26,6 +26,8 @@ class TestRuntimeMigrationWiring(unittest.TestCase):
         self.assertIn("/reports/models/global", paths)
         self.assertIn("/reports/models/params", paths)
         self.assertIn("/reports/predictions", paths)
+        self.assertIn("/reports/feeds", paths)
+        self.assertIn("/reports/feeds/tail", paths)
 
 
 if __name__ == "__main__":

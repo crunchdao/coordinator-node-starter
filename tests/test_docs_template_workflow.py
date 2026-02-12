@@ -20,6 +20,18 @@ class TestDocsTemplateWorkflow(unittest.TestCase):
         self.assertIn("crunch-node-<name>", readme)
         self.assertIn("make verify-e2e", readme)
 
+    def test_readme_includes_local_crunch_launch_steps(self):
+        readme = Path("README.md").read_text()
+        self.assertIn("Launch a local Crunch workspace", readme)
+        self.assertIn("coordinator doctor --spec path/to/spec.json", readme)
+        self.assertRegex(
+            readme,
+            r"coordinator init .*--spec path/to/spec\.json.*--pack realtime",
+        )
+        self.assertIn("cd <challenge-slug>/crunch-node-<challenge-slug>", readme)
+        self.assertIn("make deploy", readme)
+        self.assertIn("make verify-e2e", readme)
+
     def test_build_guide_lists_required_definition_points(self):
         guide = Path("docs/BUILD_YOUR_OWN_CHALLENGE.md").read_text()
         for item in self.REQUIRED_POINTS:

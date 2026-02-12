@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime
 from typing import Annotated, Any, Generator
 
@@ -8,18 +9,38 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from sqlmodel import Session
 
-from coordinator_core.schemas import LeaderboardEntryEnvelope
+from coordinator_core.schemas import LeaderboardEntryEnvelope, ReportSchemaEnvelope
 from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
+from coordinator_core.services.interfaces.market_record_repository import MarketRecordRepository
 from coordinator_core.services.interfaces.model_repository import ModelRepository
 from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
+from node_template.extensions.callable_resolver import resolve_callable
+from node_template.extensions.default_callables import (
+    default_compute_window_metrics,
+    default_flatten_report_metrics,
+)
 from node_template.infrastructure.db import (
     DBLeaderboardRepository,
+    DBMarketRecordRepository,
     DBModelRepository,
     DBPredictionRepository,
     create_session,
 )
 
 app = FastAPI(title="Node Template Report Worker")
+
+
+def _normalize_project_ids(raw_ids: list[str]) -> list[str]:
+    """Normalize projectIds: the FE may send comma-separated (e.g. '1,2,3')
+    or repeated params (e.g. projectIds=1&projectIds=2).
+    This handles both forms."""
+    normalized: list[str] = []
+    for item in raw_ids:
+        for part in item.split(","):
+            stripped = part.strip()
+            if stripped:
+                normalized.append(stripped)
+    return normalized
 
 
 def get_db_session() -> Generator[Session, Any, None]:
@@ -45,9 +66,62 @@ def get_prediction_repository(
     return DBPredictionRepository(session_db)
 
 
+def get_market_record_repository(
+    session_db: Annotated[Session, Depends(get_db_session)]
+) -> MarketRecordRepository:
+    return DBMarketRecordRepository(session_db)
+
+
+def resolve_report_schema(provider_path: str | None = None) -> dict[str, Any]:
+    configured_path = provider_path or os.getenv(
+        "REPORT_SCHEMA_PROVIDER",
+        "node_template.extensions.default_callables:default_report_schema",
+    )
+    provider = resolve_callable(configured_path)
+    schema = provider()
+    if not isinstance(schema, dict):
+        raise ValueError("REPORT_SCHEMA_PROVIDER must return a dictionary")
+
+    # Validate against typed contracts matching the coordinator-webapp FE types.
+    # This catches missing/wrong fields at startup instead of crashing the FE
+    # at render time (e.g. missing 'type' → TypeError: Cannot read properties
+    # of undefined reading 'toLowerCase').
+    try:
+        validated = ReportSchemaEnvelope.model_validate(schema)
+    except Exception as exc:
+        raise ValueError(
+            f"REPORT_SCHEMA_PROVIDER returned an invalid schema. "
+            f"Each leaderboard column must have: id, type (MODEL|VALUE|USERNAME|CHART), "
+            f"property, displayName, order. "
+            f"Each metric widget must have: id, type (CHART|IFRAME), displayName, "
+            f"endpointUrl, order. "
+            f"Validation error: {exc}"
+        ) from exc
+
+    return validated.model_dump()
+
+
+REPORT_SCHEMA = resolve_report_schema()
+
+
 @app.get("/healthz")
 def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/reports/schema")
+def get_report_schema() -> dict[str, Any]:
+    return REPORT_SCHEMA
+
+
+@app.get("/reports/schema/leaderboard-columns")
+def get_report_schema_leaderboard_columns() -> list[dict[str, Any]]:
+    return list(REPORT_SCHEMA.get("leaderboard_columns", []))
+
+
+@app.get("/reports/schema/metrics-widgets")
+def get_report_schema_metrics_widgets() -> list[dict[str, Any]]:
+    return list(REPORT_SCHEMA.get("metrics_widgets", []))
 
 
 @app.get("/reports/models")
@@ -81,38 +155,17 @@ def get_leaderboard(
 
     normalized_entries = []
     for entry in entries:
-        normalized = LeaderboardEntryEnvelope.model_validate(
-            {
-                "model_id": entry.get("model_id"),
-                "score": entry.get("score")
-                if isinstance(entry.get("score"), dict)
-                else {
-                    "windows": {
-                        "recent": entry.get("score_recent"),
-                        "steady": entry.get("score_steady"),
-                        "anchor": entry.get("score_anchor"),
-                    },
-                    "rank_key": entry.get("rank_key", entry.get("score_anchor")),
-                    "payload": {},
-                },
-                "rank": entry.get("rank"),
-                "model_name": entry.get("model_name"),
-                "cruncher_name": entry.get("cruncher_name", entry.get("player_name")),
-            }
-        )
+        normalized = LeaderboardEntryEnvelope.model_validate(entry)
+        metrics = dict(normalized.score.metrics)
 
-        windows = dict(normalized.score.windows)
         normalized_entries.append(
             {
                 "created_at": created_at,
                 "model_id": normalized.model_id,
-                "score_windows": windows,
-                "score_rank_key": normalized.score.rank_key,
+                "score_metrics": metrics,
+                "score_ranking": normalized.score.ranking.model_dump(exclude_none=True),
                 "score_payload": dict(normalized.score.payload),
-                # backward-compatible fields
-                "score_recent": entry.get("score_recent", windows.get("recent")),
-                "score_steady": entry.get("score_steady", windows.get("steady")),
-                "score_anchor": entry.get("score_anchor", windows.get("anchor")),
+                **default_flatten_report_metrics(metrics),
                 "rank": normalized.rank if normalized.rank is not None else 999999,
                 "model_name": normalized.model_name,
                 "cruncher_name": normalized.cruncher_name,
@@ -129,6 +182,7 @@ def get_models_global(
     end: Annotated[datetime, Query(...)],
     prediction_repo: Annotated[PredictionRepository, Depends(get_prediction_repository)],
 ) -> list[dict]:
+    model_ids = _normalize_project_ids(model_ids)
     predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
 
     rows: list[dict] = []
@@ -137,18 +191,19 @@ def get_models_global(
         if not scores:
             continue
 
-        avg = float(sum(scores) / len(scores))
+        metrics = default_compute_window_metrics([float(value) for value in scores])
         performed_at = max((p.performed_at for p in predictions), default=end)
 
         rows.append(
             {
                 "model_id": model_id,
-                "score_windows": {"recent": avg, "steady": avg, "anchor": avg},
-                "score_rank_key": avg,
-                # backward-compatible fields
-                "score_recent": avg,
-                "score_steady": avg,
-                "score_anchor": avg,
+                "score_metrics": metrics,
+                "score_ranking": {
+                    "key": "anchor",
+                    "value": metrics.get("anchor"),
+                    "direction": "desc",
+                },
+                **default_flatten_report_metrics(metrics),
                 "performed_at": performed_at,
             }
         )
@@ -163,6 +218,7 @@ def get_models_params(
     end: Annotated[datetime, Query(...)],
     prediction_repo: Annotated[PredictionRepository, Depends(get_prediction_repository)],
 ) -> list[dict]:
+    model_ids = _normalize_project_ids(model_ids)
     predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
 
     grouped: dict[tuple[str, str], list] = {}
@@ -177,7 +233,7 @@ def get_models_params(
         if not scores:
             continue
 
-        avg = float(sum(scores) / len(scores))
+        metrics = default_compute_window_metrics([float(value) for value in scores])
         performed_at = max((p.performed_at for p in predictions), default=end)
         scope = predictions[-1].scope if predictions else {}
 
@@ -186,12 +242,13 @@ def get_models_params(
                 "model_id": model_id,
                 "scope_key": scope_key,
                 "scope": scope,
-                "score_windows": {"recent": avg, "steady": avg, "anchor": avg},
-                "score_rank_key": avg,
-                # backward-compatible fields
-                "score_recent": avg,
-                "score_steady": avg,
-                "score_anchor": avg,
+                "score_metrics": metrics,
+                "score_ranking": {
+                    "key": "anchor",
+                    "value": metrics.get("anchor"),
+                    "direction": "desc",
+                },
+                **default_flatten_report_metrics(metrics),
                 "performed_at": performed_at,
             }
         )
@@ -206,12 +263,7 @@ def get_predictions(
     end: Annotated[datetime, Query(...)],
     prediction_repo: Annotated[PredictionRepository, Depends(get_prediction_repository)],
 ) -> list[dict]:
-    if len(model_ids) > 1:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Service is available only for one model at a time. Please provide a single model_id.",
-        )
-
+    model_ids = _normalize_project_ids(model_ids)
     predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
 
     rows: list[dict] = []
@@ -233,6 +285,48 @@ def get_predictions(
             )
 
     return sorted(rows, key=lambda row: row["performed_at"])
+
+
+@app.get("/reports/feeds")
+def get_feeds(
+    market_repo: Annotated[MarketRecordRepository, Depends(get_market_record_repository)],
+) -> list[dict[str, Any]]:
+    return market_repo.list_indexed_feeds()
+
+
+@app.get("/reports/feeds/tail")
+def get_feeds_tail(
+    market_repo: Annotated[MarketRecordRepository, Depends(get_market_record_repository)],
+    provider: Annotated[str | None, Query()] = None,
+    asset: Annotated[str | None, Query()] = None,
+    kind: Annotated[str | None, Query()] = None,
+    granularity: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 20,
+) -> list[dict[str, Any]]:
+    records = market_repo.tail_records(
+        provider=provider,
+        asset=asset,
+        kind=kind,
+        granularity=granularity,
+        limit=limit,
+    )
+
+    rows: list[dict[str, Any]] = []
+    for record in records:
+        rows.append(
+            {
+                "provider": record.provider,
+                "asset": record.asset,
+                "kind": record.kind,
+                "granularity": record.granularity,
+                "ts_event": record.ts_event,
+                "ts_ingested": record.ts_ingested,
+                "values": record.values,
+                "meta": record.meta,
+            }
+        )
+
+    return rows
 
 
 if __name__ == "__main__":

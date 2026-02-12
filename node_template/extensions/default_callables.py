@@ -79,8 +79,28 @@ def default_resolve_resolvable_at(config: dict[str, Any], now: datetime, scope: 
     return now + timedelta(seconds=max(0, seconds))
 
 
+def default_compute_window_metrics(values: list[float]) -> dict[str, float]:
+    average = float(sum(values) / len(values)) if values else 0.0
+    return {
+        "recent": average,
+        "steady": average,
+        "anchor": average,
+    }
+
+
+def default_flatten_report_metrics(metrics: dict[str, Any]) -> dict[str, float | None]:
+    flattened: dict[str, float | None] = {}
+    for key, value in metrics.items():
+        metric_key = str(key)
+        try:
+            flattened[f"score_{metric_key}"] = float(value) if value is not None else None
+        except Exception:
+            flattened[f"score_{metric_key}"] = None
+    return flattened
+
+
 def default_aggregate_model_scores(scored_predictions: list[Any], models: dict[str, Any]) -> list[dict[str, Any]]:
-    """Default aggregator: compute per-model average score and expose generic score envelopes."""
+    """Default aggregator: compute per-model windowed score metrics (recent/steady/anchor)."""
     by_model: dict[str, list[float]] = {}
 
     for prediction in scored_predictions:
@@ -100,19 +120,19 @@ def default_aggregate_model_scores(scored_predictions: list[Any], models: dict[s
         if not values:
             continue
 
-        average = sum(values) / len(values)
+        metrics = default_compute_window_metrics(values)
         model = models.get(model_id)
 
         entries.append(
             {
                 "model_id": model_id,
                 "score": {
-                    "windows": {
-                        "recent": average,
-                        "steady": average,
-                        "anchor": average,
+                    "metrics": metrics,
+                    "ranking": {
+                        "key": "anchor",
+                        "value": metrics.get("anchor"),
+                        "direction": "desc",
                     },
-                    "rank_key": average,
                     "payload": {},
                 },
                 "model_name": getattr(model, "name", None),
@@ -124,33 +144,29 @@ def default_aggregate_model_scores(scored_predictions: list[Any], models: dict[s
 
 
 def default_rank_leaderboard(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Default ranker: descending by score.rank_key and assign ranks."""
+    """Default ranker honoring score.ranking.direction and score.ranking key/value."""
 
     def _rank_value(entry: dict[str, Any]) -> float:
         score = entry.get("score")
-        if isinstance(score, dict):
-            rank_key = score.get("rank_key")
-            if rank_key is not None:
-                try:
-                    return float(rank_key)
-                except Exception:
-                    pass
-            windows = score.get("windows") if isinstance(score.get("windows"), dict) else {}
-            fallback = windows.get("anchor")
-            if fallback is not None:
-                try:
-                    return float(fallback)
-                except Exception:
-                    pass
+        if not isinstance(score, dict):
+            return float("-inf")
 
-        fallback = entry.get("score_anchor")
-        if fallback is not None:
-            try:
-                return float(fallback)
-            except Exception:
-                pass
+        metrics = score.get("metrics") if isinstance(score.get("metrics"), dict) else {}
+        ranking = score.get("ranking") if isinstance(score.get("ranking"), dict) else {}
+        direction = str(ranking.get("direction", "desc")).lower()
 
-        return float("-inf")
+        value = ranking.get("value")
+        if value is None:
+            ranking_key = ranking.get("key")
+            if isinstance(ranking_key, str):
+                value = metrics.get(ranking_key)
+
+        try:
+            numeric = float(value)
+        except Exception:
+            return float("-inf")
+
+        return -numeric if direction == "asc" else numeric
 
     sorted_entries = sorted(entries, key=_rank_value, reverse=True)
 
@@ -159,6 +175,102 @@ def default_rank_leaderboard(entries: list[dict[str, Any]]) -> list[dict[str, An
         ranked.append({**entry, "rank": idx})
 
     return ranked
+
+
+def default_report_schema() -> dict[str, Any]:
+    """Default report schema contract exposed by the report worker.
+
+    FE may use this as canonical schema and merge local override files on top.
+    """
+    return {
+        "schema_version": "1",
+        "leaderboard_columns": [
+            {
+                "id": 1,
+                "type": "MODEL",
+                "property": "model_id",
+                "format": None,
+                "displayName": "Model",
+                "tooltip": None,
+                "nativeConfiguration": {"type": "model", "statusProperty": "status"},
+                "order": 0,
+            },
+            {
+                "id": 2,
+                "type": "VALUE",
+                "property": "score_recent",
+                "format": "decimal-2",
+                "displayName": "Recent Score",
+                "tooltip": "The score of the player over the last 24 hours.",
+                "nativeConfiguration": None,
+                "order": 20,
+            },
+            {
+                "id": 3,
+                "type": "VALUE",
+                "property": "score_steady",
+                "format": "decimal-2",
+                "displayName": "Steady Score",
+                "tooltip": "The score of the player over the last 72 hours.",
+                "nativeConfiguration": None,
+                "order": 30,
+            },
+            {
+                "id": 4,
+                "type": "VALUE",
+                "property": "score_anchor",
+                "format": "decimal-2",
+                "displayName": "Anchor Score",
+                "tooltip": "The score of the player over the last 7 days.",
+                "nativeConfiguration": None,
+                "order": 40,
+            },
+        ],
+        "metrics_widgets": [
+            {
+                "id": 1,
+                "type": "CHART",
+                "displayName": "Score Metrics",
+                "tooltip": None,
+                "order": 10,
+                "endpointUrl": "/reports/models/global",
+                "nativeConfiguration": {
+                    "type": "line",
+                    "xAxis": {"name": "performed_at"},
+                    "yAxis": {
+                        "series": [
+                            {"name": "score_recent", "label": "Recent Score"},
+                            {"name": "score_steady", "label": "Steady Score"},
+                            {"name": "score_anchor", "label": "Anchor Score"},
+                        ],
+                        "format": "decimal-2",
+                    },
+                    "displayEvolution": False,
+                },
+            },
+            {
+                "id": 3,
+                "type": "CHART",
+                "displayName": "Rolling score by parameters",
+                "tooltip": None,
+                "order": 20,
+                "endpointUrl": "/reports/models/params",
+                "nativeConfiguration": {
+                    "type": "line",
+                    "xAxis": {"name": "performed_at"},
+                    "yAxis": {
+                        "series": [
+                            {"name": "score_recent", "label": "Recent Score"},
+                            {"name": "score_steady", "label": "Steady Score"},
+                            {"name": "score_anchor", "label": "Anchor Score"},
+                        ],
+                        "format": "decimal-2",
+                    },
+                    "displayEvolution": False,
+                },
+            },
+        ],
+    }
 
 
 def invalid_score_prediction(prediction: dict[str, Any]) -> dict[str, Any]:

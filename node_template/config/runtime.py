@@ -9,9 +9,11 @@ class RuntimeSettings:
     checkpoint_interval_seconds: int
     model_runner_node_host: str
     model_runner_node_port: int
-    model_runner_timeout_seconds: int
+    model_runner_timeout_seconds: float
     crunch_id: str
     base_classname: str
+    feed_provider: str
+    market_record_ttl_days: int
 
     @classmethod
     def from_env(cls) -> "RuntimeSettings":
@@ -19,7 +21,9 @@ class RuntimeSettings:
             checkpoint_interval_seconds=int(os.getenv("CHECKPOINT_INTERVAL_SECONDS", "900")),
             model_runner_node_host=os.getenv("MODEL_RUNNER_NODE_HOST", "model-orchestrator"),
             model_runner_node_port=int(os.getenv("MODEL_RUNNER_NODE_PORT", "9091")),
-            model_runner_timeout_seconds=int(os.getenv("MODEL_RUNNER_TIMEOUT_SECONDS", "60")),
+            model_runner_timeout_seconds=float(os.getenv("MODEL_RUNNER_TIMEOUT_SECONDS", "60")),
             crunch_id=os.getenv("CRUNCH_ID", "starter-challenge"),
             base_classname=os.getenv("MODEL_BASE_CLASSNAME", "tracker.TrackerBase"),
+            feed_provider=os.getenv("FEED_PROVIDER", "pyth"),
+            market_record_ttl_days=int(os.getenv("MARKET_RECORD_TTL_DAYS", "90")),
         )

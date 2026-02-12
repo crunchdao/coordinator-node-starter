@@ -161,6 +161,35 @@ class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(prediction_repo.saved_predictions), 0)
         self.assertTrue(any("No active prediction configs" in line for line in logs.output))
 
+    async def test_run_once_logs_structured_output_validation_error(self):
+        model_repo = InMemoryModelRepository()
+        prediction_repo = InMemoryPredictionRepository()
+
+        def failing_validator(_output):
+            raise ValueError("missing 'expected_return'")
+
+        service = PredictService(
+            checkpoint_interval_seconds=60,
+            raw_input_provider=None,
+            inference_input_builder=lambda raw_input: {"wrapped": raw_input},
+            inference_output_validator=failing_validator,
+            model_repository=model_repo,
+            prediction_repository=prediction_repo,
+            runner=FakeRunner(),
+        )
+
+        with self.assertLogs("node_template.services.predict_service", level="ERROR") as logs:
+            changed = await service.run_once(raw_input={"x": 1}, now=datetime.now(timezone.utc))
+
+        self.assertTrue(changed)
+        self.assertGreaterEqual(len(prediction_repo.saved_predictions), 1)
+        self.assertEqual(prediction_repo.saved_predictions[0].status, "FAILED")
+        self.assertEqual(
+            prediction_repo.saved_predictions[0].inference_output.get("_validation_error"),
+            "missing 'expected_return'",
+        )
+        self.assertTrue(any("INFERENCE_OUTPUT_VALIDATION_ERROR" in line for line in logs.output))
+
 
 if __name__ == "__main__":
     unittest.main()

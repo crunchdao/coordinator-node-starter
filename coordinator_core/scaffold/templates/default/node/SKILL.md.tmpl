@@ -1,0 +1,35 @@
+---
+name: [[name]]-node
+summary: Agent instructions for operating [[node_name]].
+---
+
+# Node skill - [[node_name]]
+
+## Primary commands
+
+```bash
+make deploy
+make verify-e2e
+make logs
+make logs-capture
+make down
+```
+
+## Logs and artifacts
+
+- `make logs` streams all service logs from docker compose.
+- `make logs-capture` writes structured logs to `runtime-services.jsonl`.
+- Use `RUNBOOK.md` for known failure modes and recovery.
+
+## Runtime checks
+
+- Health: `http://localhost:8000/healthz`
+- Models: `http://localhost:8000/reports/models`
+- Leaderboard: `http://localhost:8000/reports/leaderboard`
+
+## Edit boundaries
+
+- Node-specific config: `.local.env`, `config/callables.env`,
+  `config/scheduled_prediction_configs.json`, `deployment/`.
+- Runtime callables live under `runtime_definitions/`.
+- Challenge implementation is mounted from `../[[challenge_name]]`.
