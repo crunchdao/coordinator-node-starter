@@ -30,6 +30,19 @@ from node_template.infrastructure.db import (
 app = FastAPI(title="Node Template Report Worker")
 
 
+def _normalize_project_ids(raw_ids: list[str]) -> list[str]:
+    """Normalize projectIds: the FE may send comma-separated (e.g. '1,2,3')
+    or repeated params (e.g. projectIds=1&projectIds=2).
+    This handles both forms."""
+    normalized: list[str] = []
+    for item in raw_ids:
+        for part in item.split(","):
+            stripped = part.strip()
+            if stripped:
+                normalized.append(stripped)
+    return normalized
+
+
 def get_db_session() -> Generator[Session, Any, None]:
     with create_session() as session:
         yield session
@@ -169,6 +182,7 @@ def get_models_global(
     end: Annotated[datetime, Query(...)],
     prediction_repo: Annotated[PredictionRepository, Depends(get_prediction_repository)],
 ) -> list[dict]:
+    model_ids = _normalize_project_ids(model_ids)
     predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
 
     rows: list[dict] = []
@@ -204,6 +218,7 @@ def get_models_params(
     end: Annotated[datetime, Query(...)],
     prediction_repo: Annotated[PredictionRepository, Depends(get_prediction_repository)],
 ) -> list[dict]:
+    model_ids = _normalize_project_ids(model_ids)
     predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
 
     grouped: dict[tuple[str, str], list] = {}
@@ -248,12 +263,7 @@ def get_predictions(
     end: Annotated[datetime, Query(...)],
     prediction_repo: Annotated[PredictionRepository, Depends(get_prediction_repository)],
 ) -> list[dict]:
-    if len(model_ids) > 1:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Service is available only for one model at a time. Please provide a single model_id.",
-        )
-
+    model_ids = _normalize_project_ids(model_ids)
     predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
 
     rows: list[dict] = []
