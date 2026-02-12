@@ -35,6 +35,14 @@ class DBMarketRecordRepository(MarketRecordRepository):
             count += 1
 
         self._session.commit()
+
+        if count > 0:
+            try:
+                from node_template.infrastructure.db.pg_notify import notify
+                notify()
+            except Exception:
+                pass  # non-critical — predict worker falls back to timeout
+
         return count
 
     def fetch_records(

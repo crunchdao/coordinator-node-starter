@@ -10,7 +10,7 @@ from node_template.services.predict_service import PredictService
 
 
 class RealtimePredictService(PredictService):
-    """Realtime preset: poll loop, tick + predict cycle, config scheduling."""
+    """Realtime preset: event-driven loop, tick + predict cycle, config scheduling."""
 
     def __init__(self, checkpoint_interval_seconds: int = 60, **kwargs):
         super().__init__(**kwargs)
@@ -26,10 +26,7 @@ class RealtimePredictService(PredictService):
                 raise
             except Exception as exc:
                 self.logger.exception("predict loop error: %s", exc)
-            try:
-                await asyncio.wait_for(self.stop_event.wait(), timeout=self.checkpoint_interval_seconds)
-            except asyncio.TimeoutError:
-                pass
+            await self._wait_for_data()
 
     async def run_once(self, raw_input: dict[str, Any] | None = None, now: datetime | None = None) -> bool:
         now = now or datetime.now(timezone.utc)
@@ -66,6 +63,35 @@ class RealtimePredictService(PredictService):
 
         self.logger.info("No predictions produced in this cycle")
         return False
+
+    async def _wait_for_data(self) -> None:
+        """Wait for new market data (pg NOTIFY) or fall back to timeout."""
+        try:
+            from node_template.infrastructure.db.pg_notify import wait_for_notify
+
+            # Race: stop_event vs pg notify vs timeout
+            notify_task = asyncio.create_task(
+                wait_for_notify(timeout=float(self.checkpoint_interval_seconds))
+            )
+            stop_task = asyncio.create_task(self.stop_event.wait())
+
+            done, pending = await asyncio.wait(
+                {notify_task, stop_task}, return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+        except Exception:
+            # pg_notify unavailable — fall back to sleep
+            try:
+                await asyncio.wait_for(
+                    self.stop_event.wait(), timeout=self.checkpoint_interval_seconds,
+                )
+            except asyncio.TimeoutError:
+                pass
 
     # ── realtime-specific ──
 
