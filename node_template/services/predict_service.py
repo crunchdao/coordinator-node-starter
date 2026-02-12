@@ -91,22 +91,23 @@ class PredictService:
 
     # ── 2. store predictions ──
 
-    async def predict(self, inference_input: dict[str, Any], scope: dict[str, Any]) -> dict:
-        """Send predict call to models, return raw responses."""
+    async def _call_models(self, inference_input: dict[str, Any], scope: dict[str, Any]) -> dict:
+        """Send predict call to model runner, return raw responses."""
         return await self._runner.call("predict", self._encode_predict(scope))
 
-    async def tick_models(self, inference_input: dict[str, Any]) -> None:
+    async def _tick_models(self, inference_input: dict[str, Any]) -> None:
         """Send latest data to all models."""
         responses = await self._runner.call("tick", self._encode_tick(inference_input))
         for model_run, _ in responses.items():
             self.register_model(self._to_model(model_run))
 
-    def make_prediction(
+    def _build_record(
         self, *, model_id: str, input_id: str, scope_key: str,
         scope: dict[str, Any], status: str, output: dict[str, Any],
         now: datetime, resolvable_at: datetime,
         exec_time_ms: float = 0.0, config_id: str | None = None,
     ) -> PredictionRecord:
+        """Construct a PredictionRecord from model runner output."""
         suffix = "ABS" if status == "ABSENT" else "PRE"
         safe_key = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in scope_key)
         pred_id = f"{suffix}_{model_id}_{safe_key}_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}"
@@ -120,7 +121,8 @@ class PredictService:
             inference_output=output, performed_at=now, resolvable_at=resolvable_at,
         )
 
-    def save_predictions(self, predictions: list[PredictionRecord]) -> None:
+    def _save(self, predictions: list[PredictionRecord]) -> None:
+        """Persist prediction records to the repository."""
         if predictions:
             self.prediction_repository.save_all(predictions)
             self.logger.info("Saved %d predictions", len(predictions))

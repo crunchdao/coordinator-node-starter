@@ -43,11 +43,11 @@ class RealtimePredictService(PredictService):
             input_id = f"INP_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}"
         else:
             input_id, inference_input = self.get_data(now)
-        await self.tick_models(inference_input)
+        await self._tick_models(inference_input)
 
         # 2. run prediction configs, store predictions
         predictions = await self._run_configs(input_id, inference_input, now)
-        self.save_predictions(predictions)
+        self._save(predictions)
 
         return len(predictions) > 0
 
@@ -83,7 +83,7 @@ class RealtimePredictService(PredictService):
         scope_key = scope.get("scope_key", "default-scope")
         config_id = str(config.get("id")) if config.get("id") else None
 
-        responses = await self.predict(inference_input, scope)
+        responses = await self._call_models(inference_input, scope)
         resolvable_at = self._compute_resolvable_at(config, now, scope)
 
         predictions: dict[str, PredictionRecord] = {}
@@ -105,7 +105,7 @@ class RealtimePredictService(PredictService):
             else:
                 status = runner_status
 
-            predictions[model.id] = self.make_prediction(
+            predictions[model.id] = self._build_record(
                 model_id=model.id, input_id=input_id, scope_key=scope_key,
                 scope=scope, status=status, output=output,
                 now=now, resolvable_at=resolvable_at,
@@ -116,7 +116,7 @@ class RealtimePredictService(PredictService):
         # Mark absent models
         for model_id in self._known_models:
             if model_id not in predictions:
-                predictions[model_id] = self.make_prediction(
+                predictions[model_id] = self._build_record(
                     model_id=model_id, input_id=input_id, scope_key=scope_key,
                     scope=scope, status="ABSENT", output={},
                     now=now, resolvable_at=resolvable_at, config_id=config_id,
