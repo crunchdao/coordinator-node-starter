@@ -118,8 +118,17 @@ MODEL_RUNNER_NODE_HOST=model-orchestrator
 MODEL_RUNNER_NODE_PORT=9091
 MODEL_RUNNER_TIMEOUT_SECONDS=60
 
+# ── Web UI ──────────────────────────────────────────────────────────
+# Default: starter (local dev dashboard)
+# To graduate to the full platform UI, change to:
+#   REPORT_UI_APP=platform
+#   REPORT_UI_DOCKERFILE=apps/platform/Dockerfile
+#   NEXT_PUBLIC_API_URL=https://hub.crunchdao.com
+REPORT_UI_APP=starter
 REPORT_UI_BUILD_CONTEXT=https://github.com/crunchdao/coordinator-webapp.git
 REPORT_UI_DOCKERFILE=apps/starter/Dockerfile
+# NEXT_PUBLIC_API_URL=http://report-worker:8000
+# NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR=http://model-orchestrator:8001
 
 FEED_PROVIDER=pyth
 FEED_ASSETS=BTC

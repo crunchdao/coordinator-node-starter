@@ -599,6 +599,26 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 )
                 self.assertIn(f"REPORT_UI_BUILD_CONTEXT={local_webapp}", node_env)
 
+    def test_scaffold_supports_platform_ui_switch(self):
+        """Compose + env are parameterized so switching to platform is env-only."""
+        with tempfile.TemporaryDirectory() as tmp:
+            with _cwd(Path(tmp)):
+                code = main(["init", "btc-trader"])
+                self.assertEqual(code, 0)
+
+                node_dir = Path("btc-trader/crunch-node-btc-trader")
+                compose = (node_dir / "docker-compose.yml").read_text(encoding="utf-8")
+                env = (node_dir / ".local.env").read_text(encoding="utf-8")
+
+                # Compose uses REPORT_UI_APP for config volume mount
+                self.assertIn("${REPORT_UI_APP:-starter}", compose)
+                # Compose build args are parameterized (not hard-coded)
+                self.assertIn("${NEXT_PUBLIC_API_URL:-http://report-worker:8000}", compose)
+                # Env has REPORT_UI_APP and graduation instructions
+                self.assertIn("REPORT_UI_APP=starter", env)
+                self.assertIn("REPORT_UI_APP=platform", env)  # in comment
+
 
 if __name__ == "__main__":
     unittest.main()
+

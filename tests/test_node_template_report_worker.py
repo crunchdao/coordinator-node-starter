@@ -232,13 +232,18 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         self.assertEqual(btc["score_ranking"]["key"], "anchor")
         self.assertIn("score_anchor", btc)
 
-    def test_get_predictions_requires_single_model(self):
-        repo = InMemoryPredictionRepository([])
+    def test_get_predictions_allows_multiple_models(self):
+        predictions = [
+            self._make_prediction("m1", "BTC-60", {"asset": "BTC", "horizon": 60}, 0.4),
+            self._make_prediction("m2", "BTC-60", {"asset": "BTC", "horizon": 60}, 0.6),
+        ]
+        repo = InMemoryPredictionRepository(predictions)
         start = datetime.now(timezone.utc) - timedelta(hours=1)
         end = datetime.now(timezone.utc)
 
-        with self.assertRaises(HTTPException):
-            get_predictions(["m1", "m2"], start, end, repo)
+        response = get_predictions(["m1", "m2"], start, end, repo)
+        model_ids = {r["model_id"] for r in response}
+        self.assertEqual(model_ids, {"m1", "m2"})
 
     def test_get_predictions_returns_scored_rows(self):
         predictions = [self._make_prediction("m1", "BTC-60", {"asset": "BTC", "horizon": 60}, 0.4)]
