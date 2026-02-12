@@ -14,7 +14,6 @@ from node_template.infrastructure.db import (
     DBPredictionRepository,
     create_session,
 )
-from node_template.services.input_service import InputService
 from node_template.services.score_service import ScoreService
 
 
@@ -35,7 +34,6 @@ def parse_arguments():
 def build_service() -> ScoreService:
     extension_settings = ExtensionSettings.from_env()
     runtime_settings = RuntimeSettings.from_env()
-    contract = CrunchContract()
 
     scoring_function = resolve_callable(
         extension_settings.scoring_function,
@@ -50,14 +48,13 @@ def build_service() -> ScoreService:
         prediction_repository=DBPredictionRepository(session),
         model_repository=DBModelRepository(session),
         leaderboard_repository=DBLeaderboardRepository(session),
-        input_service=InputService.from_env(),
-        contract=contract,
+        contract=CrunchContract(),
     )
 
 
 async def main(prediction_id: str | None = None) -> None:
     configure_logging()
-    logging.getLogger(__name__).info("node_template score worker bootstrap")
+    logging.getLogger(__name__).info("score worker bootstrap")
 
     if prediction_id is not None:
         logging.getLogger(__name__).info("single prediction scoring not implemented yet")

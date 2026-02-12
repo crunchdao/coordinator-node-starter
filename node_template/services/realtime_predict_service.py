@@ -52,31 +52,27 @@ class RealtimePredictService(PredictService):
 
     def resolve_actuals(self, now: datetime) -> int:
         """Find predictions past their horizon, look up what actually happened."""
-        if not hasattr(self.prediction_repository, "fetch_unresolved"):
-            return 0
-
-        unresolved = list(self.prediction_repository.fetch_unresolved(before=now))
-        if not unresolved:
+        pending = self.prediction_repository.find_predictions(
+            status="PENDING", resolvable_before=now,
+        )
+        if not pending:
             return 0
 
         resolved_count = 0
-        for prediction in unresolved:
-            scope = getattr(prediction, "scope", {}) or {}
-            asset = scope.get("asset")
-
+        for prediction in pending:
+            scope = prediction.scope or {}
             actuals = self.input_service.get_ground_truth(
                 performed_at=prediction.performed_at,
                 resolvable_at=prediction.resolvable_at,
-                asset=asset,
+                asset=scope.get("asset"),
             )
             if actuals is None:
                 continue
 
-            prediction.actuals = actuals
+            self.prediction_repository.save_actuals(prediction.id, actuals)
             resolved_count += 1
 
         if resolved_count:
-            self.prediction_repository.save_all(unresolved)
             self.logger.info("Resolved actuals for %d predictions", resolved_count)
 
         return resolved_count
@@ -122,7 +118,7 @@ class RealtimePredictService(PredictService):
             model = self._to_model(model_run)
             self.register_model(model)
 
-            status = self._extract_status(result)
+            runner_status = self._extract_status(result)
             output = getattr(result, "result", {})
             output = output if isinstance(output, dict) else {"result": output}
 
@@ -130,6 +126,10 @@ class RealtimePredictService(PredictService):
             if validation_error:
                 status = "FAILED"
                 output = {"_validation_error": validation_error, "raw_output": output}
+            elif runner_status == "SUCCESS":
+                status = "PENDING"  # awaiting actuals
+            else:
+                status = runner_status
 
             predictions[model.id] = self.make_prediction(
                 model_id=model.id, scope_key=scope_key, scope=scope,

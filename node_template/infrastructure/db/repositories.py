@@ -127,7 +127,9 @@ class DBPredictionRepository(PredictionRepository):
     def rollback(self) -> None:
         self._session.rollback()
 
-    def save(self, prediction: PredictionRecord) -> None:
+    # ── write ──
+
+    def save_prediction(self, prediction: PredictionRecord) -> None:
         existing = self._session.get(PredictionRow, prediction.id)
         row = self._domain_to_row(prediction)
 
@@ -138,6 +140,7 @@ class DBPredictionRepository(PredictionRepository):
             existing.exec_time_ms = row.exec_time_ms
             existing.inference_input_jsonb = row.inference_input_jsonb
             existing.inference_output_jsonb = row.inference_output_jsonb
+            existing.actuals_jsonb = row.actuals_jsonb
             existing.meta_jsonb = row.meta_jsonb
             existing.scope_key = row.scope_key
             existing.scope_jsonb = row.scope_jsonb
@@ -149,18 +152,55 @@ class DBPredictionRepository(PredictionRepository):
 
         self._session.commit()
 
-    def save_all(self, predictions: Iterable[PredictionRecord]) -> None:
+    def save_predictions(self, predictions: Iterable[PredictionRecord]) -> None:
         for prediction in predictions:
-            self.save(prediction)
+            self.save_prediction(prediction)
 
-    def fetch_ready_to_score(self) -> list[PredictionRecord]:
-        now = datetime.now(timezone.utc)
-        rows = self._session.exec(
-            select(PredictionRow)
-            .where(PredictionRow.score_scored_at.is_(None))
-            .where(PredictionRow.resolvable_at <= now)
-        ).all()
+    def save_actuals(self, prediction_id: str, actuals: dict[str, Any]) -> None:
+        row = self._session.get(PredictionRow, prediction_id)
+        if row is not None:
+            row.actuals_jsonb = actuals
+            row.status = "RESOLVED"
+            self._session.commit()
+
+    # ── query ──
+
+    def find_predictions(
+        self,
+        *,
+        status: str | list[str] | None = None,
+        scope_key: str | None = None,
+        model_id: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        resolvable_before: datetime | None = None,
+        limit: int | None = None,
+    ) -> list[PredictionRecord]:
+        stmt = select(PredictionRow)
+
+        if status is not None:
+            if isinstance(status, list):
+                stmt = stmt.where(PredictionRow.status.in_(status))
+            else:
+                stmt = stmt.where(PredictionRow.status == status)
+        if scope_key is not None:
+            stmt = stmt.where(PredictionRow.scope_key == scope_key)
+        if model_id is not None:
+            stmt = stmt.where(PredictionRow.model_id == model_id)
+        if since is not None:
+            stmt = stmt.where(PredictionRow.performed_at >= since)
+        if until is not None:
+            stmt = stmt.where(PredictionRow.performed_at <= until)
+        if resolvable_before is not None:
+            stmt = stmt.where(PredictionRow.resolvable_at <= resolvable_before)
+        if limit is not None:
+            stmt = stmt.limit(max(1, int(limit)))
+
+        stmt = stmt.order_by(PredictionRow.performed_at.asc())
+        rows = self._session.exec(stmt).all()
         return [self._row_to_domain(row) for row in rows]
+
+    # ── config ──
 
     def fetch_active_configs(self) -> list[dict]:
         rows = self._session.exec(
@@ -186,35 +226,7 @@ class DBPredictionRepository(PredictionRepository):
 
         return configs
 
-    def fetch_scored_predictions(self) -> list[PredictionRecord]:
-        rows = self._session.exec(
-            select(PredictionRow).where(PredictionRow.score_scored_at.is_not(None))
-        ).all()
-        return [self._row_to_domain(row) for row in rows]
-
-    def query_scores(
-        self,
-        model_ids: list[str],
-        _from: datetime | None,
-        to: datetime | None,
-    ) -> dict[str, list[PredictionRecord]]:
-        stmt = select(PredictionRow).where(PredictionRow.score_scored_at.is_not(None))
-
-        if model_ids:
-            stmt = stmt.where(PredictionRow.model_id.in_(model_ids))
-        if _from is not None:
-            stmt = stmt.where(PredictionRow.performed_at >= _from)
-        if to is not None:
-            stmt = stmt.where(PredictionRow.performed_at <= to)
-
-        rows = self._session.exec(stmt.order_by(PredictionRow.performed_at.asc())).all()
-
-        by_model: dict[str, list[PredictionRecord]] = {}
-        for row in rows:
-            prediction = self._row_to_domain(row)
-            by_model.setdefault(prediction.model_id, []).append(prediction)
-
-        return by_model
+    # ── mapping ──
 
     @staticmethod
     def _domain_to_row(prediction: PredictionRecord) -> PredictionRow:
@@ -240,6 +252,7 @@ class DBPredictionRepository(PredictionRepository):
             exec_time_ms=prediction.exec_time_ms,
             inference_input_jsonb=prediction.inference_input,
             inference_output_jsonb=prediction.inference_output,
+            actuals_jsonb=prediction.actuals,
             meta_jsonb=prediction.meta,
             performed_at=prediction.performed_at,
             resolvable_at=prediction.resolvable_at or prediction.performed_at,
@@ -277,6 +290,7 @@ class DBPredictionRepository(PredictionRepository):
             exec_time_ms=row.exec_time_ms,
             inference_input=row.inference_input_jsonb or {},
             inference_output=row.inference_output_jsonb or {},
+            actuals=row.actuals_jsonb,
             meta=row.meta_jsonb or {},
             performed_at=row.performed_at,
             resolvable_at=row.resolvable_at,

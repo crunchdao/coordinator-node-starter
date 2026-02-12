@@ -62,6 +62,10 @@ class PredictionRow(SQLModel, table=True):
         default_factory=dict,
         sa_column=Column(JSONB),
     )
+    actuals_jsonb: Optional[dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSONB, nullable=True),
+    )
     meta_jsonb: dict[str, Any] = Field(
         default_factory=dict,
         sa_column=Column(JSONB),

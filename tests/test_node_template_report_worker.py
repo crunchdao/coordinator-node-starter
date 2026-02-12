@@ -66,14 +66,30 @@ class InMemoryPredictionRepository(PredictionRepository):
     def __init__(self, predictions: list[PredictionRecord]):
         self._predictions = predictions
 
-    def save(self, prediction: PredictionRecord) -> None:
+    def save_prediction(self, prediction: PredictionRecord) -> None:
         raise NotImplementedError
 
-    def save_all(self, predictions):
+    def save_predictions(self, predictions):
         raise NotImplementedError
 
-    def fetch_ready_to_score(self):
-        return []
+    def save_actuals(self, prediction_id, actuals):
+        raise NotImplementedError
+
+    def find_predictions(self, *, status=None, scope_key=None, model_id=None,
+                         since=None, until=None, resolvable_before=None, limit=None):
+        results = list(self._predictions)
+        if status is not None:
+            if isinstance(status, list):
+                results = [p for p in results if p.status in status]
+            else:
+                results = [p for p in results if p.status == status]
+        if model_id is not None:
+            results = [p for p in results if p.model_id == model_id]
+        if since is not None:
+            results = [p for p in results if p.performed_at >= since]
+        if until is not None:
+            results = [p for p in results if p.performed_at <= until]
+        return results
 
     def query_scores(self, model_ids: list[str], _from: datetime | None, to: datetime | None):
         result: dict[str, list[PredictionRecord]] = {}

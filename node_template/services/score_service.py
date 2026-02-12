@@ -11,7 +11,6 @@ from coordinator_core.services.interfaces.leaderboard_repository import Leaderbo
 from coordinator_core.services.interfaces.model_repository import ModelRepository
 from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
 from node_template.contracts import CrunchContract
-from node_template.services.input_service import InputService
 
 
 class ScoreService:
@@ -22,19 +21,14 @@ class ScoreService:
         prediction_repository: PredictionRepository | None = None,
         model_repository: ModelRepository | None = None,
         leaderboard_repository: LeaderboardRepository | None = None,
-        input_service: InputService | None = None,
         contract: CrunchContract | None = None,
-        # Legacy params — ignored but accepted for backward compat
-        ground_truth_resolver: Any = None,
-        model_score_aggregator: Any = None,
-        leaderboard_ranker: Any = None,
+        **kwargs,
     ):
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
         self.scoring_function = scoring_function
         self.prediction_repository = prediction_repository
         self.model_repository = model_repository
         self.leaderboard_repository = leaderboard_repository
-        self.input_service = input_service
         self.contract = contract or CrunchContract()
 
         self.logger = logging.getLogger(__name__)
@@ -58,7 +52,7 @@ class ScoreService:
                 pass
 
     def run_once(self) -> bool:
-        predictions = list(self.prediction_repository.fetch_ready_to_score())
+        predictions = self.prediction_repository.find_predictions(status="RESOLVED")
         if not predictions:
             self.logger.info("No predictions ready to score")
             return False
@@ -67,11 +61,11 @@ class ScoreService:
         scored_predictions = []
 
         for prediction in predictions:
-            ground_truth = self._resolve_ground_truth(prediction)
-            if ground_truth is None:
+            actuals = prediction.actuals
+            if actuals is None:
                 continue
 
-            result = self.scoring_function(prediction.inference_output, ground_truth)
+            result = self.scoring_function(prediction.inference_output, actuals)
 
             # Validate score via contract type
             validated = self.contract.score_type(**result)
@@ -82,6 +76,7 @@ class ScoreService:
                 failed_reason=validated.failed_reason,
                 scored_at=now,
             )
+            prediction.status = "SCORED"
             scored_predictions.append(prediction)
 
         if not scored_predictions:
@@ -106,24 +101,6 @@ class ScoreService:
         self.leaderboard_repository.save(
             ranked_entries,
             meta={"generated_by": "node_template.score_service"},
-        )
-
-    def _resolve_ground_truth(self, prediction) -> dict[str, Any] | None:
-        if self.input_service is None:
-            return {}
-
-        performed_at = getattr(prediction, "performed_at", None)
-        resolvable_at = getattr(prediction, "resolvable_at", None)
-        if performed_at is None or resolvable_at is None:
-            return None
-
-        scope = getattr(prediction, "scope", {}) or {}
-        asset = scope.get("asset")
-
-        return self.input_service.get_ground_truth(
-            performed_at=performed_at,
-            resolvable_at=resolvable_at,
-            asset=asset,
         )
 
     def _aggregate_model_scores(self, scored_predictions, models) -> list[dict[str, Any]]:

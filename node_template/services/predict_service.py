@@ -19,10 +19,12 @@ try:
     from model_runner_client.model_concurrent_runners.dynamic_subclass_model_concurrent_runner import (
         DynamicSubclassModelConcurrentRunner,
     )
+    from model_runner_client.model_concurrent_runners.model_concurrent_runner import ModelConcurrentRunner
     from model_runner_client.utils.datatype_transformer import encode_data
 
     MODEL_RUNNER_PROTO_AVAILABLE = True
 except Exception:  # pragma: no cover
+    ModelConcurrentRunner = None  # type: ignore[misc,assignment]
     MODEL_RUNNER_PROTO_AVAILABLE = False
 
 
@@ -36,7 +38,7 @@ class PredictService:
         transform: Callable | None = None,
         model_repository: ModelRepository | None = None,
         prediction_repository: PredictionRepository | None = None,
-        runner=None,
+        runner: ModelConcurrentRunner | None = None,
         model_runner_node_host: str = "model-orchestrator",
         model_runner_node_port: int = 9091,
         model_runner_timeout_seconds: float = 60,

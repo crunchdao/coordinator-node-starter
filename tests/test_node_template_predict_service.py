@@ -43,6 +43,9 @@ class FakeInputService:
     def get_input(self, now):
         return self._payload
 
+    def get_ground_truth(self, performed_at, resolvable_at, asset=None):
+        return None
+
 
 class InMemoryModelRepository:
     def __init__(self):
@@ -63,11 +66,33 @@ class InMemoryPredictionRepository:
     def __init__(self):
         self.saved_predictions: list[PredictionRecord] = []
 
-    def save(self, prediction: PredictionRecord):
+    def save_prediction(self, prediction: PredictionRecord):
         self.saved_predictions.append(prediction)
 
-    def save_all(self, predictions):
+    def save_predictions(self, predictions):
         self.saved_predictions.extend(list(predictions))
+
+    def save_actuals(self, prediction_id, actuals):
+        for p in self.saved_predictions:
+            if p.id == prediction_id:
+                p.actuals = actuals
+                p.status = "RESOLVED"
+
+    def find_predictions(self, *, status=None, resolvable_before=None, **kwargs):
+        results = self.saved_predictions
+        if status is not None:
+            if isinstance(status, list):
+                results = [p for p in results if p.status in status]
+            else:
+                results = [p for p in results if p.status == status]
+        return results
+
+    # legacy compat
+    def save(self, prediction):
+        self.save_prediction(prediction)
+
+    def save_all(self, predictions):
+        self.save_predictions(predictions)
 
     def fetch_active_configs(self):
         return [

@@ -14,14 +14,34 @@ class InMemoryPredictionRepository:
         self.predictions = predictions
         self.saved_predictions = []
 
-    def fetch_ready_to_score(self):
-        return self.predictions
+    def find_predictions(self, *, status=None, **kwargs):
+        if status is None:
+            return self.predictions
+        if isinstance(status, list):
+            return [p for p in self.predictions if p.status in status]
+        return [p for p in self.predictions if p.status == status]
 
-    def save(self, prediction):
+    def save_prediction(self, prediction):
         self.saved_predictions.append(prediction)
 
-    def save_all(self, predictions):
+    def save_predictions(self, predictions):
         self.saved_predictions.extend(list(predictions))
+
+    def save_actuals(self, prediction_id, actuals):
+        for p in self.predictions:
+            if p.id == prediction_id:
+                p.actuals = actuals
+                p.status = "RESOLVED"
+
+    # legacy compat
+    def save(self, prediction):
+        self.save_prediction(prediction)
+
+    def save_all(self, predictions):
+        self.save_predictions(predictions)
+
+    def fetch_ready_to_score(self):
+        return self.find_predictions(status="RESOLVED")
 
     def fetch_scored_predictions(self):
         return [p for p in self.saved_predictions if p.score is not None]
@@ -31,11 +51,8 @@ class InMemoryModelRepository:
     def __init__(self):
         self.models = {
             "m1": Model(
-                id="m1",
-                name="model-one",
-                player_id="p1",
-                player_name="alice",
-                deployment_identifier="d1",
+                id="m1", name="model-one", player_id="p1",
+                player_name="alice", deployment_identifier="d1",
             )
         }
 
@@ -50,10 +67,6 @@ class InMemoryModelRepository:
 
     def save(self, model):
         self.models[model.id] = model
-
-    def save_all(self, models):
-        for model in models:
-            self.save(model)
 
 
 class InMemoryLeaderboardRepository:
@@ -94,34 +107,30 @@ class RollbackLeaderboardRepository(InMemoryLeaderboardRepository):
         self.rollback_calls += 1
 
 
+def _make_prediction(status="RESOLVED", actuals=None):
+    return PredictionRecord(
+        id="pre-1", model_id="m1", prediction_config_id="CFG_1",
+        scope_key="BTC-60", scope={"asset": "BTC", "horizon": 60},
+        status=status, exec_time_ms=10.0,
+        inference_input={"x": 1}, inference_output={"distribution": []},
+        actuals=actuals,
+        performed_at=datetime.now(timezone.utc) - timedelta(minutes=2),
+        resolvable_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+    )
+
+
 class TestNodeTemplateScoreService(unittest.TestCase):
     def test_run_once_scores_and_builds_leaderboard(self):
-        prediction = PredictionRecord(
-            id="pre-1",
-            model_id="m1",
-            prediction_config_id="CFG_1",
-            scope_key="BTC-60",
-            scope={"asset": "BTC", "horizon": 60, "step": 60},
-            status="SUCCESS",
-            exec_time_ms=10.0,
-            inference_input={"x": 1},
-            inference_output={"distribution": []},
-            performed_at=datetime.now(timezone.utc) - timedelta(minutes=2),
-            resolvable_at=datetime.now(timezone.utc) - timedelta(minutes=1),
-        )
-
+        prediction = _make_prediction(status="RESOLVED", actuals={"y_up": True})
         prediction_repo = InMemoryPredictionRepository([prediction])
-        model_repo = InMemoryModelRepository()
         leaderboard_repo = InMemoryLeaderboardRepository()
 
         service = ScoreService(
             checkpoint_interval_seconds=60,
-            scoring_function=lambda prediction, ground_truth: {"value": 0.5, "success": True, "failed_reason": None},
+            scoring_function=lambda pred, actuals: {"value": 0.5, "success": True, "failed_reason": None},
             prediction_repository=prediction_repo,
-            model_repository=model_repo,
+            model_repository=InMemoryModelRepository(),
             leaderboard_repository=leaderboard_repo,
-            ground_truth_resolver=lambda prediction: {"y_up": True},
-            contract=CrunchContract(),
         )
 
         changed = service.run_once()
@@ -129,42 +138,22 @@ class TestNodeTemplateScoreService(unittest.TestCase):
         self.assertTrue(changed)
         self.assertEqual(len(prediction_repo.saved_predictions), 1)
         self.assertIsNotNone(prediction_repo.saved_predictions[0].score)
+        self.assertEqual(prediction_repo.saved_predictions[0].status, "SCORED")
         self.assertIsNotNone(leaderboard_repo.latest)
         self.assertEqual(leaderboard_repo.latest["entries"][0]["model_id"], "m1")
         self.assertEqual(leaderboard_repo.latest["entries"][0]["rank"], 1)
-        self.assertEqual(leaderboard_repo.latest["entries"][0]["score"]["ranking"]["key"], "score_recent")
-        self.assertIn("score_recent", leaderboard_repo.latest["entries"][0]["score"]["metrics"])
 
-    def test_run_once_skips_predictions_without_ground_truth(self):
-        prediction = PredictionRecord(
-            id="pre-1",
-            model_id="m1",
-            prediction_config_id="CFG_1",
-            scope_key="BTC-60",
-            scope={"asset": "BTC", "horizon": 60, "step": 60},
-            status="SUCCESS",
-            exec_time_ms=10.0,
-            inference_input={"x": 1},
-            inference_output={"p_up": 0.5},
-            performed_at=datetime.now(timezone.utc) - timedelta(minutes=2),
-            resolvable_at=datetime.now(timezone.utc) - timedelta(minutes=1),
-        )
-
+    def test_run_once_skips_predictions_without_actuals(self):
+        prediction = _make_prediction(status="RESOLVED", actuals=None)
         prediction_repo = InMemoryPredictionRepository([prediction])
-        model_repo = InMemoryModelRepository()
         leaderboard_repo = InMemoryLeaderboardRepository()
-
-        class NullInputService:
-            def get_ground_truth(self, performed_at, resolvable_at, asset=None):
-                return None
 
         service = ScoreService(
             checkpoint_interval_seconds=60,
-            scoring_function=lambda prediction, ground_truth: {"value": 0.5, "success": True, "failed_reason": None},
+            scoring_function=lambda pred, actuals: {"value": 0.5, "success": True, "failed_reason": None},
             prediction_repository=prediction_repo,
-            model_repository=model_repo,
+            model_repository=InMemoryModelRepository(),
             leaderboard_repository=leaderboard_repo,
-            input_service=NullInputService(),
         )
 
         changed = service.run_once()
@@ -175,18 +164,14 @@ class TestNodeTemplateScoreService(unittest.TestCase):
 
     def test_run_once_logs_when_no_predictions_ready(self):
         prediction_repo = InMemoryPredictionRepository([])
-        model_repo = InMemoryModelRepository()
         leaderboard_repo = InMemoryLeaderboardRepository()
 
         service = ScoreService(
             checkpoint_interval_seconds=60,
-            scoring_function=lambda prediction, ground_truth: {"value": 0.5, "success": True, "failed_reason": None},
+            scoring_function=lambda pred, actuals: {"value": 0.5, "success": True, "failed_reason": None},
             prediction_repository=prediction_repo,
-            model_repository=model_repo,
+            model_repository=InMemoryModelRepository(),
             leaderboard_repository=leaderboard_repo,
-            model_score_aggregator=lambda scored_predictions, models: [],
-            leaderboard_ranker=lambda entries: entries,
-            ground_truth_resolver=lambda prediction: {"y_up": True},
         )
 
         with self.assertLogs("node_template.services.score_service", level="INFO") as logs:
@@ -196,10 +181,6 @@ class TestNodeTemplateScoreService(unittest.TestCase):
         self.assertTrue(any("No predictions ready to score" in line for line in logs.output))
 
     def test_rank_leaderboard_honors_ascending_ranking_direction(self):
-        prediction_repo = InMemoryPredictionRepository([])
-        model_repo = InMemoryModelRepository()
-        leaderboard_repo = InMemoryLeaderboardRepository()
-
         asc_contract = CrunchContract(
             aggregation=Aggregation(
                 windows={"loss": AggregationWindow(hours=24)},
@@ -210,37 +191,20 @@ class TestNodeTemplateScoreService(unittest.TestCase):
 
         service = ScoreService(
             checkpoint_interval_seconds=60,
-            scoring_function=lambda prediction, ground_truth: {"value": 0.5, "success": True, "failed_reason": None},
-            prediction_repository=prediction_repo,
-            model_repository=model_repo,
-            leaderboard_repository=leaderboard_repo,
-            ground_truth_resolver=lambda prediction: {"y_up": True},
+            scoring_function=lambda pred, actuals: {"value": 0.5, "success": True, "failed_reason": None},
+            prediction_repository=InMemoryPredictionRepository([]),
+            model_repository=InMemoryModelRepository(),
+            leaderboard_repository=InMemoryLeaderboardRepository(),
             contract=asc_contract,
         )
 
-        ranked = service._rank_leaderboard(
-            [
-                {
-                    "model_id": "m1",
-                    "score": {
-                        "metrics": {"loss": 0.4},
-                        "ranking": {"key": "loss", "direction": "asc"},
-                        "payload": {},
-                    },
-                },
-                {
-                    "model_id": "m2",
-                    "score": {
-                        "metrics": {"loss": 0.2},
-                        "ranking": {"key": "loss", "direction": "asc"},
-                        "payload": {},
-                    },
-                },
-            ]
-        )
+        ranked = service._rank_leaderboard([
+            {"model_id": "m1", "score": {"metrics": {"loss": 0.4}, "ranking": {"key": "loss", "direction": "asc"}, "payload": {}}},
+            {"model_id": "m2", "score": {"metrics": {"loss": 0.2}, "ranking": {"key": "loss", "direction": "asc"}, "payload": {}}},
+        ])
 
-        self.assertEqual([entry["model_id"] for entry in ranked], ["m2", "m1"])
-        self.assertEqual([entry["rank"] for entry in ranked], [1, 2])
+        self.assertEqual([e["model_id"] for e in ranked], ["m2", "m1"])
+        self.assertEqual([e["rank"] for e in ranked], [1, 2])
 
 
 class TestNodeTemplateScoreServiceRunLoop(unittest.IsolatedAsyncioTestCase):
@@ -251,13 +215,10 @@ class TestNodeTemplateScoreServiceRunLoop(unittest.IsolatedAsyncioTestCase):
 
         service = ScoreService(
             checkpoint_interval_seconds=60,
-            scoring_function=lambda prediction, ground_truth: {"value": 0.5, "success": True, "failed_reason": None},
+            scoring_function=lambda pred, actuals: {"value": 0.5, "success": True, "failed_reason": None},
             prediction_repository=prediction_repo,
             model_repository=model_repo,
             leaderboard_repository=leaderboard_repo,
-            model_score_aggregator=lambda scored_predictions, models: [],
-            leaderboard_ranker=lambda entries: entries,
-            ground_truth_resolver=lambda prediction: {"y_up": True},
         )
 
         def boom_once():
