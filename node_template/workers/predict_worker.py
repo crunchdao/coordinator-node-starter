@@ -20,15 +20,12 @@ def configure_logging() -> None:
 
 def build_service() -> PredictService:
     runtime_settings = RuntimeSettings.from_env()
-    contract = CrunchContract()
-    input_service = InputService.from_env()
-
     session = create_session()
 
     return PredictService(
         checkpoint_interval_seconds=runtime_settings.checkpoint_interval_seconds,
-        raw_input_provider=input_service.get_input,
-        contract=contract,
+        input_service=InputService.from_env(),
+        contract=CrunchContract(),
         model_repository=DBModelRepository(session),
         prediction_repository=DBPredictionRepository(session),
         model_runner_node_host=runtime_settings.model_runner_node_host,
@@ -41,7 +38,7 @@ def build_service() -> PredictService:
 
 async def main() -> None:
     configure_logging()
-    logging.getLogger(__name__).info("node_template predict worker bootstrap")
+    logging.getLogger(__name__).info("predict worker bootstrap")
     service = build_service()
     await service.run()
 

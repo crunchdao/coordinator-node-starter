@@ -36,6 +36,16 @@ class FakeRunner:
         return {FakeModelRun("m1"): FakePredictionResult()}
 
 
+class FakeInputService:
+    """Returns a fixed payload for get_input."""
+
+    def __init__(self, payload=None):
+        self._payload = payload or {}
+
+    def get_input(self, now):
+        return self._payload
+
+
 class InMemoryModelRepository:
     def __init__(self):
         self.models: dict[str, Model] = {}
@@ -89,7 +99,7 @@ class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
 
         service = PredictService(
             checkpoint_interval_seconds=60,
-            raw_input_provider=None,
+            input_service=FakeInputService(),
             contract=CrunchContract(),
             model_repository=model_repo,
             prediction_repository=prediction_repo,
@@ -102,26 +112,23 @@ class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(prediction_repo.saved_predictions), 1)
         self.assertEqual(prediction_repo.saved_predictions[0].scope_key, "BTC-60-60")
         self.assertEqual(prediction_repo.saved_predictions[0].scope.get("asset"), "BTC")
-        # Contract validates input — symbol should be present
         self.assertEqual(prediction_repo.saved_predictions[0].inference_input["symbol"], "BTC")
-        # Contract validates output — value should be present
         self.assertIn("value", prediction_repo.saved_predictions[0].inference_output)
 
-    async def test_run_once_uses_raw_input_provider_when_input_not_given(self):
+    async def test_run_once_uses_input_service_when_input_not_given(self):
         model_repo = InMemoryModelRepository()
         prediction_repo = InMemoryPredictionRepository()
 
         service = PredictService(
             checkpoint_interval_seconds=60,
-            raw_input_provider=lambda now: {"symbol": "ETH", "asof_ts": int(now.timestamp())},
+            input_service=FakeInputService({"symbol": "ETH", "asof_ts": 999}),
             contract=CrunchContract(),
             model_repository=model_repo,
             prediction_repository=prediction_repo,
             runner=FakeRunner(),
         )
 
-        now = datetime.now(timezone.utc)
-        await service.run_once(now=now)
+        await service.run_once(now=datetime.now(timezone.utc))
 
         self.assertGreaterEqual(len(prediction_repo.saved_predictions), 1)
         self.assertEqual(prediction_repo.saved_predictions[0].inference_input["symbol"], "ETH")
@@ -132,7 +139,7 @@ class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
 
         service = PredictService(
             checkpoint_interval_seconds=60,
-            raw_input_provider=None,
+            input_service=FakeInputService(),
             contract=CrunchContract(),
             model_repository=model_repo,
             prediction_repository=prediction_repo,
@@ -147,11 +154,9 @@ class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("No active prediction configs" in line for line in logs.output))
 
     async def test_run_once_logs_output_validation_error(self):
-        """When model output doesn't match contract, prediction is marked FAILED."""
         model_repo = InMemoryModelRepository()
         prediction_repo = InMemoryPredictionRepository()
 
-        # Use a strict contract that rejects non-numeric values
         from pydantic import BaseModel, Field
 
         class StrictOutput(BaseModel):
@@ -159,14 +164,13 @@ class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
 
         contract = CrunchContract(output_type=StrictOutput)
 
-        # FakeRunner returns {"value": 0.5} which is valid, so let's make it invalid
         class BadRunner(FakeRunner):
             async def call(self, method, args):
                 return {FakeModelRun("m1"): FakePredictionResult(result={"value": "not-a-number"})}
 
         service = PredictService(
             checkpoint_interval_seconds=60,
-            raw_input_provider=None,
+            input_service=FakeInputService(),
             contract=contract,
             model_repository=model_repo,
             prediction_repository=prediction_repo,
