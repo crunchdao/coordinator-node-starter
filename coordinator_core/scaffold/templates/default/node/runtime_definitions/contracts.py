@@ -3,7 +3,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class MarketInput(BaseModel):
+class RawInput(BaseModel):
     """What the feed produces. Shape is determined by feed config."""
 
     model_config = ConfigDict(extra="allow")
@@ -13,8 +13,8 @@ class MarketInput(BaseModel):
     candles_1m: list[dict] = Field(default_factory=list)
 
 
-class InferenceInput(MarketInput):
-    """What models receive. Same as MarketInput unless you override.
+class InferenceInput(RawInput):
+    """What models receive. Same as RawInput unless you override.
 
     To transform market data before it reaches models, define a different
     shape here and provide a transform function:
@@ -23,7 +23,7 @@ class InferenceInput(MarketInput):
             symbol: str
             momentum: float
 
-        def transform(market: MarketInput) -> InferenceInput:
+        def transform(market: RawInput) -> InferenceInput:
             candles = market.candles_1m
             momentum = candles[-1]["close"] - candles[0]["close"] if candles else 0.0
             return InferenceInput(symbol=market.symbol, momentum=momentum)
@@ -79,7 +79,7 @@ class CrunchContract(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    market_input_type: type[BaseModel] = MarketInput
+    raw_input_type: type[BaseModel] = RawInput
     input_type: type[BaseModel] = InferenceInput
     output_type: type[BaseModel] = InferenceOutput
     score_type: type[BaseModel] = ScoreResult

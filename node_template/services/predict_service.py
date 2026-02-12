@@ -92,12 +92,12 @@ class PredictService:
         await self._ensure_models_loaded()
 
         # Validate market data via contract, then optionally transform
-        market_data = self.contract.market_input_type(**raw_input)
+        raw_data = self.contract.raw_input_type(**raw_input)
         if self.transform is not None:
-            transformed = self.transform(market_data)
+            transformed = self.transform(raw_data)
             inference_input = self.contract.input_type.model_validate(transformed).model_dump()
         else:
-            inference_input = self.contract.input_type(**market_data.model_dump()).model_dump()
+            inference_input = self.contract.input_type(**raw_data.model_dump()).model_dump()
         tick_responses = await self._call_runner_tick(inference_input)
         self._save_models_from_responses(tick_responses)
 
