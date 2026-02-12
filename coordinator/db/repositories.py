@@ -16,14 +16,9 @@ from coordinator.db.tables import (
     ScoreRow,
 )
 from coordinator.schemas import PredictionScopeEnvelope, ScheduledPredictionConfigEnvelope, ScoreEnvelope
-from coordinator.interfaces.input_repository import InputRepository
-from coordinator.interfaces.leaderboard_repository import LeaderboardRepository
-from coordinator.interfaces.model_repository import ModelRepository
-from coordinator.interfaces.prediction_repository import PredictionRepository
-from coordinator.interfaces.score_repository import ScoreRepository
 
 
-class DBModelRepository(ModelRepository):
+class DBModelRepository:
     def __init__(self, session: Session):
         self._session = session
 
@@ -124,7 +119,7 @@ class DBModelRepository(ModelRepository):
         )
 
 
-class DBInputRepository(InputRepository):
+class DBInputRepository:
     def __init__(self, session: Session):
         self._session = session
 
@@ -173,7 +168,7 @@ class DBInputRepository(InputRepository):
         ) for r in rows]
 
 
-class DBPredictionRepository(PredictionRepository):
+class DBPredictionRepository:
     def __init__(self, session: Session):
         self._session = session
 
@@ -279,7 +274,7 @@ class DBPredictionRepository(PredictionRepository):
         )
 
 
-class DBScoreRepository(ScoreRepository):
+class DBScoreRepository:
     def __init__(self, session: Session):
         self._session = session
 
@@ -325,7 +320,7 @@ class DBScoreRepository(ScoreRepository):
         ) for r in rows]
 
 
-class DBLeaderboardRepository(LeaderboardRepository):
+class DBLeaderboardRepository:
     def __init__(self, session: Session):
         self._session = session
 

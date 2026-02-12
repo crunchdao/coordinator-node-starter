@@ -8,11 +8,10 @@ from typing import Any, Callable
 
 from coordinator.entities.prediction import ScoreRecord
 from coordinator.schemas import LeaderboardEntryEnvelope, ScoreEnvelope
-from coordinator.interfaces.input_repository import InputRepository
-from coordinator.interfaces.leaderboard_repository import LeaderboardRepository
-from coordinator.interfaces.model_repository import ModelRepository
-from coordinator.interfaces.prediction_repository import PredictionRepository
-from coordinator.interfaces.score_repository import ScoreRepository
+from coordinator.db.repositories import (
+    DBInputRepository, DBLeaderboardRepository, DBModelRepository,
+    DBPredictionRepository, DBScoreRepository,
+)
 from coordinator.contracts import CrunchContract
 from coordinator.services.input import InputService
 
@@ -23,11 +22,11 @@ class ScoreService:
         checkpoint_interval_seconds: int,
         scoring_function: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]],
         input_service: InputService | None = None,
-        input_repository: InputRepository | None = None,
-        prediction_repository: PredictionRepository | None = None,
-        score_repository: ScoreRepository | None = None,
-        model_repository: ModelRepository | None = None,
-        leaderboard_repository: LeaderboardRepository | None = None,
+        input_repository: DBInputRepository | None = None,
+        prediction_repository: DBPredictionRepository | None = None,
+        score_repository: DBScoreRepository | None = None,
+        model_repository: DBModelRepository | None = None,
+        leaderboard_repository: DBLeaderboardRepository | None = None,
         contract: CrunchContract | None = None,
         **kwargs: Any,
     ):

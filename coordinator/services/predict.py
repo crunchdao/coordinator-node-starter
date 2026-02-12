@@ -9,9 +9,7 @@ from typing import Any, Callable
 
 from coordinator.entities.model import Model
 from coordinator.entities.prediction import InputRecord, PredictionRecord
-from coordinator.interfaces.input_repository import InputRepository
-from coordinator.interfaces.model_repository import ModelRepository
-from coordinator.interfaces.prediction_repository import PredictionRepository
+from coordinator.db.repositories import DBInputRepository, DBModelRepository, DBPredictionRepository
 from coordinator.contracts import CrunchContract
 from coordinator.services.input import InputService
 
@@ -37,9 +35,9 @@ class PredictService:
         input_service: InputService,
         contract: CrunchContract | None = None,
         transform: Callable | None = None,
-        input_repository: InputRepository | None = None,
-        model_repository: ModelRepository | None = None,
-        prediction_repository: PredictionRepository | None = None,
+        input_repository: DBInputRepository | None = None,
+        model_repository: DBModelRepository | None = None,
+        prediction_repository: DBPredictionRepository | None = None,
         runner: ModelConcurrentRunner | None = None,
         model_runner_node_host: str = "model-orchestrator",
         model_runner_node_port: int = 9091,

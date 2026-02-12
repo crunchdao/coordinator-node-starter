@@ -9,10 +9,9 @@ from sqlmodel import Session, delete, select
 
 from coordinator.entities.market_record import MarketIngestionState, MarketRecord
 from coordinator.db.tables import MarketIngestionStateRow, MarketRecordRow
-from coordinator.interfaces.market_record_repository import MarketRecordRepository
 
 
-class DBMarketRecordRepository(MarketRecordRepository):
+class DBMarketRecordRepository:
     def __init__(self, session: Session):
         self._session = session
 

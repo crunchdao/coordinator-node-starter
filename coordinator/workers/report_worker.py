@@ -8,12 +8,8 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from sqlmodel import Session
 
-from coordinator.schemas import LeaderboardEntryEnvelope, ReportSchemaEnvelope
-from coordinator.interfaces.leaderboard_repository import LeaderboardRepository
-from coordinator.interfaces.market_record_repository import MarketRecordRepository
-from coordinator.interfaces.model_repository import ModelRepository
-from coordinator.interfaces.prediction_repository import PredictionRepository
 from coordinator.contracts import CrunchContract
+from coordinator.schemas import LeaderboardEntryEnvelope, ReportSchemaEnvelope
 from coordinator.db import (
     DBLeaderboardRepository,
     DBMarketRecordRepository,
@@ -173,25 +169,25 @@ def get_db_session() -> Generator[Session, Any, None]:
 
 def get_model_repository(
     session_db: Annotated[Session, Depends(get_db_session)]
-) -> ModelRepository:
+) -> DBModelRepository:
     return DBModelRepository(session_db)
 
 
 def get_leaderboard_repository(
     session_db: Annotated[Session, Depends(get_db_session)]
-) -> LeaderboardRepository:
+) -> DBLeaderboardRepository:
     return DBLeaderboardRepository(session_db)
 
 
 def get_prediction_repository(
     session_db: Annotated[Session, Depends(get_db_session)]
-) -> PredictionRepository:
+) -> DBPredictionRepository:
     return DBPredictionRepository(session_db)
 
 
 def get_market_record_repository(
     session_db: Annotated[Session, Depends(get_db_session)]
-) -> MarketRecordRepository:
+) -> DBMarketRecordRepository:
     return DBMarketRecordRepository(session_db)
 
 
@@ -217,7 +213,7 @@ def get_report_schema_metrics_widgets() -> list[dict[str, Any]]:
 
 @app.get("/reports/models")
 def get_models(
-    model_repo: Annotated[ModelRepository, Depends(get_model_repository)]
+    model_repo: Annotated[DBModelRepository, Depends(get_model_repository)]
 ) -> list[dict]:
     models = model_repo.fetch_all()
 
@@ -235,7 +231,7 @@ def get_models(
 
 @app.get("/reports/leaderboard")
 def get_leaderboard(
-    leaderboard_repo: Annotated[LeaderboardRepository, Depends(get_leaderboard_repository)]
+    leaderboard_repo: Annotated[DBLeaderboardRepository, Depends(get_leaderboard_repository)]
 ) -> list[dict]:
     leaderboard = leaderboard_repo.get_latest()
     if leaderboard is None:
@@ -271,7 +267,7 @@ def get_models_global(
     model_ids: Annotated[list[str], Query(..., alias="projectIds")],
     start: Annotated[datetime, Query(...)],
     end: Annotated[datetime, Query(...)],
-    prediction_repo: Annotated[PredictionRepository, Depends(get_prediction_repository)],
+    prediction_repo: Annotated[DBPredictionRepository, Depends(get_prediction_repository)],
 ) -> list[dict]:
     model_ids = _normalize_project_ids(model_ids)
     predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
@@ -311,7 +307,7 @@ def get_models_params(
     model_ids: Annotated[list[str], Query(..., alias="projectIds")],
     start: Annotated[datetime, Query(...)],
     end: Annotated[datetime, Query(...)],
-    prediction_repo: Annotated[PredictionRepository, Depends(get_prediction_repository)],
+    prediction_repo: Annotated[DBPredictionRepository, Depends(get_prediction_repository)],
 ) -> list[dict]:
     model_ids = _normalize_project_ids(model_ids)
     predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
@@ -360,7 +356,7 @@ def get_predictions(
     model_ids: Annotated[list[str], Query(..., alias="projectIds")],
     start: Annotated[datetime, Query(...)],
     end: Annotated[datetime, Query(...)],
-    prediction_repo: Annotated[PredictionRepository, Depends(get_prediction_repository)],
+    prediction_repo: Annotated[DBPredictionRepository, Depends(get_prediction_repository)],
 ) -> list[dict]:
     model_ids = _normalize_project_ids(model_ids)
     predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
@@ -388,14 +384,14 @@ def get_predictions(
 
 @app.get("/reports/feeds")
 def get_feeds(
-    market_repo: Annotated[MarketRecordRepository, Depends(get_market_record_repository)],
+    market_repo: Annotated[DBMarketRecordRepository, Depends(get_market_record_repository)],
 ) -> list[dict[str, Any]]:
     return market_repo.list_indexed_feeds()
 
 
 @app.get("/reports/feeds/tail")
 def get_feeds_tail(
-    market_repo: Annotated[MarketRecordRepository, Depends(get_market_record_repository)],
+    market_repo: Annotated[DBMarketRecordRepository, Depends(get_market_record_repository)],
     provider: Annotated[str | None, Query()] = None,
     asset: Annotated[str | None, Query()] = None,
     kind: Annotated[str | None, Query()] = None,

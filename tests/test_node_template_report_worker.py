@@ -6,9 +6,6 @@ from datetime import datetime, timedelta, timezone
 from coordinator.entities.market_record import MarketRecord
 from coordinator.entities.model import Model
 from coordinator.entities.prediction import PredictionRecord, PredictionScore, ScoreRecord
-from coordinator.interfaces.leaderboard_repository import LeaderboardRepository
-from coordinator.interfaces.model_repository import ModelRepository
-from coordinator.interfaces.prediction_repository import PredictionRepository
 from coordinator.contracts import CrunchContract
 from coordinator.workers.report_worker import (
     auto_report_schema,
@@ -25,7 +22,7 @@ from coordinator.workers.report_worker import (
 )
 
 
-class InMemoryModelRepository(ModelRepository):
+class InMemoryModelRepository:
     def __init__(self, models: dict[str, Model]):
         self._models = models
 
@@ -46,7 +43,7 @@ class InMemoryModelRepository(ModelRepository):
             self.save(model)
 
 
-class InMemoryLeaderboardRepository(LeaderboardRepository):
+class InMemoryLeaderboardRepository:
     def __init__(self, latest: dict | None):
         self._latest = latest
 
@@ -62,7 +59,7 @@ class InMemoryLeaderboardRepository(LeaderboardRepository):
         return self._latest
 
 
-class InMemoryPredictionRepository(PredictionRepository):
+class InMemoryPredictionRepository:
     def __init__(self, predictions: list[PredictionRecord]):
         self._predictions = predictions
 
