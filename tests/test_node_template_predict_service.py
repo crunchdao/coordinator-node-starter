@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 
 from coordinator_core.entities.model import Model
 from coordinator_core.entities.prediction import PredictionRecord
-from node_template.contracts import CrunchContract, InferenceInput, InferenceOutput
-from node_template.services.predict_service import PredictService
+from node_template.contracts import CrunchContract
+from node_template.services.realtime_predict_service import RealtimePredictService
 
 
 class FakeModelRun:
@@ -37,8 +37,6 @@ class FakeRunner:
 
 
 class FakeInputService:
-    """Returns a fixed payload for get_input."""
-
     def __init__(self, payload=None):
         self._payload = payload or {}
 
@@ -71,9 +69,6 @@ class InMemoryPredictionRepository:
     def save_all(self, predictions):
         self.saved_predictions.extend(list(predictions))
 
-    def fetch_ready_to_score(self):
-        return []
-
     def fetch_active_configs(self):
         return [
             {
@@ -92,98 +87,78 @@ class NoConfigPredictionRepository(InMemoryPredictionRepository):
         return []
 
 
-class TestNodeTemplatePredictService(unittest.IsolatedAsyncioTestCase):
-    async def test_run_once_generates_prediction_rows(self):
-        model_repo = InMemoryModelRepository()
-        prediction_repo = InMemoryPredictionRepository()
+def _make_service(input_service=None, prediction_repo=None, runner=None, contract=None):
+    return RealtimePredictService(
+        checkpoint_interval_seconds=60,
+        input_service=input_service or FakeInputService(),
+        contract=contract or CrunchContract(),
+        model_repository=InMemoryModelRepository(),
+        prediction_repository=prediction_repo or InMemoryPredictionRepository(),
+        runner=runner or FakeRunner(),
+    )
 
-        service = PredictService(
-            checkpoint_interval_seconds=60,
-            input_service=FakeInputService(),
-            contract=CrunchContract(),
-            model_repository=model_repo,
-            prediction_repository=prediction_repo,
-            runner=FakeRunner(),
-        )
+
+class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
+    async def test_run_once_generates_prediction_rows(self):
+        repo = InMemoryPredictionRepository()
+        service = _make_service(prediction_repo=repo)
 
         await service.run_once(raw_input={"symbol": "BTC", "asof_ts": 123}, now=datetime.now(timezone.utc))
 
-        self.assertIn("m1", model_repo.models)
-        self.assertGreaterEqual(len(prediction_repo.saved_predictions), 1)
-        self.assertEqual(prediction_repo.saved_predictions[0].scope_key, "BTC-60-60")
-        self.assertEqual(prediction_repo.saved_predictions[0].scope.get("asset"), "BTC")
-        self.assertEqual(prediction_repo.saved_predictions[0].inference_input["symbol"], "BTC")
-        self.assertIn("value", prediction_repo.saved_predictions[0].inference_output)
+        self.assertIn("m1", service._known_models)
+        self.assertGreaterEqual(len(repo.saved_predictions), 1)
 
-    async def test_run_once_uses_input_service_when_input_not_given(self):
-        model_repo = InMemoryModelRepository()
-        prediction_repo = InMemoryPredictionRepository()
+        pred = repo.saved_predictions[0]
+        self.assertEqual(pred.scope_key, "BTC-60-60")
+        self.assertEqual(pred.scope.get("asset"), "BTC")
+        self.assertEqual(pred.inference_input["symbol"], "BTC")
+        self.assertIn("value", pred.inference_output)
 
-        service = PredictService(
-            checkpoint_interval_seconds=60,
+    async def test_run_once_uses_input_service_when_no_raw_input(self):
+        repo = InMemoryPredictionRepository()
+        service = _make_service(
             input_service=FakeInputService({"symbol": "ETH", "asof_ts": 999}),
-            contract=CrunchContract(),
-            model_repository=model_repo,
-            prediction_repository=prediction_repo,
-            runner=FakeRunner(),
+            prediction_repo=repo,
         )
 
         await service.run_once(now=datetime.now(timezone.utc))
 
-        self.assertGreaterEqual(len(prediction_repo.saved_predictions), 1)
-        self.assertEqual(prediction_repo.saved_predictions[0].inference_input["symbol"], "ETH")
+        self.assertGreaterEqual(len(repo.saved_predictions), 1)
+        self.assertEqual(repo.saved_predictions[0].inference_input["symbol"], "ETH")
 
-    async def test_run_once_logs_when_no_active_configs(self):
-        model_repo = InMemoryModelRepository()
-        prediction_repo = NoConfigPredictionRepository()
+    async def test_run_once_returns_false_when_no_active_configs(self):
+        service = _make_service(prediction_repo=NoConfigPredictionRepository())
 
-        service = PredictService(
-            checkpoint_interval_seconds=60,
-            input_service=FakeInputService(),
-            contract=CrunchContract(),
-            model_repository=model_repo,
-            prediction_repository=prediction_repo,
-            runner=FakeRunner(),
-        )
-
-        with self.assertLogs("node_template.services.predict_service", level="INFO") as logs:
+        with self.assertLogs("RealtimePredictService", level="INFO") as logs:
             changed = await service.run_once(raw_input={"symbol": "BTC"}, now=datetime.now(timezone.utc))
 
         self.assertFalse(changed)
-        self.assertEqual(len(prediction_repo.saved_predictions), 0)
         self.assertTrue(any("No active prediction configs" in line for line in logs.output))
 
-    async def test_run_once_logs_output_validation_error(self):
-        model_repo = InMemoryModelRepository()
-        prediction_repo = InMemoryPredictionRepository()
-
+    async def test_run_once_marks_failed_on_output_validation_error(self):
         from pydantic import BaseModel, Field
 
         class StrictOutput(BaseModel):
             value: float = Field(ge=0.0, le=1.0)
 
-        contract = CrunchContract(output_type=StrictOutput)
-
         class BadRunner(FakeRunner):
             async def call(self, method, args):
                 return {FakeModelRun("m1"): FakePredictionResult(result={"value": "not-a-number"})}
 
-        service = PredictService(
-            checkpoint_interval_seconds=60,
-            input_service=FakeInputService(),
-            contract=contract,
-            model_repository=model_repo,
-            prediction_repository=prediction_repo,
+        repo = InMemoryPredictionRepository()
+        service = _make_service(
+            prediction_repo=repo,
             runner=BadRunner(),
+            contract=CrunchContract(output_type=StrictOutput),
         )
 
-        with self.assertLogs("node_template.services.predict_service", level="ERROR") as logs:
+        with self.assertLogs("RealtimePredictService", level="ERROR") as logs:
             changed = await service.run_once(raw_input={"symbol": "BTC"}, now=datetime.now(timezone.utc))
 
         self.assertTrue(changed)
-        self.assertGreaterEqual(len(prediction_repo.saved_predictions), 1)
-        self.assertEqual(prediction_repo.saved_predictions[0].status, "FAILED")
-        self.assertIn("_validation_error", prediction_repo.saved_predictions[0].inference_output)
+        pred = repo.saved_predictions[0]
+        self.assertEqual(pred.status, "FAILED")
+        self.assertIn("_validation_error", pred.inference_output)
         self.assertTrue(any("INFERENCE_OUTPUT_VALIDATION_ERROR" in line for line in logs.output))
 
 

@@ -7,7 +7,7 @@ from node_template.config.runtime import RuntimeSettings
 from node_template.contracts import CrunchContract
 from node_template.infrastructure.db import DBModelRepository, DBPredictionRepository, create_session
 from node_template.services.input_service import InputService
-from node_template.services.predict_service import PredictService
+from node_template.services.realtime_predict_service import RealtimePredictService
 
 
 def configure_logging() -> None:
@@ -18,11 +18,11 @@ def configure_logging() -> None:
     )
 
 
-def build_service() -> PredictService:
+def build_service() -> RealtimePredictService:
     runtime_settings = RuntimeSettings.from_env()
     session = create_session()
 
-    return PredictService(
+    return RealtimePredictService(
         checkpoint_interval_seconds=runtime_settings.checkpoint_interval_seconds,
         input_service=InputService.from_env(),
         contract=CrunchContract(),
