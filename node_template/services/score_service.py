@@ -226,7 +226,7 @@ class ScoreService:
         key = self.contract.aggregation.ranking_key
         reverse = self.contract.aggregation.ranking_direction == "desc"
 
-        def sort_key(e):
+        def sort_key(e: dict[str, Any]) -> float:
             score = e.get("score")
             if not isinstance(score, dict):
                 return float("-inf")

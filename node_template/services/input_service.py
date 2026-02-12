@@ -135,7 +135,7 @@ class InputService:
                 })
         return candles
 
-    def _latest_record(self, at_or_before: datetime):
+    def _latest_record(self, at_or_before: datetime) -> Any:
         with create_session() as session:
             repo = DBMarketRecordRepository(session)
             return repo.fetch_latest_record(
@@ -184,7 +184,7 @@ class InputService:
                 repo.append_records(domain)
 
     @staticmethod
-    def _run_async(coro):
+    def _run_async(coro: Any) -> list:
         try:
             import asyncio
             try:

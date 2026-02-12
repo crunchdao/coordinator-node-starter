@@ -13,7 +13,7 @@ from node_template.services.predict_service import PredictService
 class RealtimePredictService(PredictService):
     """Time-series variant: event-driven loop, actuals = data at prediction + horizon."""
 
-    def __init__(self, checkpoint_interval_seconds: int = 60, **kwargs):
+    def __init__(self, checkpoint_interval_seconds: int = 60, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
         self._next_run: dict[str, datetime] = {}

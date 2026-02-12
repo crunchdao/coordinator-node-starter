@@ -182,8 +182,10 @@ class DBPredictionRepository(PredictionRepository):
             self.save(prediction)
 
     def find(
-        self, *, status=None, scope_key=None, model_id=None,
-        since=None, until=None, resolvable_before=None, limit=None,
+        self, *, status: str | list[str] | None = None,
+        scope_key: str | None = None, model_id: str | None = None,
+        since: datetime | None = None, until: datetime | None = None,
+        resolvable_before: datetime | None = None, limit: int | None = None,
     ) -> list[PredictionRecord]:
         stmt = select(PredictionRow)
         if status is not None:
@@ -285,7 +287,11 @@ class DBScoreRepository(ScoreRepository):
             existing.scored_at = row.scored_at
         self._session.commit()
 
-    def find(self, *, prediction_id=None, model_id=None, since=None, until=None, limit=None) -> list[ScoreRecord]:
+    def find(
+        self, *, prediction_id: str | None = None, model_id: str | None = None,
+        since: datetime | None = None, until: datetime | None = None,
+        limit: int | None = None,
+    ) -> list[ScoreRecord]:
         stmt = select(ScoreRow)
         if prediction_id is not None:
             stmt = stmt.where(ScoreRow.prediction_id == prediction_id)
