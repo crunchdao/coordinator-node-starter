@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-from coordinator_runtime.data_feeds.contracts import FeedFetchRequest, MarketRecord
+from coordinator.feeds.contracts import FeedFetchRequest, MarketRecord
 
 
 class TestBackfillService(unittest.TestCase):
@@ -17,7 +17,7 @@ class TestBackfillService(unittest.TestCase):
 
     def test_backfill_paginates_through_time_range(self):
         """Backfill should page through the time range in chunks, not one huge fetch."""
-        from node_template.services.backfill_service import BackfillService, BackfillRequest
+        from coordinator.services.backfill import BackfillService, BackfillRequest
 
         repo = MagicMock()
         repo.append_records = MagicMock(return_value=5)
@@ -57,7 +57,7 @@ class TestBackfillService(unittest.TestCase):
         repo.append_records.assert_called()
 
     def test_backfill_returns_zero_when_no_data(self):
-        from node_template.services.backfill_service import BackfillService, BackfillRequest
+        from coordinator.services.backfill import BackfillService, BackfillRequest
 
         repo = MagicMock()
         repo.append_records = MagicMock(return_value=0)
@@ -81,7 +81,7 @@ class TestBackfillService(unittest.TestCase):
 
     def test_backfill_advances_start_past_last_record(self):
         """After a page, the next fetch should start after the last record's ts_event."""
-        from node_template.services.backfill_service import BackfillService, BackfillRequest
+        from coordinator.services.backfill import BackfillService, BackfillRequest
 
         repo = MagicMock()
         repo.append_records = MagicMock(return_value=3)

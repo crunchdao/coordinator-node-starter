@@ -1,10 +1,10 @@
 import unittest
 from datetime import datetime, timezone
 
-from coordinator_core.entities.model import Model
-from coordinator_core.entities.prediction import PredictionRecord
-from node_template.contracts import CrunchContract
-from node_template.services.realtime_predict_service import RealtimePredictService
+from coordinator.entities.model import Model
+from coordinator.entities.prediction import PredictionRecord
+from coordinator.contracts import CrunchContract
+from coordinator.services.realtime_predict import RealtimePredictService
 
 
 class FakeModelRun:

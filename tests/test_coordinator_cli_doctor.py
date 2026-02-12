@@ -5,7 +5,7 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
-from coordinator_core.cli.main import main
+from coordinator_cli.commands.main import main
 
 
 @contextmanager
@@ -106,7 +106,7 @@ class TestCoordinatorCliDoctor(unittest.TestCase):
                             "spec_version": "1",
                             "name": "btc-trader",
                             "callables": {
-                                "SCORING_FUNCTION": "node_template.extensions.default_callables:default_score_prediction"
+                                "SCORING_FUNCTION": "coordinator.extensions.default_callables:default_score_prediction"
                             },
                         }
                     ),

@@ -1,6 +1,6 @@
 import unittest
 
-from coordinator_core.cli.packs import get_pack, list_pack_names, list_pack_summaries
+from coordinator_cli.commands.packs import get_pack, list_pack_names, list_pack_summaries
 
 
 class TestCoordinatorCliPacks(unittest.TestCase):

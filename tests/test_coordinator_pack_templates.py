@@ -1,6 +1,6 @@
 import unittest
 
-from coordinator_core.cli.pack_templates import render_pack_templates
+from coordinator_cli.commands.pack_templates import render_pack_templates
 
 
 class TestCoordinatorPackTemplates(unittest.TestCase):

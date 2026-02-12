@@ -1,6 +1,6 @@
 import unittest
 
-from coordinator_core.infrastructure.db.db_tables import (
+from coordinator.db.tables import (
     CheckpointRow,
     EmissionCheckpointRow,
     LeaderboardRow,

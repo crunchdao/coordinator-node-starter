@@ -1,7 +1,7 @@
 import unittest
 
-from coordinator_core.entities.model import Model, ModelScore
-from coordinator_core.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
+from coordinator.entities.model import Model, ModelScore
+from coordinator.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
 
 
 class TestCoreEntities(unittest.TestCase):

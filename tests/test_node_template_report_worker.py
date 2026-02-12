@@ -3,14 +3,14 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from coordinator_core.entities.market_record import MarketRecord
-from coordinator_core.entities.model import Model
-from coordinator_core.entities.prediction import PredictionRecord, PredictionScore, ScoreRecord
-from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
-from coordinator_core.services.interfaces.model_repository import ModelRepository
-from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
-from node_template.contracts import CrunchContract
-from node_template.workers.report_worker import (
+from coordinator.entities.market_record import MarketRecord
+from coordinator.entities.model import Model
+from coordinator.entities.prediction import PredictionRecord, PredictionScore, ScoreRecord
+from coordinator.interfaces.leaderboard_repository import LeaderboardRepository
+from coordinator.interfaces.model_repository import ModelRepository
+from coordinator.interfaces.prediction_repository import PredictionRepository
+from coordinator.contracts import CrunchContract
+from coordinator.workers.report_worker import (
     auto_report_schema,
     get_feeds,
     get_feeds_tail,

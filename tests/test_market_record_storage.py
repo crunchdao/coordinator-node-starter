@@ -4,12 +4,12 @@ from datetime import datetime, timezone
 import os
 import unittest
 
-from coordinator_core.entities.market_record import MarketIngestionState, MarketRecord
-from coordinator_core.infrastructure.db.db_tables import MarketIngestionStateRow, MarketRecordRow
-from coordinator_runtime.storage.parquet_market_record_repository import ParquetMarketRecordRepository
-from node_template.config.runtime import RuntimeSettings
-from node_template.infrastructure.db.init_db import tables_to_reset
-from node_template.infrastructure.db.market_records_repository import DBMarketRecordRepository
+from coordinator.entities.market_record import MarketIngestionState, MarketRecord
+from coordinator.db.tables import MarketIngestionStateRow, MarketRecordRow
+from coordinator.feeds.parquet_market_record_repository import ParquetMarketRecordRepository
+from coordinator.config.runtime import RuntimeSettings
+from coordinator.db.init_db import tables_to_reset
+from coordinator.db.market_records import DBMarketRecordRepository
 
 
 class TestMarketRecordStorage(unittest.TestCase):

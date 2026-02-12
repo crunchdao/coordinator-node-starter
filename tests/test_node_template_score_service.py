@@ -4,10 +4,10 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from coordinator_core.entities.model import Model
-from coordinator_core.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
-from node_template.contracts import Aggregation, AggregationWindow, CrunchContract
-from node_template.services.score_service import ScoreService
+from coordinator.entities.model import Model
+from coordinator.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
+from coordinator.contracts import Aggregation, AggregationWindow, CrunchContract
+from coordinator.services.score import ScoreService
 
 
 class MemInputRepository:
@@ -155,7 +155,7 @@ class TestScoreService(unittest.TestCase):
             actuals=None,
         )
 
-        with self.assertLogs("node_template.services.score_service", level="INFO"):
+        with self.assertLogs("coordinator.services.score", level="INFO"):
             changed = service.run_once()
 
         self.assertFalse(changed)
@@ -164,7 +164,7 @@ class TestScoreService(unittest.TestCase):
     def test_no_predictions_means_no_scoring(self):
         service = _build_service()
 
-        with self.assertLogs("node_template.services.score_service", level="INFO"):
+        with self.assertLogs("coordinator.services.score", level="INFO"):
             changed = service.run_once()
 
         self.assertFalse(changed)
@@ -179,7 +179,7 @@ class TestScoreService(unittest.TestCase):
         service.run_once()
         self.assertEqual(len(service.score_repository.scores), 1)
 
-        with self.assertLogs("node_template.services.score_service", level="INFO"):
+        with self.assertLogs("coordinator.services.score", level="INFO"):
             changed = service.run_once()
         self.assertFalse(changed)
         self.assertEqual(len(service.score_repository.scores), 1)
@@ -211,7 +211,7 @@ class TestScoreServiceRunLoop(unittest.IsolatedAsyncioTestCase):
 
         service.run_once = boom
 
-        with self.assertLogs("node_template.services.score_service", level="ERROR"):
+        with self.assertLogs("coordinator.services.score", level="ERROR"):
             await service.run()
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import py_compile
 
-from coordinator_core.cli.main import main
+from coordinator_cli.commands.main import main
 
 
 @contextmanager
@@ -44,9 +44,7 @@ class TestCoordinatorCliInit(unittest.TestCase):
                 self.assertTrue((node / "docker-compose.yml").exists())
                 self.assertTrue((node / "scripts" / "verify_e2e.py").exists())
                 self.assertTrue((node / "scripts" / "capture_runtime_logs.py").exists())
-                self.assertTrue((node / "runtime" / "coordinator_core").exists())
-                self.assertTrue((node / "runtime" / "coordinator_runtime").exists())
-                self.assertTrue((node / "runtime" / "node_template").exists())
+                self.assertTrue((node / "runtime" / "coordinator").exists())
                 self.assertTrue((node / ".local.env").exists())
                 self.assertTrue((node / ".local.env.example").exists())
                 self.assertTrue((node / "config" / "callables.env").exists())

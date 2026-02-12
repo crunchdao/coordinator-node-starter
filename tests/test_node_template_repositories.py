@@ -1,10 +1,10 @@
 import inspect
 import unittest
 
-from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
-from coordinator_core.services.interfaces.model_repository import ModelRepository
-from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
-from node_template.infrastructure.db.repositories import (
+from coordinator.interfaces.leaderboard_repository import LeaderboardRepository
+from coordinator.interfaces.model_repository import ModelRepository
+from coordinator.interfaces.prediction_repository import PredictionRepository
+from coordinator.db.repositories import (
     DBLeaderboardRepository,
     DBModelRepository,
     DBPredictionRepository,

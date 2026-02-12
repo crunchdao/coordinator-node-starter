@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from coordinator_runtime.data_feeds.contracts import (
+from coordinator.feeds.contracts import (
     AssetDescriptor,
     FeedFetchRequest,
     FeedSubscription,
     MarketRecord,
 )
-from coordinator_runtime.data_feeds.registry import DataFeedRegistry, create_default_registry
+from coordinator.feeds.registry import DataFeedRegistry, create_default_registry
 
 
 class DummyFeed:

@@ -10,11 +10,11 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from coordinator_core.entities.model import Model
-from coordinator_core.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
-from node_template.contracts import CrunchContract
-from node_template.services.realtime_predict_service import RealtimePredictService
-from node_template.services.score_service import ScoreService
+from coordinator.entities.model import Model
+from coordinator.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
+from coordinator.contracts import CrunchContract
+from coordinator.services.realtime_predict import RealtimePredictService
+from coordinator.services.score import ScoreService
 
 
 # ── shared in-memory repositories ──
@@ -277,7 +277,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
 
     async def test_score_skips_when_no_pending(self) -> None:
         """Score service does nothing when there's nothing to score."""
-        with self.assertLogs("node_template.services.score_service", level="INFO"):
+        with self.assertLogs("coordinator.services.score", level="INFO"):
             scored = self.score_service.run_once()
         self.assertFalse(scored)
         self.assertEqual(len(self.score_repo.scores), 0)
@@ -291,7 +291,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.score_repo.scores), 2)
 
         # second score run — nothing new to score
-        with self.assertLogs("node_template.services.score_service", level="INFO"):
+        with self.assertLogs("coordinator.services.score", level="INFO"):
             scored = self.score_service.run_once()
         self.assertFalse(scored)
         self.assertEqual(len(self.score_repo.scores), 2)  # unchanged

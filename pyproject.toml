@@ -21,10 +21,10 @@ dependencies = [
 ]
 
 [project.scripts]
-coordinator = "coordinator_core.cli.main:entrypoint"
+coordinator = "coordinator_cli.commands.main:entrypoint"
 
 [tool.hatch.build.targets.wheel]
-packages = ["coordinator_core", "coordinator_runtime", "node_template"]
+packages = ["coordinator", "coordinator_cli"]
 
 [tool.uv]
 package = true
