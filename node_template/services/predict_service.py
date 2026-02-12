@@ -29,6 +29,7 @@ class PredictService:
         checkpoint_interval_seconds: int,
         raw_input_provider: Callable[[datetime], dict[str, Any]] | None,
         contract: CrunchContract | None = None,
+        transform: Callable | None = None,
         model_repository=None,
         prediction_repository=None,
         runner=None,
@@ -46,6 +47,7 @@ class PredictService:
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
         self.raw_input_provider = raw_input_provider
         self.contract = contract or CrunchContract()
+        self.transform = transform
         self.model_repository = model_repository
         self.prediction_repository = prediction_repository
 
@@ -89,8 +91,13 @@ class PredictService:
         await self._ensure_runner_initialized()
         await self._ensure_models_loaded()
 
-        # Validate input via contract type
-        inference_input = self.contract.input_type(**raw_input).model_dump()
+        # Validate market data via contract, then optionally transform
+        market_data = self.contract.market_input_type(**raw_input)
+        if self.transform is not None:
+            transformed = self.transform(market_data)
+            inference_input = self.contract.input_type.model_validate(transformed).model_dump()
+        else:
+            inference_input = self.contract.input_type(**market_data.model_dump()).model_dump()
         tick_responses = await self._call_runner_tick(inference_input)
         self._save_models_from_responses(tick_responses)
 
