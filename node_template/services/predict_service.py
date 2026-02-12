@@ -178,24 +178,11 @@ class PredictService:
         asset = scope.get("asset", self.contract.scope.asset)
         horizon = int(scope.get("horizon_seconds", self.contract.scope.horizon_seconds))
         step = int(scope.get("step_seconds", self.contract.scope.step_seconds))
-        args = [asset, horizon, step]
 
         if MODEL_RUNNER_PROTO_AVAILABLE:
-            proto_args = []
-            for idx, value in enumerate(args, start=1):
-                vtype, encoded = self._encode_value(value)
-                proto_args.append(Argument(position=idx, data=Variant(type=vtype, value=encoded)))
-            return (proto_args, [])
-        return tuple(args)
-
-    @staticmethod
-    def _encode_value(value: Any):
-        if isinstance(value, bool):
-            return VariantType.INT, encode_data(VariantType.INT, int(value))
-        if isinstance(value, int):
-            return VariantType.INT, encode_data(VariantType.INT, value)
-        if isinstance(value, float):
-            return VariantType.DOUBLE, encode_data(VariantType.DOUBLE, value)
-        if isinstance(value, str):
-            return VariantType.STRING, encode_data(VariantType.STRING, value)
-        return VariantType.JSON, encode_data(VariantType.JSON, value)
+            return ([
+                Argument(position=1, data=Variant(type=VariantType.STRING, value=encode_data(VariantType.STRING, asset))),
+                Argument(position=2, data=Variant(type=VariantType.INT, value=encode_data(VariantType.INT, horizon))),
+                Argument(position=3, data=Variant(type=VariantType.INT, value=encode_data(VariantType.INT, step))),
+            ], [])
+        return (asset, horizon, step)
