@@ -30,10 +30,10 @@ class TestCoordinatorCoreSchema(unittest.TestCase):
         self.assertIn("scores_by_scope_jsonb", ModelRow.model_fields)
         self.assertIn("meta_jsonb", ModelRow.model_fields)
 
-        self.assertIn("inference_input_jsonb", PredictionRow.model_fields)
         self.assertIn("inference_output_jsonb", PredictionRow.model_fields)
         self.assertIn("scope_jsonb", PredictionRow.model_fields)
         self.assertIn("meta_jsonb", PredictionRow.model_fields)
+        self.assertIn("input_id", PredictionRow.model_fields)
 
         self.assertIn("score_payload_jsonb", ModelScoreRow.model_fields)
         self.assertIn("entries_jsonb", LeaderboardRow.model_fields)
@@ -52,20 +52,10 @@ class TestCoordinatorCoreSchema(unittest.TestCase):
 
     def test_prediction_protocol_columns_exist(self):
         required_prediction_fields = {
-            "id",
-            "model_id",
-            "prediction_config_id",
-            "scope_key",
-            "scope_jsonb",
-            "status",
-            "performed_at",
-            "resolvable_at",
-            "score_value",
-            "score_success",
-            "score_failed_reason",
-            "score_scored_at",
+            "id", "input_id", "model_id", "prediction_config_id",
+            "scope_key", "scope_jsonb", "status",
+            "performed_at", "resolvable_at",
         }
-
         self.assertTrue(required_prediction_fields.issubset(PredictionRow.model_fields.keys()))
 
 

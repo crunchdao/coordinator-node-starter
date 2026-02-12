@@ -5,7 +5,7 @@ import logging
 
 from node_template.config.runtime import RuntimeSettings
 from node_template.contracts import CrunchContract
-from node_template.infrastructure.db import DBModelRepository, DBPredictionRepository, create_session
+from node_template.infrastructure.db import DBInputRepository, DBModelRepository, DBPredictionRepository, create_session
 from node_template.services.input_service import InputService
 from node_template.services.realtime_predict_service import RealtimePredictService
 
@@ -26,6 +26,7 @@ def build_service() -> RealtimePredictService:
         checkpoint_interval_seconds=runtime_settings.checkpoint_interval_seconds,
         input_service=InputService.from_env(),
         contract=CrunchContract(),
+        input_repository=DBInputRepository(session),
         model_repository=DBModelRepository(session),
         prediction_repository=DBPredictionRepository(session),
         model_runner_node_host=runtime_settings.model_runner_node_host,

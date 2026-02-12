@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from coordinator_core.entities.market_record import MarketRecord
 from coordinator_core.entities.model import Model
-from coordinator_core.entities.prediction import PredictionRecord, PredictionScore
+from coordinator_core.entities.prediction import PredictionRecord, PredictionScore, ScoreRecord
 from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
 from coordinator_core.services.interfaces.model_repository import ModelRepository
 from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
@@ -66,17 +66,14 @@ class InMemoryPredictionRepository(PredictionRepository):
     def __init__(self, predictions: list[PredictionRecord]):
         self._predictions = predictions
 
-    def save_prediction(self, prediction: PredictionRecord) -> None:
-        raise NotImplementedError
+    def save(self, prediction: PredictionRecord) -> None:
+        pass
 
-    def save_predictions(self, predictions):
-        raise NotImplementedError
+    def save_all(self, predictions):
+        pass
 
-    def save_actuals(self, prediction_id, actuals):
-        raise NotImplementedError
-
-    def find_predictions(self, *, status=None, scope_key=None, model_id=None,
-                         since=None, until=None, resolvable_before=None, limit=None):
+    def find(self, *, status=None, scope_key=None, model_id=None,
+             since=None, until=None, resolvable_before=None, limit=None):
         results = list(self._predictions)
         if status is not None:
             if isinstance(status, list):
@@ -132,22 +129,20 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
         now = datetime.now(timezone.utc)
         prediction = PredictionRecord(
             id=f"pre-{model_id}-{scope_key}",
+            input_id="inp-1",
             model_id=model_id,
             prediction_config_id="CFG_1",
             scope_key=scope_key,
             scope=scope,
-            status="SUCCESS",
+            status="SCORED",
             exec_time_ms=1.0,
-            inference_input={},
             inference_output={},
             performed_at=now - timedelta(minutes=2),
             resolvable_at=now - timedelta(minutes=1),
-        )
-        prediction.score = PredictionScore(
-            value=score_value,
-            success=True,
-            failed_reason=None,
-            scored_at=now - timedelta(seconds=30),
+            score=PredictionScore(
+                value=score_value, success=True,
+                scored_at=now - timedelta(seconds=30),
+            ),
         )
         return prediction
 

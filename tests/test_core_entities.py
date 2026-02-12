@@ -1,7 +1,7 @@
 import unittest
 
 from coordinator_core.entities.model import Model, ModelScore
-from coordinator_core.entities.prediction import PredictionRecord, PredictionScore
+from coordinator_core.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
 
 
 class TestCoreEntities(unittest.TestCase):
@@ -17,35 +17,35 @@ class TestCoreEntities(unittest.TestCase):
 
     def test_model_has_jsonb_extension_payload(self):
         model = Model(
-            id="m1",
-            name="alpha",
-            player_id="p1",
-            player_name="alice",
-            deployment_identifier="d1",
-            meta={"tier": "gold"},
+            id="m1", name="alpha", player_id="p1", player_name="alice",
+            deployment_identifier="d1", meta={"tier": "gold"},
         )
         self.assertEqual(model.meta["tier"], "gold")
 
-    def test_prediction_record_carries_scope_inference_io_and_score(self):
+    def test_input_record(self):
+        record = InputRecord(id="inp1", raw_data={"symbol": "BTC", "price": 100.0})
+        self.assertEqual(record.raw_data["symbol"], "BTC")
+
+    def test_prediction_record_carries_scope_and_output(self):
         prediction = PredictionRecord(
-            id="pre1",
-            model_id="m1",
+            id="pre1", input_id="inp1", model_id="m1",
             prediction_config_id="CFG_001",
             scope_key="BTC-60-60",
-            scope={"asset": "BTC", "horizon": 3600, "step": 300},
-            status="SUCCESS",
-            exec_time_ms=12.5,
-            inference_input={"window": [1, 2, 3]},
+            scope={"asset": "BTC", "horizon": 3600},
+            status="PENDING", exec_time_ms=12.5,
             inference_output={"distribution": []},
         )
-
-        prediction.score = PredictionScore(value=0.42, success=True, failed_reason=None)
-
         self.assertEqual(prediction.scope_key, "BTC-60-60")
         self.assertEqual(prediction.scope["asset"], "BTC")
-        self.assertIn("window", prediction.inference_input)
         self.assertIn("distribution", prediction.inference_output)
-        self.assertEqual(prediction.score.value, 0.42)
+
+    def test_score_record(self):
+        score = ScoreRecord(
+            id="scr1", prediction_id="pre1",
+            actuals={"y_up": True}, value=0.42, success=True,
+        )
+        self.assertEqual(score.value, 0.42)
+        self.assertEqual(score.actuals["y_up"], True)
 
 
 if __name__ == "__main__":

@@ -38,10 +38,32 @@ class ModelRow(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now, index=True)
 
 
+class InputRow(SQLModel, table=True):
+    __tablename__ = "inputs"
+
+    id: str = Field(primary_key=True)
+
+    raw_data_jsonb: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB),
+    )
+    scope_jsonb: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB),
+    )
+    meta_jsonb: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB),
+    )
+
+    received_at: datetime = Field(default_factory=utc_now, index=True)
+
+
 class PredictionRow(SQLModel, table=True):
     __tablename__ = "predictions"
 
     id: str = Field(primary_key=True)
+    input_id: str = Field(index=True, foreign_key="inputs.id")
     model_id: str = Field(index=True, foreign_key="models.id")
     prediction_config_id: Optional[str] = Field(default=None, foreign_key="scheduled_prediction_configs.id", index=True)
 
@@ -54,17 +76,9 @@ class PredictionRow(SQLModel, table=True):
     status: str = Field(index=True)
     exec_time_ms: float
 
-    inference_input_jsonb: dict[str, Any] = Field(
-        default_factory=dict,
-        sa_column=Column(JSONB),
-    )
     inference_output_jsonb: dict[str, Any] = Field(
         default_factory=dict,
         sa_column=Column(JSONB),
-    )
-    actuals_jsonb: Optional[dict[str, Any]] = Field(
-        default=None,
-        sa_column=Column(JSONB, nullable=True),
     )
     meta_jsonb: dict[str, Any] = Field(
         default_factory=dict,
@@ -74,14 +88,26 @@ class PredictionRow(SQLModel, table=True):
     performed_at: datetime = Field(default_factory=utc_now, index=True)
     resolvable_at: datetime = Field(index=True)
 
-    score_value: Optional[float] = None
-    score_success: Optional[bool] = None
-    score_failed_reason: Optional[str] = None
-    score_scored_at: Optional[datetime] = Field(default=None, index=True)
-
     __table_args__ = (
         Index("idx_predictions_lookup", "model_id", "scope_key"),
     )
+
+
+class ScoreRow(SQLModel, table=True):
+    __tablename__ = "scores"
+
+    id: str = Field(primary_key=True)
+    prediction_id: str = Field(index=True, foreign_key="predictions.id")
+
+    actuals_jsonb: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB),
+    )
+
+    value: Optional[float] = None
+    success: Optional[bool] = None
+    failed_reason: Optional[str] = None
+    scored_at: datetime = Field(default_factory=utc_now, index=True)
 
 
 class ModelScoreRow(SQLModel, table=True):

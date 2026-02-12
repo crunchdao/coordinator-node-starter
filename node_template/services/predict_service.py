@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from coordinator_core.entities.model import Model
-from coordinator_core.entities.prediction import PredictionRecord
+from coordinator_core.entities.prediction import InputRecord, PredictionRecord
+from coordinator_core.services.interfaces.input_repository import InputRepository
 from coordinator_core.services.interfaces.model_repository import ModelRepository
 from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
 from node_template.contracts import CrunchContract
@@ -36,6 +37,7 @@ class PredictService:
         input_service: InputService,
         contract: CrunchContract | None = None,
         transform: Callable | None = None,
+        input_repository: InputRepository | None = None,
         model_repository: ModelRepository | None = None,
         prediction_repository: PredictionRepository | None = None,
         runner: ModelConcurrentRunner | None = None,
@@ -49,6 +51,7 @@ class PredictService:
         self.input_service = input_service
         self.contract = contract or CrunchContract()
         self.transform = transform
+        self.input_repository = input_repository
         self.model_repository = model_repository
         self.prediction_repository = prediction_repository
         self.crunch_id = crunch_id
@@ -67,9 +70,18 @@ class PredictService:
 
     # ── 1. get data ──
 
-    def get_data(self, now: datetime) -> dict[str, Any]:
+    def get_data(self, now: datetime) -> tuple[str, dict[str, Any]]:
+        """Fetch input, validate, save to DB. Returns (input_id, inference_input)."""
         raw = self.input_service.get_input(now)
-        return self.validate_input(raw)
+        inference_input = self.validate_input(raw)
+
+        input_id = f"INP_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}"
+        if self.input_repository is not None:
+            self.input_repository.save(InputRecord(
+                id=input_id, raw_data=inference_input, received_at=now,
+            ))
+
+        return input_id, inference_input
 
     def validate_input(self, raw_input: dict[str, Any]) -> dict[str, Any]:
         raw_data = self.contract.raw_input_type(**raw_input)
@@ -90,8 +102,8 @@ class PredictService:
             self.register_model(self._to_model(model_run))
 
     def make_prediction(
-        self, *, model_id: str, scope_key: str, scope: dict[str, Any],
-        status: str, output: dict[str, Any], inference_input: dict[str, Any],
+        self, *, model_id: str, input_id: str, scope_key: str,
+        scope: dict[str, Any], status: str, output: dict[str, Any],
         now: datetime, resolvable_at: datetime,
         exec_time_ms: float = 0.0, config_id: str | None = None,
     ) -> PredictionRecord:
@@ -100,11 +112,11 @@ class PredictService:
         pred_id = f"{suffix}_{model_id}_{safe_key}_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}"
 
         return PredictionRecord(
-            id=pred_id, model_id=model_id, prediction_config_id=config_id,
+            id=pred_id, input_id=input_id, model_id=model_id,
+            prediction_config_id=config_id,
             scope_key=scope_key,
             scope={k: v for k, v in scope.items() if k != "scope_key"},
             status=status, exec_time_ms=exec_time_ms,
-            inference_input={**inference_input, "_scope": scope},
             inference_output=output, performed_at=now, resolvable_at=resolvable_at,
         )
 

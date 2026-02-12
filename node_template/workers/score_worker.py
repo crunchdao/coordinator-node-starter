@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import asyncio
 import logging
 
@@ -12,8 +11,10 @@ from node_template.infrastructure.db import (
     DBLeaderboardRepository,
     DBModelRepository,
     DBPredictionRepository,
+    DBScoreRepository,
     create_session,
 )
+from node_template.services.input_service import InputService
 from node_template.services.score_service import ScoreService
 
 
@@ -23,12 +24,6 @@ def configure_logging() -> None:
         format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
         force=True,
     )
-
-
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Node-template score worker")
-    parser.add_argument("--prediction-id", required=False)
-    return parser.parse_args()
 
 
 def build_service() -> ScoreService:
@@ -45,25 +40,21 @@ def build_service() -> ScoreService:
     return ScoreService(
         checkpoint_interval_seconds=runtime_settings.checkpoint_interval_seconds,
         scoring_function=scoring_function,
+        input_service=InputService.from_env(),
         prediction_repository=DBPredictionRepository(session),
+        score_repository=DBScoreRepository(session),
         model_repository=DBModelRepository(session),
         leaderboard_repository=DBLeaderboardRepository(session),
         contract=CrunchContract(),
     )
 
 
-async def main(prediction_id: str | None = None) -> None:
+async def main() -> None:
     configure_logging()
     logging.getLogger(__name__).info("score worker bootstrap")
-
-    if prediction_id is not None:
-        logging.getLogger(__name__).info("single prediction scoring not implemented yet")
-        return
-
     service = build_service()
     await service.run()
 
 
 if __name__ == "__main__":
-    args = parse_arguments()
-    asyncio.run(main(args.prediction_id))
+    asyncio.run(main())

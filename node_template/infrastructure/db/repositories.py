@@ -6,17 +6,21 @@ from typing import Any, Iterable
 from sqlmodel import Session, delete, select
 
 from coordinator_core.entities.model import Model, ModelScore
-from coordinator_core.entities.prediction import PredictionRecord, PredictionScore
+from coordinator_core.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
 from coordinator_core.infrastructure.db.db_tables import (
+    InputRow,
     LeaderboardRow,
     ModelRow,
     PredictionConfigRow,
     PredictionRow,
+    ScoreRow,
 )
 from coordinator_core.schemas import PredictionScopeEnvelope, ScheduledPredictionConfigEnvelope, ScoreEnvelope
+from coordinator_core.services.interfaces.input_repository import InputRepository
 from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
 from coordinator_core.services.interfaces.model_repository import ModelRepository
 from coordinator_core.services.interfaces.prediction_repository import PredictionRepository
+from coordinator_core.services.interfaces.score_repository import ScoreRepository
 
 
 class DBModelRepository(ModelRepository):
@@ -120,6 +124,38 @@ class DBModelRepository(ModelRepository):
         )
 
 
+class DBInputRepository(InputRepository):
+    def __init__(self, session: Session):
+        self._session = session
+
+    def save(self, record: InputRecord) -> None:
+        row = InputRow(
+            id=record.id,
+            raw_data_jsonb=record.raw_data,
+            scope_jsonb=record.scope,
+            meta_jsonb=record.meta,
+            received_at=record.received_at,
+        )
+        existing = self._session.get(InputRow, row.id)
+        if existing is None:
+            self._session.add(row)
+        self._session.commit()
+
+    def find(self, *, since=None, until=None, limit=None) -> list[InputRecord]:
+        stmt = select(InputRow).order_by(InputRow.received_at.asc())
+        if since is not None:
+            stmt = stmt.where(InputRow.received_at >= since)
+        if until is not None:
+            stmt = stmt.where(InputRow.received_at <= until)
+        if limit is not None:
+            stmt = stmt.limit(max(1, int(limit)))
+        rows = self._session.exec(stmt).all()
+        return [InputRecord(
+            id=r.id, raw_data=r.raw_data_jsonb or {}, scope=r.scope_jsonb or {},
+            meta=r.meta_jsonb or {}, received_at=r.received_at,
+        ) for r in rows]
+
+
 class DBPredictionRepository(PredictionRepository):
     def __init__(self, session: Session):
         self._session = session
@@ -127,57 +163,29 @@ class DBPredictionRepository(PredictionRepository):
     def rollback(self) -> None:
         self._session.rollback()
 
-    # ── write ──
-
-    def save_prediction(self, prediction: PredictionRecord) -> None:
-        existing = self._session.get(PredictionRow, prediction.id)
+    def save(self, prediction: PredictionRecord) -> None:
         row = self._domain_to_row(prediction)
-
+        existing = self._session.get(PredictionRow, row.id)
         if existing is None:
             self._session.add(row)
         else:
             existing.status = row.status
             existing.exec_time_ms = row.exec_time_ms
-            existing.inference_input_jsonb = row.inference_input_jsonb
             existing.inference_output_jsonb = row.inference_output_jsonb
-            existing.actuals_jsonb = row.actuals_jsonb
             existing.meta_jsonb = row.meta_jsonb
             existing.scope_key = row.scope_key
             existing.scope_jsonb = row.scope_jsonb
-            existing.prediction_config_id = row.prediction_config_id
-            existing.score_value = row.score_value
-            existing.score_success = row.score_success
-            existing.score_failed_reason = row.score_failed_reason
-            existing.score_scored_at = row.score_scored_at
-
         self._session.commit()
 
-    def save_predictions(self, predictions: Iterable[PredictionRecord]) -> None:
+    def save_all(self, predictions: Iterable[PredictionRecord]) -> None:
         for prediction in predictions:
-            self.save_prediction(prediction)
+            self.save(prediction)
 
-    def save_actuals(self, prediction_id: str, actuals: dict[str, Any]) -> None:
-        row = self._session.get(PredictionRow, prediction_id)
-        if row is not None:
-            row.actuals_jsonb = actuals
-            row.status = "RESOLVED"
-            self._session.commit()
-
-    # ── query ──
-
-    def find_predictions(
-        self,
-        *,
-        status: str | list[str] | None = None,
-        scope_key: str | None = None,
-        model_id: str | None = None,
-        since: datetime | None = None,
-        until: datetime | None = None,
-        resolvable_before: datetime | None = None,
-        limit: int | None = None,
+    def find(
+        self, *, status=None, scope_key=None, model_id=None,
+        since=None, until=None, resolvable_before=None, limit=None,
     ) -> list[PredictionRecord]:
         stmt = select(PredictionRow)
-
         if status is not None:
             if isinstance(status, list):
                 stmt = stmt.where(PredictionRow.status.in_(status))
@@ -195,12 +203,9 @@ class DBPredictionRepository(PredictionRepository):
             stmt = stmt.where(PredictionRow.resolvable_at <= resolvable_before)
         if limit is not None:
             stmt = stmt.limit(max(1, int(limit)))
-
         stmt = stmt.order_by(PredictionRow.performed_at.asc())
         rows = self._session.exec(stmt).all()
         return [self._row_to_domain(row) for row in rows]
-
-    # ── config ──
 
     def fetch_active_configs(self) -> list[dict]:
         rows = self._session.exec(
@@ -208,94 +213,97 @@ class DBPredictionRepository(PredictionRepository):
             .where(PredictionConfigRow.active.is_(True))
             .order_by(PredictionConfigRow.order.asc())
         ).all()
-
         configs: list[dict[str, Any]] = []
         for row in rows:
-            envelope = ScheduledPredictionConfigEnvelope.model_validate(
-                {
-                    "id": row.id,
-                    "scope_key": row.scope_key,
-                    "scope_template": row.scope_template_jsonb or {},
-                    "schedule": row.schedule_jsonb or {},
-                    "active": row.active,
-                    "order": row.order,
-                    "meta": row.meta_jsonb or {},
-                }
-            )
+            envelope = ScheduledPredictionConfigEnvelope.model_validate({
+                "id": row.id, "scope_key": row.scope_key,
+                "scope_template": row.scope_template_jsonb or {},
+                "schedule": row.schedule_jsonb or {},
+                "active": row.active, "order": row.order,
+                "meta": row.meta_jsonb or {},
+            })
             configs.append(envelope.model_dump())
-
         return configs
-
-    # ── mapping ──
 
     @staticmethod
     def _domain_to_row(prediction: PredictionRecord) -> PredictionRow:
-        score_value = prediction.score.value if prediction.score else None
-        score_success = prediction.score.success if prediction.score else None
-        score_failed_reason = prediction.score.failed_reason if prediction.score else None
-        score_scored_at = prediction.score.scored_at if prediction.score else None
-
-        scope_envelope = PredictionScopeEnvelope.model_validate(
-            {
-                "scope_key": prediction.scope_key,
-                "scope": prediction.scope,
-            }
-        )
-
         return PredictionRow(
             id=prediction.id,
+            input_id=prediction.input_id,
             model_id=prediction.model_id,
             prediction_config_id=prediction.prediction_config_id,
-            scope_key=scope_envelope.scope_key,
-            scope_jsonb=scope_envelope.scope,
+            scope_key=prediction.scope_key,
+            scope_jsonb=prediction.scope,
             status=prediction.status,
             exec_time_ms=prediction.exec_time_ms,
-            inference_input_jsonb=prediction.inference_input,
             inference_output_jsonb=prediction.inference_output,
-            actuals_jsonb=prediction.actuals,
             meta_jsonb=prediction.meta,
             performed_at=prediction.performed_at,
             resolvable_at=prediction.resolvable_at or prediction.performed_at,
-            score_value=score_value,
-            score_success=score_success,
-            score_failed_reason=score_failed_reason,
-            score_scored_at=score_scored_at,
         )
 
     @staticmethod
     def _row_to_domain(row: PredictionRow) -> PredictionRecord:
-        score = None
-        if row.score_scored_at is not None or row.score_success is not None:
-            score = PredictionScore(
-                value=row.score_value,
-                success=bool(row.score_success),
-                failed_reason=row.score_failed_reason,
-                scored_at=row.score_scored_at or datetime.now(timezone.utc),
-            )
-
-        scope_envelope = PredictionScopeEnvelope.model_validate(
-            {
-                "scope_key": row.scope_key,
-                "scope": row.scope_jsonb or {},
-            }
-        )
-
         return PredictionRecord(
             id=row.id,
+            input_id=row.input_id,
             model_id=row.model_id,
             prediction_config_id=row.prediction_config_id,
-            scope_key=scope_envelope.scope_key,
-            scope=scope_envelope.scope,
+            scope_key=row.scope_key,
+            scope=row.scope_jsonb or {},
             status=row.status,
             exec_time_ms=row.exec_time_ms,
-            inference_input=row.inference_input_jsonb or {},
             inference_output=row.inference_output_jsonb or {},
-            actuals=row.actuals_jsonb,
             meta=row.meta_jsonb or {},
             performed_at=row.performed_at,
             resolvable_at=row.resolvable_at,
-            score=score,
         )
+
+
+class DBScoreRepository(ScoreRepository):
+    def __init__(self, session: Session):
+        self._session = session
+
+    def save(self, record: ScoreRecord) -> None:
+        row = ScoreRow(
+            id=record.id,
+            prediction_id=record.prediction_id,
+            actuals_jsonb=record.actuals,
+            value=record.value,
+            success=record.success,
+            failed_reason=record.failed_reason,
+            scored_at=record.scored_at,
+        )
+        existing = self._session.get(ScoreRow, row.id)
+        if existing is None:
+            self._session.add(row)
+        else:
+            existing.actuals_jsonb = row.actuals_jsonb
+            existing.value = row.value
+            existing.success = row.success
+            existing.failed_reason = row.failed_reason
+            existing.scored_at = row.scored_at
+        self._session.commit()
+
+    def find(self, *, prediction_id=None, model_id=None, since=None, until=None, limit=None) -> list[ScoreRecord]:
+        stmt = select(ScoreRow)
+        if prediction_id is not None:
+            stmt = stmt.where(ScoreRow.prediction_id == prediction_id)
+        if since is not None:
+            stmt = stmt.where(ScoreRow.scored_at >= since)
+        if until is not None:
+            stmt = stmt.where(ScoreRow.scored_at <= until)
+        if limit is not None:
+            stmt = stmt.limit(max(1, int(limit)))
+        # model_id requires join — skip for now, filter in caller
+        stmt = stmt.order_by(ScoreRow.scored_at.asc())
+        rows = self._session.exec(stmt).all()
+        return [ScoreRecord(
+            id=r.id, prediction_id=r.prediction_id,
+            actuals=r.actuals_jsonb or {}, value=r.value,
+            success=bool(r.success), failed_reason=r.failed_reason,
+            scored_at=r.scored_at,
+        ) for r in rows]
 
 
 class DBLeaderboardRepository(LeaderboardRepository):

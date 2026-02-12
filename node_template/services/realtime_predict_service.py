@@ -31,55 +31,29 @@ class RealtimePredictService(PredictService):
                 self.logger.exception("predict loop error: %s", exc)
             await self._wait_for_data()
 
+    # ── 3. resolve actuals moved to score service ──
+
     async def run_once(self, raw_input: dict[str, Any] | None = None, now: datetime | None = None) -> bool:
         now = now or datetime.now(timezone.utc)
         await self.init_runner()
 
-        # 1. get data, send to models
-        inference_input = self.validate_input(raw_input) if raw_input else self.get_data(now)
+        # 1. get data, save input, send to models
+        if raw_input is not None:
+            inference_input = self.validate_input(raw_input)
+            input_id = f"INP_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}"
+        else:
+            input_id, inference_input = self.get_data(now)
         await self.tick_models(inference_input)
 
         # 2. run prediction configs, store predictions
-        predictions = await self._run_configs(inference_input, now)
+        predictions = await self._run_configs(input_id, inference_input, now)
         self.save_predictions(predictions)
-
-        # 3. resolve actuals for past predictions
-        self.resolve_actuals(now)
 
         return len(predictions) > 0
 
-    # ── 3. resolve actuals (time-series) ──
-
-    def resolve_actuals(self, now: datetime) -> int:
-        """Find predictions past their horizon, look up what actually happened."""
-        pending = self.prediction_repository.find_predictions(
-            status="PENDING", resolvable_before=now,
-        )
-        if not pending:
-            return 0
-
-        resolved_count = 0
-        for prediction in pending:
-            scope = prediction.scope or {}
-            actuals = self.input_service.get_ground_truth(
-                performed_at=prediction.performed_at,
-                resolvable_at=prediction.resolvable_at,
-                asset=scope.get("asset"),
-            )
-            if actuals is None:
-                continue
-
-            self.prediction_repository.save_actuals(prediction.id, actuals)
-            resolved_count += 1
-
-        if resolved_count:
-            self.logger.info("Resolved actuals for %d predictions", resolved_count)
-
-        return resolved_count
-
     # ── prediction configs ──
 
-    async def _run_configs(self, inference_input: dict[str, Any], now: datetime) -> list[PredictionRecord]:
+    async def _run_configs(self, input_id: str, inference_input: dict[str, Any], now: datetime) -> list[PredictionRecord]:
         configs = self._fetch_active_configs()
         if not configs:
             self.logger.info("No active prediction configs found")
@@ -94,7 +68,7 @@ class RealtimePredictService(PredictService):
             if now < self._next_run.get(config_id, now):
                 continue
 
-            predictions = await self._predict_for_config(config, inference_input, now)
+            predictions = await self._predict_for_config(config, input_id, inference_input, now)
             all_predictions.extend(predictions)
 
             schedule = self._parse_schedule(config)
@@ -103,7 +77,7 @@ class RealtimePredictService(PredictService):
         return all_predictions
 
     async def _predict_for_config(
-        self, config: dict[str, Any], inference_input: dict[str, Any], now: datetime,
+        self, config: dict[str, Any], input_id: str, inference_input: dict[str, Any], now: datetime,
     ) -> list[PredictionRecord]:
         scope = self._build_scope(config)
         scope_key = scope.get("scope_key", "default-scope")
@@ -132,8 +106,8 @@ class RealtimePredictService(PredictService):
                 status = runner_status
 
             predictions[model.id] = self.make_prediction(
-                model_id=model.id, scope_key=scope_key, scope=scope,
-                status=status, output=output, inference_input=inference_input,
+                model_id=model.id, input_id=input_id, scope_key=scope_key,
+                scope=scope, status=status, output=output,
                 now=now, resolvable_at=resolvable_at,
                 exec_time_ms=float(getattr(result, "exec_time_us", 0.0)),
                 config_id=config_id,
@@ -143,8 +117,8 @@ class RealtimePredictService(PredictService):
         for model_id in self._known_models:
             if model_id not in predictions:
                 predictions[model_id] = self.make_prediction(
-                    model_id=model_id, scope_key=scope_key, scope=scope,
-                    status="ABSENT", output={}, inference_input=inference_input,
+                    model_id=model_id, input_id=input_id, scope_key=scope_key,
+                    scope=scope, status="ABSENT", output={},
                     now=now, resolvable_at=resolvable_at, config_id=config_id,
                 )
 

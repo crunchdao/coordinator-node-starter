@@ -136,7 +136,7 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
         pred = repo.saved_predictions[0]
         self.assertEqual(pred.scope_key, "BTC-60-60")
         self.assertEqual(pred.scope.get("asset"), "BTC")
-        self.assertEqual(pred.inference_input["symbol"], "BTC")
+        self.assertIsNotNone(pred.input_id)
         self.assertIn("value", pred.inference_output)
 
     async def test_run_once_uses_input_service_when_no_raw_input(self):
@@ -149,7 +149,7 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
         await service.run_once(now=datetime.now(timezone.utc))
 
         self.assertGreaterEqual(len(repo.saved_predictions), 1)
-        self.assertEqual(repo.saved_predictions[0].inference_input["symbol"], "ETH")
+        self.assertIsNotNone(repo.saved_predictions[0].input_id)
 
     async def test_run_once_returns_false_when_no_active_configs(self):
         service = _make_service(prediction_repo=NoConfigPredictionRepository())
