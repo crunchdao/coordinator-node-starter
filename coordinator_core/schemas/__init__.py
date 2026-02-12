@@ -1,6 +1,9 @@
 from .payload_contracts import (
     LeaderboardEntryEnvelope,
     PredictionScopeEnvelope,
+    ReportLeaderboardColumn,
+    ReportMetricWidget,
+    ReportSchemaEnvelope,
     ScheduleEnvelope,
     ScheduledPredictionConfigEnvelope,
     ScoreEnvelope,
@@ -14,4 +17,7 @@ __all__ = [
     "ScoreEnvelope",
     "ScoreRankingEnvelope",
     "LeaderboardEntryEnvelope",
+    "ReportLeaderboardColumn",
+    "ReportMetricWidget",
+    "ReportSchemaEnvelope",
 ]

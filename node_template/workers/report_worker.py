@@ -9,7 +9,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from sqlmodel import Session
 
-from coordinator_core.schemas import LeaderboardEntryEnvelope
+from coordinator_core.schemas import LeaderboardEntryEnvelope, ReportSchemaEnvelope
 from coordinator_core.services.interfaces.leaderboard_repository import LeaderboardRepository
 from coordinator_core.services.interfaces.market_record_repository import MarketRecordRepository
 from coordinator_core.services.interfaces.model_repository import ModelRepository
@@ -69,18 +69,23 @@ def resolve_report_schema(provider_path: str | None = None) -> dict[str, Any]:
     if not isinstance(schema, dict):
         raise ValueError("REPORT_SCHEMA_PROVIDER must return a dictionary")
 
-    leaderboard_columns = schema.get("leaderboard_columns")
-    metrics_widgets = schema.get("metrics_widgets")
-    if not isinstance(leaderboard_columns, list):
-        raise ValueError("Report schema must define list field 'leaderboard_columns'")
-    if not isinstance(metrics_widgets, list):
-        raise ValueError("Report schema must define list field 'metrics_widgets'")
+    # Validate against typed contracts matching the coordinator-webapp FE types.
+    # This catches missing/wrong fields at startup instead of crashing the FE
+    # at render time (e.g. missing 'type' → TypeError: Cannot read properties
+    # of undefined reading 'toLowerCase').
+    try:
+        validated = ReportSchemaEnvelope.model_validate(schema)
+    except Exception as exc:
+        raise ValueError(
+            f"REPORT_SCHEMA_PROVIDER returned an invalid schema. "
+            f"Each leaderboard column must have: id, type (MODEL|VALUE|USERNAME|CHART), "
+            f"property, displayName, order. "
+            f"Each metric widget must have: id, type (CHART|IFRAME), displayName, "
+            f"endpointUrl, order. "
+            f"Validation error: {exc}"
+        ) from exc
 
-    return {
-        "schema_version": str(schema.get("schema_version", "1")),
-        "leaderboard_columns": leaderboard_columns,
-        "metrics_widgets": metrics_widgets,
-    }
+    return validated.model_dump()
 
 
 REPORT_SCHEMA = resolve_report_schema()

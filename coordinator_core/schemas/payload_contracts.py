@@ -86,3 +86,54 @@ class LeaderboardEntryEnvelope(BaseModel):
     cruncher_name: str | None = None
 
     model_config = ConfigDict(extra="allow")
+
+
+# ---------------------------------------------------------------------------
+# Report schema contracts — must match coordinator-webapp FE types
+# ---------------------------------------------------------------------------
+
+_LEADERBOARD_COLUMN_TYPES = {"MODEL", "VALUE", "USERNAME", "CHART"}
+_METRIC_WIDGET_TYPES = {"CHART", "IFRAME"}
+
+
+class ReportLeaderboardColumn(BaseModel):
+    """Matches FE LeaderboardColumn type in @coordinator/leaderboard."""
+
+    id: int
+    type: Literal["MODEL", "VALUE", "USERNAME", "CHART"]
+    property: str
+    format: str | None = None
+    displayName: str
+    tooltip: str | None = None
+    nativeConfiguration: dict[str, Any] | None = None
+    order: int = 0
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ReportMetricWidget(BaseModel):
+    """Matches FE Widget type in @coordinator/metrics."""
+
+    id: int
+    type: Literal["CHART", "IFRAME"]
+    displayName: str
+    tooltip: str | None = None
+    order: int = 0
+    endpointUrl: str
+    nativeConfiguration: dict[str, Any] | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ReportSchemaEnvelope(BaseModel):
+    """Validated report schema returned by REPORT_SCHEMA_PROVIDER callables.
+
+    Ensures every leaderboard column and metric widget has all required
+    fields so the coordinator-webapp FE can render without errors.
+    """
+
+    schema_version: str = "1"
+    leaderboard_columns: list[ReportLeaderboardColumn]
+    metrics_widgets: list[ReportMetricWidget]
+
+    model_config = ConfigDict(extra="allow")
