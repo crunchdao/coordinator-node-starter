@@ -58,8 +58,8 @@
       "filterConfig": [
         {
           "type": "select",
-          "label": "Asset",
-          "property": "asset",
+          "label": "Subject",
+          "property": "subject",
           "autoSelectFirst": true
         },
         {
@@ -105,8 +105,8 @@
       "filterConfig": [
         {
           "type": "select",
-          "label": "Asset",
-          "property": "asset",
+          "label": "Subject",
+          "property": "subject",
           "autoSelectFirst": true
         },
         {

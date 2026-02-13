@@ -38,13 +38,13 @@ platform:
 
 backfill:
 	$(COMPOSE) run --rm -v $$(pwd)/scripts:/app/scripts:ro \
-		-e FEED_PROVIDER=$(or $(PROVIDER),pyth) \
-		-e FEED_ASSETS=$(or $(ASSET),BTC) \
+		-e FEED_SOURCE=$(or $(SOURCE),pyth) \
+		-e FEED_SUBJECTS=$(or $(SUBJECT),BTC) \
 		-e FEED_KIND=$(or $(KIND),tick) \
 		-e FEED_GRANULARITY=$(or $(GRANULARITY),1s) \
 		score-worker python scripts/backfill.py \
-		--provider $(or $(PROVIDER),pyth) \
-		--asset $(or $(ASSET),BTC) \
+		--source $(or $(SOURCE),pyth) \
+		--subject $(or $(SUBJECT),BTC) \
 		--kind $(or $(KIND),tick) \
 		--granularity $(or $(GRANULARITY),1s) \
 		--from $(FROM) --to $(TO) \

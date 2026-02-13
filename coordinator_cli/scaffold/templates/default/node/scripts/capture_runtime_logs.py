@@ -7,9 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 SERVICES = (
-    "market-data-worker",
+    "feed-data-worker",
     "predict-worker",
     "score-worker",
+    "checkpoint-worker",
     "report-worker",
     "model-orchestrator",
     "postgres",

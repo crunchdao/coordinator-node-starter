@@ -1,177 +1,130 @@
 # Coordinator Node Starter
 
-Template source for building Crunch coordinator nodes.
+Runtime for Crunch coordinator nodes. Ships as two packages:
 
-This repository provides:
+- `coordinator/` — runtime services, DB, feeds, workers, contracts
+- `coordinator_cli/` — scaffold CLI and templates
 
-- `coordinator_core/` — canonical contracts (entities, DB tables, interfaces)
-- `node_template/` — runnable default workers/services
-
-Legacy status:
-- Keep using `coordinator_core/` + `node_template/` for all active development.
-
-## Intended workflow
-
-> New thin-workspace scaffolding is available via CLI:
->
-> ```bash
-> coordinator init <challenge-slug>
-> ```
->
-> Spec-driven scaffolding is also supported:
->
-> ```bash
-> coordinator init --spec path/to/spec.json --pack realtime
-> coordinator doctor --spec path/to/spec.json --pack realtime
-> coordinator init --list-packs
-> ```
->
-> `spec.json` must include `"spec_version": "1"`.
->
-> This generates `<challenge-slug>/` in the selected output location with:
-> - `crunch-node-<challenge-slug>` (thin node wiring)
-> - `crunch-<challenge-slug>` (challenge package stubs)
-
-## Launch a local Crunch workspace
-
-From this project root, run deterministic setup:
+## Quick Start
 
 ```bash
-coordinator preflight --ports 3000,5432,8000,9091
-coordinator doctor --spec path/to/spec.json --pack realtime
-coordinator init --answers answers.json --spec path/to/spec.json --pack realtime --output .
+pip install -e .
+coordinator init my-challenge
 ```
 
-Then launch and verify the generated local crunch runtime:
+This scaffolds a workspace with:
+- `crunch-node-my-challenge/` — node deployment (docker-compose, config, scripts)
+- `crunch-my-challenge/` — challenge package (tracker, scoring, examples)
+
+Then deploy locally:
 
 ```bash
-cd <challenge-slug>/crunch-node-<challenge-slug>
-make deploy
-make verify-e2e
-make logs-capture
-```
-
-## One-shot demo template (btc-up)
-
-Render a default `btc-up` workspace (no spec/answers prompts):
-
-```bash
-uv run python -m coordinator_core.cli.main demo
-```
-
-Use a local coordinator-webapp checkout for the report UI build context:
-
-```bash
-uv run python -m coordinator_core.cli.main demo --webapp-path /absolute/path/to/coordinator-webapp
-```
-
-Optionally start immediately:
-
-```bash
-uv run python -m coordinator_core.cli.main demo --webapp-path /absolute/path/to/coordinator-webapp --start
-```
-
-`make verify-e2e` waits until scored predictions and leaderboard entries are available.
-
-Useful endpoints once running:
-
-- Report API: http://localhost:8000
-- UI: http://localhost:3000
-
-Create two repositories per Crunch:
-
-1. `crunch-<name>` (public)
-   - model interface (`tracker.py`)
-   - scoring/self-eval logic (`scoring.py`)
-   - quickstarters (`examples/`)
-2. `crunch-node-<name>` (private)
-   - deployment/config for your node
-   - callable wiring (`config/callables.env`)
-   - runtime callables (`runtime_definitions/`)
-
-## Required definition points (before implementation)
-
-Define these in your Crunch repos (not in this template):
-
-- Define model interface  
-  `crunch-<name>/crunch_<name>/tracker.py`
-- Define participant quickstarters  
-  `crunch-<name>/crunch_<name>/examples/mean_reversion_tracker.py`  
-  `crunch-<name>/crunch_<name>/examples/trend_following_tracker.py`  
-  `crunch-<name>/crunch_<name>/examples/volatility_regime_tracker.py`
-- Define scoring function for local self-eval  
-  `crunch-<name>/crunch_<name>/scoring.py`
-- Define runtime inference input  
-  `crunch-node-<name>/runtime_definitions/inference.py` (`INFERENCE_INPUT_BUILDER`)
-- Define runtime inference output validation  
-  `crunch-node-<name>/runtime_definitions/validation.py` (`INFERENCE_OUTPUT_VALIDATOR`)
-- Define runtime data + ground-truth providers  
-  `crunch-node-<name>/runtime_definitions/data.py` (`RAW_INPUT_PROVIDER`, `GROUND_TRUTH_RESOLVER`)
-- Define runtime report schema  
-  `crunch-node-<name>/runtime_definitions/reporting.py` (`REPORT_SCHEMA_PROVIDER`)
-- Define checkpoint interval  
-  `crunch-node-<name>/.local.env` (`CHECKPOINT_INTERVAL_SECONDS`)
-
-## Built-in starter profile (enabled by default)
-
-Out of the box, local mode uses:
-
-- `node_template/plugins/pyth_updown_btc.py`
-- BTC-only fast prediction config (`1m` horizon / `1m` interval)
-
-This starter profile provides:
-
-- Pyth BTC price input
-- output validation (`p_up` or density payload)
-- default Brier + 3-window leaderboard metrics (`recent`, `steady`, `anchor`)
-- optional alternative scoring/ranking profiles (e.g. risk-adjusted Sharpe-like)
-- Pyth-based ground-truth resolution
-
-## Run local template stack (end-to-end)
-
-```bash
+cd my-challenge/crunch-node-my-challenge
 make deploy
 make verify-e2e
 ```
 
-`make verify-e2e` waits until scored predictions and leaderboard entries are available.
+## Architecture
 
-Useful endpoints:
+### Pipeline
 
-- Report API: http://localhost:8000
-- UI: http://localhost:3000
-- Docs: http://localhost:8080
+```
+Feed → Input → Prediction → Score → Snapshot → Checkpoint → On-chain
+```
 
-For scaffold-first local challenge onboarding, see:
+**Workers:**
 
-- `docs/ONBOARDING.md`
-- `docs/flow.md` (standard deterministic flow: answers file + preflight + runbook + process log)
+| Worker | Purpose |
+|---|---|
+| `feed-data-worker` | Ingests feed data (Pyth, Binance, etc.) via WebSocket + backfill |
+| `predict-worker` | Event-driven: gets data → ticks models → collects predictions |
+| `score-worker` | Resolves actuals → scores predictions → writes snapshots → rebuilds leaderboard |
+| `checkpoint-worker` | Aggregates snapshots → builds EmissionCheckpoint for on-chain submission |
+| `report-worker` | FastAPI: leaderboard, predictions, feeds, snapshots, checkpoints, emissions |
 
-## Runtime notes (current defaults)
+### Contract
 
-- `predict-worker` and `score-worker` configure INFO logging on startup and emit lifecycle/idle log lines.
-  - This keeps the UI Logs tabs useful even when the system is otherwise idle.
-- `ScoreService` performs repository rollback attempts after loop exceptions.
-  - `DBPredictionRepository`, `DBModelRepository`, and `DBLeaderboardRepository` expose `rollback()` for this recovery path.
-- Local `report-ui` mounts config to both:
-  - `/app/config`
-  - `/app/apps/starter/config`
-- Report worker exposes schema endpoints:
-  - `/reports/schema`
-  - `/reports/schema/leaderboard-columns`
-  - `/reports/schema/metrics-widgets`
-- `REPORT_SCHEMA_PROVIDER` selects the canonical schema callable used by report worker.
-  - FE can merge local override files on top of this canonical schema.
-  - Default schema provides `score_recent`, `score_steady`, `score_anchor` fields.
+All type shapes and behavior are defined in a single `CrunchContract`:
 
-## Documentation
+```python
+class CrunchContract(BaseModel):
+    raw_input_type: type[BaseModel] = RawInput
+    output_type: type[BaseModel] = InferenceOutput
+    score_type: type[BaseModel] = ScoreResult
+    scope: PredictionScope = PredictionScope()
+    aggregation: Aggregation = Aggregation()
 
-Start here for challenge setup:
+    # Callables
+    resolve_ground_truth: Callable = default_resolve_ground_truth
+    aggregate_snapshot: Callable = default_aggregate_snapshot
+    build_emission: Callable = default_build_emission
+```
 
-- `docs/ONBOARDING.md` — canonical onboarding flow (including typed JSONB schema ownership)
+Override any field in the scaffold's `runtime_definitions/contracts.py`.
 
-Additional references:
+### Feed Dimensions
 
-- `docs/BUILD_YOUR_OWN_CHALLENGE.md`
-- `docs/DATABASE_SCHEMA.md`
-- `docs/`
+Four generic dimensions for any data source:
+
+| Dimension | Example | Env var |
+|---|---|---|
+| `source` | pyth, binance | `FEED_SOURCE` |
+| `subject` | BTC, ETH | `FEED_SUBJECTS` |
+| `kind` | tick, candle | `FEED_KIND` |
+| `granularity` | 1s, 1m | `FEED_GRANULARITY` |
+
+### Status Lifecycles
+
+```
+Input:       RECEIVED → RESOLVED
+Prediction:  PENDING → SCORED / FAILED / ABSENT
+Checkpoint:  PENDING → SUBMITTED → CLAIMABLE → PAID
+```
+
+### Emission Checkpoints
+
+Checkpoints produce `EmissionCheckpoint` entries matching the on-chain protocol:
+
+```python
+{
+    "crunch": "<pubkey>",
+    "cruncher_rewards": [{"cruncher_index": 0, "reward_pct": 350_000_000}, ...],
+    "compute_provider_rewards": [...],
+    "data_provider_rewards": [...],
+}
+```
+
+`reward_pct` uses frac64 (1,000,000,000 = 100%). All cruncher rewards must sum to exactly this value.
+
+Default tier distribution: 1st=35%, 2nd-5th=10% each, 6th-10th=5% each.
+
+### Report API
+
+| Endpoint | Description |
+|---|---|
+| `GET /reports/leaderboard` | Current leaderboard |
+| `GET /reports/models` | Registered models |
+| `GET /reports/predictions` | Prediction history |
+| `GET /reports/feeds` | Active feed subscriptions |
+| `GET /reports/snapshots` | Per-model period summaries |
+| `GET /reports/checkpoints` | Checkpoint history |
+| `GET /reports/checkpoints/{id}/emission` | Raw emission (frac64) |
+| `GET /reports/checkpoints/{id}/emission/cli-format` | Coordinator-CLI JSON format |
+| `GET /reports/emissions/latest` | Latest emission |
+| `POST /reports/checkpoints/{id}/confirm` | Record tx_hash after signing |
+| `PATCH /reports/checkpoints/{id}/status` | Advance status lifecycle |
+
+## Development
+
+```bash
+uv run python -m pytest tests/ -x -q
+```
+
+## Demo
+
+```bash
+coordinator demo
+cd btc-up/crunch-node-btc-up
+make deploy
+make verify-e2e
+```
