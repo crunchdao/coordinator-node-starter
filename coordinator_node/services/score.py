@@ -224,7 +224,7 @@ class ScoreService:
             metrics: dict[str, float] = {}
             for window_name, window in aggregation.windows.items():
                 cutoff = now - timedelta(hours=window.hours)
-                window_snaps = [s for s in model_snapshots if s.period_end >= cutoff]
+                window_snaps = [s for s in model_snapshots if self._ensure_utc(s.period_end) >= cutoff]
                 if window_snaps:
                     vals = [float(s.result_summary.get(aggregation.ranking_key, 0)) for s in window_snaps]
                     metrics[window_name] = sum(vals) / len(vals)
@@ -269,6 +269,13 @@ class ScoreService:
         return ranked
 
     _rank_leaderboard = _rank
+
+    @staticmethod
+    def _ensure_utc(dt: datetime) -> datetime:
+        """Ensure a datetime is timezone-aware (assume UTC if naive)."""
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
 
     def _rollback_repositories(self) -> None:
         for name, repo in [("input", self.input_repository),
