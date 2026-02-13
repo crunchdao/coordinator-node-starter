@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Any
+from typing import Any, TypedDict
 
 
 class InputStatus(StrEnum):
@@ -84,6 +84,12 @@ class SnapshotRecord:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class CheckpointEntry(TypedDict):
+    """On-chain payout entry. Prize is USDC with 6 decimal places (1 USDC = 1_000_000)."""
+    model: str
+    prize: int
+
+
 @dataclass
 class CheckpointRecord:
     """Weekly aggregation of snapshots → on-chain payout."""
@@ -91,7 +97,7 @@ class CheckpointRecord:
     period_start: datetime
     period_end: datetime
     status: CheckpointStatus = CheckpointStatus.PENDING
-    entries: list[dict[str, Any]] = field(default_factory=list)  # protocol: [{"model": "id", "prize": usdc_micro}]
+    entries: list[CheckpointEntry] = field(default_factory=list)
     meta: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     tx_hash: str | None = None

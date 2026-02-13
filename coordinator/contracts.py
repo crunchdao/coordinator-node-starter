@@ -5,6 +5,7 @@ from typing import Any, Callable
 from pydantic import BaseModel, ConfigDict, Field
 
 from coordinator.entities.feed_record import FeedRecord
+from coordinator.entities.prediction import CheckpointEntry
 
 
 class Meta(BaseModel):
@@ -117,7 +118,7 @@ def usdc_to_micro(amount: float) -> int:
 
 def default_distribute_prizes(
     ranked_entries: list[dict[str, Any]], pool_usdc: float,
-) -> list[dict[str, Any]]:
+) -> list[CheckpointEntry]:
     """Default prize distribution: 1st=35%, 2-5=10% each, 6-10=5% each (unclaimed remainder stays in pool).
 
     Returns protocol-format entries: [{"model": "<id>", "prize": <usdc_micro_int>}]
@@ -129,7 +130,7 @@ def default_distribute_prizes(
         (6, 10, 0.05),   # 6th-10th: 5% each
     ]
 
-    result: list[dict[str, Any]] = []
+    result: list[CheckpointEntry] = []
     for entry in ranked_entries:
         rank = entry.get("rank", 0)
         pct = 0.0
@@ -139,10 +140,10 @@ def default_distribute_prizes(
                 break
 
         prize_micro = usdc_to_micro(pool_usdc * pct) if pct > 0 else 0
-        result.append({
-            "model": str(entry["model_id"]),
-            "prize": prize_micro,
-        })
+        result.append(CheckpointEntry(
+            model=str(entry["model_id"]),
+            prize=prize_micro,
+        ))
 
     return result
 
@@ -183,4 +184,4 @@ class CrunchContract(BaseModel):
     # Callables
     resolve_ground_truth: Callable[[list[FeedRecord]], dict[str, Any] | None] = default_resolve_ground_truth
     aggregate_snapshot: Callable[[list[dict[str, Any]]], dict[str, Any]] = default_aggregate_snapshot
-    distribute_prizes: Callable[[list[dict[str, Any]], float], list[dict[str, Any]]] = default_distribute_prizes
+    distribute_prizes: Callable[[list[dict[str, Any]], float], list[CheckpointEntry]] = default_distribute_prizes
