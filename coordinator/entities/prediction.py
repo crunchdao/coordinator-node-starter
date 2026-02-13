@@ -84,10 +84,24 @@ class SnapshotRecord:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-class CheckpointEntry(TypedDict):
-    """On-chain payout entry. Prize is USDC with 6 decimal places (1 USDC = 1_000_000)."""
-    model: str
-    prize: int
+class CruncherReward(TypedDict):
+    """On-chain cruncher reward. reward_pct is frac64 (1_000_000_000 = 100%)."""
+    cruncher_index: int
+    reward_pct: int  # frac64: sum of all cruncher rewards must equal FRAC_64_MULTIPLIER
+
+
+class ProviderReward(TypedDict):
+    """On-chain provider reward. reward_pct is frac64 (1_000_000_000 = 100%)."""
+    provider: str   # wallet pubkey
+    reward_pct: int  # frac64
+
+
+class EmissionCheckpoint(TypedDict):
+    """Protocol-format emission checkpoint for on-chain submission."""
+    crunch: str  # crunch pubkey
+    cruncher_rewards: list[CruncherReward]
+    compute_provider_rewards: list[ProviderReward]
+    data_provider_rewards: list[ProviderReward]
 
 
 @dataclass
@@ -97,7 +111,7 @@ class CheckpointRecord:
     period_start: datetime
     period_end: datetime
     status: CheckpointStatus = CheckpointStatus.PENDING
-    entries: list[CheckpointEntry] = field(default_factory=list)
+    entries: list[EmissionCheckpoint] = field(default_factory=list)
     meta: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     tx_hash: str | None = None

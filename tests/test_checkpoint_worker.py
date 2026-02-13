@@ -1,4 +1,4 @@
-"""Tests for checkpoint worker, prize distribution, and report endpoints."""
+"""Tests for checkpoint worker, emission checkpoint building, and report endpoints."""
 from __future__ import annotations
 
 import unittest
@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from coordinator.contracts import (
-    CrunchContract, default_distribute_prizes, usdc_to_micro,
+    CrunchContract, FRAC_64_MULTIPLIER, default_build_emission, pct_to_frac64,
 )
 from coordinator.entities.prediction import (
     CheckpointRecord, CheckpointStatus, SnapshotRecord,
@@ -88,67 +88,100 @@ def _make_snapshot(model_id: str, value: float, count: int = 10) -> SnapshotReco
     )
 
 
-# ── USDC micro-unit conversion ──
+# ── Frac64 conversion ──
 
 
-class TestUsdcConversion(unittest.TestCase):
-    def test_usdc_to_micro(self):
-        self.assertEqual(usdc_to_micro(1.0), 1_000_000)
-        self.assertEqual(usdc_to_micro(338.98), 338_980_000)
-        self.assertEqual(usdc_to_micro(0.0), 0)
-        self.assertEqual(usdc_to_micro(0.000001), 1)
+class TestFrac64Conversion(unittest.TestCase):
+    def test_100_pct_equals_multiplier(self):
+        self.assertEqual(pct_to_frac64(100.0), FRAC_64_MULTIPLIER)
+
+    def test_0_pct_equals_zero(self):
+        self.assertEqual(pct_to_frac64(0.0), 0)
+
+    def test_35_pct(self):
+        self.assertEqual(pct_to_frac64(35.0), 350_000_000)
+
+    def test_10_pct(self):
+        self.assertEqual(pct_to_frac64(10.0), 100_000_000)
 
 
-# ── Prize distribution ──
+# ── Emission checkpoint building ──
 
 
-class TestPrizeDistribution(unittest.TestCase):
-    def test_default_tiers_1st_35pct(self):
+class TestBuildEmission(unittest.TestCase):
+    def test_single_model_gets_100pct(self):
         entries = [{"model_id": "m1", "rank": 1}]
-        result = default_distribute_prizes(entries, 1000.0)
-        self.assertEqual(result[0]["model"], "m1")
-        self.assertEqual(result[0]["prize"], usdc_to_micro(350.0))
+        emission = default_build_emission(entries, crunch_pubkey="crunch123")
 
-    def test_default_tiers_2nd_through_5th_10pct(self):
-        entries = [{"model_id": f"m{i}", "rank": i} for i in range(1, 6)]
-        result = default_distribute_prizes(entries, 1000.0)
-        for i in range(1, 5):  # ranks 2-5
-            self.assertEqual(result[i]["prize"], usdc_to_micro(100.0))
+        self.assertEqual(emission["crunch"], "crunch123")
+        self.assertEqual(len(emission["cruncher_rewards"]), 1)
+        self.assertEqual(emission["cruncher_rewards"][0]["reward_pct"], FRAC_64_MULTIPLIER)
 
-    def test_default_tiers_6th_through_10th_5pct(self):
+    def test_two_models_sum_to_100pct(self):
+        entries = [{"model_id": "m1", "rank": 1}, {"model_id": "m2", "rank": 2}]
+        emission = default_build_emission(entries, crunch_pubkey="crunch123")
+
+        total = sum(r["reward_pct"] for r in emission["cruncher_rewards"])
+        self.assertEqual(total, FRAC_64_MULTIPLIER)
+
+    def test_ten_models_tier_distribution(self):
         entries = [{"model_id": f"m{i}", "rank": i} for i in range(1, 11)]
-        result = default_distribute_prizes(entries, 1000.0)
-        for i in range(5, 10):  # ranks 6-10
-            self.assertEqual(result[i]["prize"], usdc_to_micro(50.0))
+        emission = default_build_emission(entries, crunch_pubkey="crunch123")
 
-    def test_unranked_models_get_zero(self):
-        entries = [{"model_id": f"m{i}", "rank": i} for i in range(1, 15)]
-        result = default_distribute_prizes(entries, 1000.0)
-        for i in range(10, 14):  # ranks 11-14
-            self.assertEqual(result[i]["prize"], 0)
+        total = sum(r["reward_pct"] for r in emission["cruncher_rewards"])
+        self.assertEqual(total, FRAC_64_MULTIPLIER)
+        self.assertEqual(len(emission["cruncher_rewards"]), 10)
 
-    def test_full_pool_allocation_10_models(self):
-        entries = [{"model_id": f"m{i}", "rank": i} for i in range(1, 11)]
-        result = default_distribute_prizes(entries, 1000.0)
-        total = sum(e["prize"] for e in result)
-        # 35 + 4*10 + 5*5 = 100% of 1000 USDC
-        self.assertEqual(total, usdc_to_micro(1000.0))
+    def test_fifteen_models_with_no_remainder(self):
+        """10 tier slots = 100%. Models 11-15 get 0% (no unclaimed remainder)."""
+        entries = [{"model_id": f"m{i}", "rank": i} for i in range(1, 16)]
+        emission = default_build_emission(entries, crunch_pubkey="crunch123")
 
-    def test_protocol_format(self):
-        entries = [{"model_id": "11680", "rank": 1}]
-        result = default_distribute_prizes(entries, 338.98)
-        # 35% of 338.98 = 118.643 USDC
-        self.assertEqual(result[0]["model"], "11680")
-        self.assertEqual(result[0]["prize"], usdc_to_micro(338.98 * 0.35))
-        self.assertIsInstance(result[0]["model"], str)
-        self.assertIsInstance(result[0]["prize"], int)
+        total = sum(r["reward_pct"] for r in emission["cruncher_rewards"])
+        self.assertEqual(total, FRAC_64_MULTIPLIER)
+
+        # Models ranked 11-15 get 0 (tiers fill exactly 100%)
+        for reward in emission["cruncher_rewards"][10:]:
+            self.assertEqual(reward["reward_pct"], 0)
+
+    def test_three_models_remainder_redistributed(self):
+        """With 3 models, tiers give 35+10+10=55%. Remainder 45% split equally."""
+        entries = [{"model_id": f"m{i}", "rank": i} for i in range(1, 4)]
+        emission = default_build_emission(entries, crunch_pubkey="crunch123")
+
+        total = sum(r["reward_pct"] for r in emission["cruncher_rewards"])
+        self.assertEqual(total, FRAC_64_MULTIPLIER)
+
+        # All 3 models should have > 0
+        for reward in emission["cruncher_rewards"]:
+            self.assertGreater(reward["reward_pct"], 0)
+
+    def test_compute_and_data_providers(self):
+        entries = [{"model_id": "m1", "rank": 1}]
+        emission = default_build_emission(
+            entries, crunch_pubkey="crunch123",
+            compute_provider="compute_wallet",
+            data_provider="data_wallet",
+        )
+        self.assertEqual(len(emission["compute_provider_rewards"]), 1)
+        self.assertEqual(emission["compute_provider_rewards"][0]["provider"], "compute_wallet")
+        self.assertEqual(emission["compute_provider_rewards"][0]["reward_pct"], FRAC_64_MULTIPLIER)
+
+        self.assertEqual(len(emission["data_provider_rewards"]), 1)
+        self.assertEqual(emission["data_provider_rewards"][0]["provider"], "data_wallet")
+
+    def test_no_providers_when_not_set(self):
+        entries = [{"model_id": "m1", "rank": 1}]
+        emission = default_build_emission(entries, crunch_pubkey="crunch123")
+        self.assertEqual(len(emission["compute_provider_rewards"]), 0)
+        self.assertEqual(len(emission["data_provider_rewards"]), 0)
 
 
 # ── Checkpoint creation ──
 
 
 class TestCheckpointService(unittest.TestCase):
-    def test_creates_checkpoint_with_protocol_entries(self):
+    def test_creates_checkpoint_with_emission(self):
         snapshots = [
             _make_snapshot("m1", 0.8, count=100),
             _make_snapshot("m2", 0.6, count=50),
@@ -161,23 +194,22 @@ class TestCheckpointService(unittest.TestCase):
             snapshot_repository=snap_repo,
             checkpoint_repository=ckpt_repo,
             model_repository=model_repo,
-            contract=CrunchContract(pool_usdc=1000.0),
+            contract=CrunchContract(crunch_pubkey="crunch_abc"),
         )
         checkpoint = service.create_checkpoint()
 
         self.assertIsNotNone(checkpoint)
         self.assertEqual(checkpoint.status, CheckpointStatus.PENDING)
-        self.assertEqual(len(checkpoint.entries), 2)
 
-        # Protocol format: {"model": str, "prize": int}
-        self.assertIn("model", checkpoint.entries[0])
-        self.assertIn("prize", checkpoint.entries[0])
-        self.assertIsInstance(checkpoint.entries[0]["prize"], int)
+        # entries contains one EmissionCheckpoint
+        self.assertEqual(len(checkpoint.entries), 1)
+        emission = checkpoint.entries[0]
+        self.assertEqual(emission["crunch"], "crunch_abc")
+        self.assertEqual(len(emission["cruncher_rewards"]), 2)
 
-        # 1st place gets 35% of 1000 USDC
-        self.assertEqual(checkpoint.entries[0]["prize"], usdc_to_micro(350.0))
-        # 2nd place gets 10% of 1000 USDC
-        self.assertEqual(checkpoint.entries[1]["prize"], usdc_to_micro(100.0))
+        # Rewards sum to FRAC_64_MULTIPLIER
+        total = sum(r["reward_pct"] for r in emission["cruncher_rewards"])
+        self.assertEqual(total, FRAC_64_MULTIPLIER)
 
         # Ranking details in meta
         self.assertIn("ranking", checkpoint.meta)
@@ -239,7 +271,12 @@ class TestCheckpointEndpoints(unittest.TestCase):
             period_start=now - timedelta(days=7),
             period_end=now,
             status=status,
-            entries=[{"model": "m1", "prize": 350_000_000}],
+            entries=[{
+                "crunch": "crunch_abc",
+                "cruncher_rewards": [{"cruncher_index": 0, "reward_pct": FRAC_64_MULTIPLIER}],
+                "compute_provider_rewards": [],
+                "data_provider_rewards": [],
+            }],
             created_at=now,
         )
 
@@ -264,8 +301,7 @@ class TestCheckpointEndpoints(unittest.TestCase):
         repo = MemCheckpointRepository([self._make_checkpoint()])
         result = get_checkpoint_payload("CKP_001", repo)
         self.assertIn("entries", result)
-        self.assertEqual(result["entries"][0]["model"], "m1")
-        self.assertEqual(result["entries"][0]["prize"], 350_000_000)
+        self.assertEqual(result["entries"][0]["crunch"], "crunch_abc")
 
     def test_confirm_checkpoint_sets_submitted(self):
         from coordinator.workers.report_worker import confirm_checkpoint

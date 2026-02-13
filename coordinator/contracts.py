@@ -5,7 +5,7 @@ from typing import Any, Callable
 from pydantic import BaseModel, ConfigDict, Field
 
 from coordinator.entities.feed_record import FeedRecord
-from coordinator.entities.prediction import CheckpointEntry
+from coordinator.entities.prediction import CruncherReward, EmissionCheckpoint, ProviderReward
 
 
 class Meta(BaseModel):
@@ -108,29 +108,37 @@ def default_resolve_ground_truth(feed_records: list[FeedRecord]) -> dict[str, An
     }
 
 
-USDC_DECIMALS = 6  # 1 USDC = 10^6 micro-units
+FRAC_64_MULTIPLIER = 1_000_000_000  # 100% in on-chain frac64 representation
 
 
-def usdc_to_micro(amount: float) -> int:
-    """Convert USDC float to on-chain micro-units (6 decimals)."""
-    return int(round(amount * 10**USDC_DECIMALS))
+def pct_to_frac64(pct: float) -> int:
+    """Convert percentage (0-100) to frac64 (0 to FRAC_64_MULTIPLIER)."""
+    return int(round(pct / 100.0 * FRAC_64_MULTIPLIER))
 
 
-def default_distribute_prizes(
-    ranked_entries: list[dict[str, Any]], pool_usdc: float,
-) -> list[CheckpointEntry]:
-    """Default prize distribution: 1st=35%, 2-5=10% each, 6-10=5% each (unclaimed remainder stays in pool).
+def default_build_emission(
+    ranked_entries: list[dict[str, Any]],
+    crunch_pubkey: str,
+    compute_provider: str | None = None,
+    data_provider: str | None = None,
+) -> EmissionCheckpoint:
+    """Build an EmissionCheckpoint from ranked entries.
 
-    Returns protocol-format entries: [{"model": "<id>", "prize": <usdc_micro_int>}]
+    Default tier distribution (must sum to 100%):
+      1st = 35%, 2nd-5th = 10% each, 6th-10th = 5% each, rest split equally.
+
+    All cruncher reward_pcts must sum to exactly FRAC_64_MULTIPLIER.
+    Compute/data provider rewards default to 100% for a single provider.
     """
-    # Tier definition: (rank_start, rank_end_inclusive, pct_of_pool)
+    # Tier definition: (rank_start, rank_end_inclusive, pct_of_100)
     tiers: list[tuple[int, int, float]] = [
-        (1, 1, 0.35),    # 1st place: 35%
-        (2, 5, 0.10),    # 2nd-5th: 10% each
-        (6, 10, 0.05),   # 6th-10th: 5% each
+        (1, 1, 35.0),
+        (2, 5, 10.0),
+        (6, 10, 5.0),
     ]
 
-    result: list[CheckpointEntry] = []
+    # Assign raw percentages by tier
+    raw_pcts: list[float] = []
     for entry in ranked_entries:
         rank = entry.get("rank", 0)
         pct = 0.0
@@ -138,14 +146,49 @@ def default_distribute_prizes(
             if start <= rank <= end:
                 pct = tier_pct
                 break
+        raw_pcts.append(pct)
 
-        prize_micro = usdc_to_micro(pool_usdc * pct) if pct > 0 else 0
-        result.append(CheckpointEntry(
-            model=str(entry["model_id"]),
-            prize=prize_micro,
+    # Redistribute unclaimed to ensure sum = 100%
+    total_raw = sum(raw_pcts)
+    if total_raw < 100.0 and len(ranked_entries) > 0:
+        # Split remainder equally among all participants
+        remainder_each = (100.0 - total_raw) / len(ranked_entries)
+        raw_pcts = [p + remainder_each for p in raw_pcts]
+
+    # Convert to frac64, ensuring exact sum = FRAC_64_MULTIPLIER
+    frac64_values = [pct_to_frac64(p) for p in raw_pcts]
+    if frac64_values:
+        diff = FRAC_64_MULTIPLIER - sum(frac64_values)
+        frac64_values[0] += diff  # adjust first entry for rounding
+
+    cruncher_rewards: list[CruncherReward] = []
+    for i, entry in enumerate(ranked_entries):
+        cruncher_rewards.append(CruncherReward(
+            cruncher_index=i,
+            reward_pct=frac64_values[i],
         ))
 
-    return result
+    # Default: single compute + data provider each get 100%
+    compute_rewards: list[ProviderReward] = []
+    if compute_provider:
+        compute_rewards.append(ProviderReward(
+            provider=compute_provider,
+            reward_pct=FRAC_64_MULTIPLIER,
+        ))
+
+    data_rewards: list[ProviderReward] = []
+    if data_provider:
+        data_rewards.append(ProviderReward(
+            provider=data_provider,
+            reward_pct=FRAC_64_MULTIPLIER,
+        ))
+
+    return EmissionCheckpoint(
+        crunch=crunch_pubkey,
+        cruncher_rewards=cruncher_rewards,
+        compute_provider_rewards=compute_rewards,
+        data_provider_rewards=data_rewards,
+    )
 
 
 def default_aggregate_snapshot(score_results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -178,10 +221,12 @@ class CrunchContract(BaseModel):
     scope: PredictionScope = Field(default_factory=PredictionScope)
     aggregation: Aggregation = Field(default_factory=Aggregation)
 
-    # Pool
-    pool_usdc: float = Field(default=1000.0, description="USDC prize pool per checkpoint interval")
+    # On-chain identifiers
+    crunch_pubkey: str = Field(default="", description="Crunch account pubkey for emission checkpoints")
+    compute_provider: str | None = Field(default=None, description="Compute provider wallet pubkey")
+    data_provider: str | None = Field(default=None, description="Data provider wallet pubkey")
 
     # Callables
     resolve_ground_truth: Callable[[list[FeedRecord]], dict[str, Any] | None] = default_resolve_ground_truth
     aggregate_snapshot: Callable[[list[dict[str, Any]]], dict[str, Any]] = default_aggregate_snapshot
-    distribute_prizes: Callable[[list[dict[str, Any]], float], list[CheckpointEntry]] = default_distribute_prizes
+    build_emission: Callable[..., EmissionCheckpoint] = default_build_emission

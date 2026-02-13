@@ -111,19 +111,23 @@ class CheckpointService:
         for idx, entry in enumerate(ranked_entries, start=1):
             entry["rank"] = idx
 
-        # Distribute prizes → protocol-format entries [{"model": "id", "prize": usdc_micro}]
-        entries = self.contract.distribute_prizes(ranked_entries, self.contract.pool_usdc)
+        # Build emission checkpoint → protocol format for on-chain submission
+        emission = self.contract.build_emission(
+            ranked_entries,
+            crunch_pubkey=self.contract.crunch_pubkey,
+            compute_provider=self.contract.compute_provider,
+            data_provider=self.contract.data_provider,
+        )
 
         checkpoint = CheckpointRecord(
             id=f"CKP_{now.strftime('%Y%m%d_%H%M%S')}",
             period_start=period_start,
             period_end=now,
             status=CheckpointStatus.PENDING,
-            entries=entries,
+            entries=[emission],
             meta={
                 "snapshot_count": len(snapshots),
                 "model_count": len(ranked_entries),
-                "pool_usdc": self.contract.pool_usdc,
                 "ranking": ranked_entries,
             },
             created_at=now,
@@ -144,12 +148,15 @@ class CheckpointService:
 def build_service() -> CheckpointService:
     session = create_session()
     interval = int(os.getenv("CHECKPOINT_INTERVAL_SECONDS", str(7 * 24 * 3600)))
-    pool = float(os.getenv("CHECKPOINT_POOL_USDC", "1000"))
     return CheckpointService(
         snapshot_repository=DBSnapshotRepository(session),
         checkpoint_repository=DBCheckpointRepository(session),
         model_repository=DBModelRepository(session),
-        contract=CrunchContract(pool_usdc=pool),
+        contract=CrunchContract(
+            crunch_pubkey=os.getenv("CRUNCH_PUBKEY", ""),
+            compute_provider=os.getenv("COMPUTE_PROVIDER_PUBKEY") or None,
+            data_provider=os.getenv("DATA_PROVIDER_PUBKEY") or None,
+        ),
         interval_seconds=interval,
     )
 

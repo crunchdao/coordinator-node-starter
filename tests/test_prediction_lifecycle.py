@@ -11,11 +11,11 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from coordinator.contracts import CrunchContract, usdc_to_micro
+from coordinator.contracts import CrunchContract, FRAC_64_MULTIPLIER
 from coordinator.entities.model import Model
 from coordinator.entities.prediction import (
     CheckpointRecord, CheckpointStatus, InputRecord, InputStatus,
-    PredictionRecord, PredictionStatus, ScoreRecord, SnapshotRecord,
+    PredictionRecord, PredictionStatus, ScoreRecord,
 )
 from coordinator.services.realtime_predict import RealtimePredictService
 from coordinator.services.score import ScoreService
@@ -244,7 +244,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         self.checkpoint_repo = MemCheckpointRepository()
         self.model_repo = MemModelRepository()
         self.lb_repo = MemLeaderboardRepository()
-        self.contract = CrunchContract(pool_usdc=1000.0)
+        self.contract = CrunchContract(crunch_pubkey="test_crunch_pubkey")
 
         self.predict_service = RealtimePredictService(
             checkpoint_interval_seconds=60,
@@ -421,36 +421,37 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.score_repo.scores), 2)
         self.assertEqual(len(self.snapshot_repo.snapshots), 2)
 
-        # ── checkpoint (aggregates snapshots → protocol entries with prizes) ──
+        # ── checkpoint (aggregates snapshots → emission checkpoint) ──
         checkpoint = self.checkpoint_service.create_checkpoint()
 
         self.assertIsNotNone(checkpoint)
         self.assertEqual(checkpoint.status, CheckpointStatus.PENDING)
 
-        # Protocol format: [{"model": str, "prize": int}]
-        self.assertEqual(len(checkpoint.entries), 2)
-        for entry in checkpoint.entries:
-            self.assertIn("model", entry)
-            self.assertIn("prize", entry)
-            self.assertIsInstance(entry["model"], str)
-            self.assertIsInstance(entry["prize"], int)
+        # Single EmissionCheckpoint entry
+        self.assertEqual(len(checkpoint.entries), 1)
+        emission = checkpoint.entries[0]
+        self.assertEqual(emission["crunch"], "test_crunch_pubkey")
+        self.assertIn("cruncher_rewards", emission)
+        self.assertIn("compute_provider_rewards", emission)
+        self.assertIn("data_provider_rewards", emission)
 
-        # 1st place gets 35% of 1000 USDC, 2nd gets 10%
-        prizes = {e["model"]: e["prize"] for e in checkpoint.entries}
-        first_model = checkpoint.meta["ranking"][0]["model_id"]
-        second_model = checkpoint.meta["ranking"][1]["model_id"]
-        self.assertEqual(prizes[first_model], usdc_to_micro(350.0))
-        self.assertEqual(prizes[second_model], usdc_to_micro(100.0))
+        # 2 cruncher rewards (one per model)
+        self.assertEqual(len(emission["cruncher_rewards"]), 2)
 
-        # Total prize = 45% of 1000 (only 2 models: 35% + 10%)
-        total = sum(e["prize"] for e in checkpoint.entries)
-        self.assertEqual(total, usdc_to_micro(450.0))
+        # Rewards sum to exactly FRAC_64_MULTIPLIER (100%)
+        total_pct = sum(r["reward_pct"] for r in emission["cruncher_rewards"])
+        self.assertEqual(total_pct, FRAC_64_MULTIPLIER)
+
+        # 1st place gets more than 2nd
+        self.assertGreater(
+            emission["cruncher_rewards"][0]["reward_pct"],
+            emission["cruncher_rewards"][1]["reward_pct"],
+        )
 
         # Ranking in meta
         self.assertIn("ranking", checkpoint.meta)
         self.assertEqual(checkpoint.meta["ranking"][0]["rank"], 1)
         self.assertEqual(checkpoint.meta["ranking"][1]["rank"], 2)
-        self.assertEqual(checkpoint.meta["pool_usdc"], 1000.0)
 
     async def test_leaderboard_ranking_order(self) -> None:
         """Model with higher score should rank first (default desc)."""

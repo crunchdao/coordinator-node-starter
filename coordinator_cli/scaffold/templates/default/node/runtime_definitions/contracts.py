@@ -146,33 +146,55 @@ def default_resolve_ground_truth(feed_records: list[Any]) -> dict[str, Any] | No
     }
 
 
-USDC_DECIMALS = 6
+FRAC_64_MULTIPLIER = 1_000_000_000  # 100% in on-chain frac64 representation
 
 
-def usdc_to_micro(amount: float) -> int:
-    """Convert USDC float to on-chain micro-units (6 decimals)."""
-    return int(round(amount * 10**USDC_DECIMALS))
+def pct_to_frac64(pct: float) -> int:
+    """Convert percentage (0-100) to frac64 (0 to FRAC_64_MULTIPLIER)."""
+    return int(round(pct / 100.0 * FRAC_64_MULTIPLIER))
 
 
-def default_distribute_prizes(
-    ranked_entries: list[dict[str, Any]], pool_usdc: float,
-) -> list[dict[str, Any]]:
-    """Default: 1st=35%, 2-5=10% each, 6-10=5% each. Returns [{"model": id, "prize": usdc_micro}]."""
-    tiers: list[tuple[int, int, float]] = [
-        (1, 1, 0.35),
-        (2, 5, 0.10),
-        (6, 10, 0.05),
-    ]
-    result: list[dict[str, Any]] = []
+def default_build_emission(
+    ranked_entries: list[dict[str, Any]],
+    crunch_pubkey: str,
+    compute_provider: str | None = None,
+    data_provider: str | None = None,
+) -> dict[str, Any]:
+    """Build EmissionCheckpoint from ranked entries.
+
+    Default tiers: 1st=35%, 2-5=10%, 6-10=5%. Unclaimed redistributed equally.
+    All cruncher reward_pcts sum to exactly FRAC_64_MULTIPLIER.
+    """
+    tiers = [(1, 1, 35.0), (2, 5, 10.0), (6, 10, 5.0)]
+
+    raw_pcts = []
     for entry in ranked_entries:
         rank = entry.get("rank", 0)
-        pct = 0.0
-        for start, end, tier_pct in tiers:
-            if start <= rank <= end:
-                pct = tier_pct
-                break
-        result.append({"model": str(entry["model_id"]), "prize": usdc_to_micro(pool_usdc * pct) if pct > 0 else 0})
-    return result
+        pct = next((t for s, e, t in tiers if s <= rank <= e), 0.0)
+        raw_pcts.append(pct)
+
+    total_raw = sum(raw_pcts)
+    if total_raw < 100.0 and ranked_entries:
+        remainder_each = (100.0 - total_raw) / len(ranked_entries)
+        raw_pcts = [p + remainder_each for p in raw_pcts]
+
+    frac64_values = [pct_to_frac64(p) for p in raw_pcts]
+    if frac64_values:
+        frac64_values[0] += FRAC_64_MULTIPLIER - sum(frac64_values)
+
+    return {
+        "crunch": crunch_pubkey,
+        "cruncher_rewards": [
+            {"cruncher_index": i, "reward_pct": frac64_values[i]}
+            for i in range(len(ranked_entries))
+        ],
+        "compute_provider_rewards": [
+            {"provider": compute_provider, "reward_pct": FRAC_64_MULTIPLIER}
+        ] if compute_provider else [],
+        "data_provider_rewards": [
+            {"provider": data_provider, "reward_pct": FRAC_64_MULTIPLIER}
+        ] if data_provider else [],
+    }
 
 
 class CrunchContract(BaseModel):
@@ -189,10 +211,12 @@ class CrunchContract(BaseModel):
     scope: PredictionScope = Field(default_factory=PredictionScope)
     aggregation: Aggregation = Field(default_factory=Aggregation)
 
-    # Pool
-    pool_usdc: float = Field(default=1000.0, description="USDC prize pool per checkpoint interval")
+    # On-chain identifiers
+    crunch_pubkey: str = Field(default="", description="Crunch account pubkey for emission checkpoints")
+    compute_provider: str | None = Field(default=None, description="Compute provider wallet pubkey")
+    data_provider: str | None = Field(default=None, description="Data provider wallet pubkey")
 
     # Callables
     resolve_ground_truth: Callable[[list[Any]], dict[str, Any] | None] = default_resolve_ground_truth
     aggregate_snapshot: Callable[[list[dict[str, Any]]], dict[str, Any]] = default_aggregate_snapshot
-    distribute_prizes: Callable[[list[dict[str, Any]], float], list[dict[str, Any]]] = default_distribute_prizes
+    build_emission: Callable[..., dict[str, Any]] = default_build_emission
