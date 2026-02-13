@@ -14,13 +14,9 @@ class Meta(BaseModel):
 
 
 class RawInput(BaseModel):
-    """What the feed produces. Shape is determined by feed config."""
+    """What the feed produces. Override to define your feed's data shape."""
 
     model_config = ConfigDict(extra="allow")
-
-    symbol: str = "BTC"
-    asof_ts: int = 0
-    candles_1m: list[dict] = Field(default_factory=list)
 
 
 class GroundTruth(RawInput):
@@ -54,7 +50,7 @@ class PredictionScope(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    asset: str = "BTC"
+    subject: str = "BTC"
     horizon_seconds: int = Field(default=60, ge=1)
     step_seconds: int = Field(default=15, ge=1)
 

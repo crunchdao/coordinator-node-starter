@@ -1,12 +1,12 @@
-"""Manual historical backfill for market data feeds.
+"""Manual historical backfill for feed data.
 
 Usage:
-    python scripts/backfill.py --provider binance --asset BTC --kind candle --granularity 1m \
+    python scripts/backfill.py --source binance --subject BTC --kind candle --granularity 1m \
         --from 2026-01-01 --to 2026-02-01
 
 Or via make:
     make backfill FROM=2026-01-01 TO=2026-02-01
-    make backfill FROM=2026-01-01 TO=2026-02-01 PROVIDER=binance ASSET=BTCUSDT KIND=candle GRANULARITY=1m
+    make backfill FROM=2026-01-01 TO=2026-02-01 SOURCE=binance SUBJECT=BTCUSDT KIND=candle GRANULARITY=1m
 """
 import os
 import sys
@@ -22,7 +22,7 @@ import logging
 from datetime import datetime, timezone
 
 from coordinator.db import create_session
-from coordinator.db.market_records import DBMarketRecordRepository
+from coordinator.db.feed_records import DBFeedRecordRepository
 from coordinator.services.backfill import BackfillService, BackfillRequest
 from coordinator.feeds import create_default_registry
 
@@ -38,9 +38,9 @@ def parse_datetime(value):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Backfill market data from a feed provider")
-    parser.add_argument("--provider", default=os.getenv("FEED_PROVIDER", "pyth"), help="Feed provider (default: $FEED_PROVIDER or pyth)")
-    parser.add_argument("--asset", default=os.getenv("FEED_ASSETS", "BTC"), help="Asset symbol(s), comma-separated (default: $FEED_ASSETS or BTC)")
+    parser = argparse.ArgumentParser(description="Backfill data from a feed provider")
+    parser.add_argument("--source", default=os.getenv("FEED_SOURCE", os.getenv("FEED_PROVIDER", "pyth")), help="Feed source (default: $FEED_SOURCE or pyth)")
+    parser.add_argument("--subject", default=os.getenv("FEED_SUBJECTS", os.getenv("FEED_ASSETS", "BTC")), help="Subject(s), comma-separated (default: $FEED_SUBJECTS or BTC)")
     parser.add_argument("--kind", default=os.getenv("FEED_KIND", "tick"), help="Data kind: tick or candle (default: $FEED_KIND or tick)")
     parser.add_argument("--granularity", default=os.getenv("FEED_GRANULARITY", "1s"), help="Granularity (default: $FEED_GRANULARITY or 1s)")
     parser.add_argument("--from", dest="start", required=True, type=parse_datetime, help="Start date (YYYY-MM-DD or ISO)")
@@ -56,23 +56,23 @@ def main():
     )
     logger = logging.getLogger("backfill")
 
-    assets = tuple(a.strip() for a in args.asset.split(",") if a.strip())
+    subjects = tuple(s.strip() for s in args.subject.split(",") if s.strip())
 
     logger.info(
-        "backfill starting provider=%s assets=%s kind=%s granularity=%s from=%s to=%s",
-        args.provider, ",".join(assets), args.kind, args.granularity,
+        "backfill starting source=%s subjects=%s kind=%s granularity=%s from=%s to=%s",
+        args.source, ",".join(subjects), args.kind, args.granularity,
         args.start.isoformat(), args.end.isoformat(),
     )
 
     registry = create_default_registry()
-    feed = registry.create_from_env(default_provider=args.provider)
+    feed = registry.create_from_env(default_provider=args.source)
 
     session = create_session()
-    repo = DBMarketRecordRepository(session)
+    repo = DBFeedRecordRepository(session)
 
     request = BackfillRequest(
-        provider=args.provider,
-        assets=assets,
+        source=args.source,
+        subjects=subjects,
         kind=args.kind,
         granularity=args.granularity,
         start=args.start,

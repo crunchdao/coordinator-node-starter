@@ -99,7 +99,7 @@ class InMemoryPredictionRepository:
             {
                 "id": "CFG_1",
                 "scope_key": "BTC-60-60",
-                "scope_template": {"asset": "BTC", "horizon": 60, "step": 60},
+                "scope_template": {"subject": "BTC", "horizon": 60, "step": 60},
                 "schedule": {"prediction_interval_seconds": 60, "resolve_after_seconds": 60},
                 "active": True,
                 "order": 1,
@@ -135,7 +135,7 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
 
         pred = repo.saved_predictions[0]
         self.assertEqual(pred.scope_key, "BTC-60-60")
-        self.assertEqual(pred.scope.get("asset"), "BTC")
+        self.assertEqual(pred.scope.get("subject"), "BTC")
         self.assertIsNotNone(pred.input_id)
         self.assertIn("value", pred.inference_output)
 

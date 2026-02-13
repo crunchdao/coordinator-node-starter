@@ -72,7 +72,7 @@ class PredictionScope(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    asset: str = "BTC"
+    subject: str = "BTC"
     horizon_seconds: int = Field(default=60, ge=1)
     step_seconds: int = Field(default=15, ge=1)
 

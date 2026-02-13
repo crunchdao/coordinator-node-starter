@@ -95,7 +95,7 @@ def auto_report_schema(contract: CrunchContract) -> dict[str, Any]:
                     "field": "score_success",
                 },
                 "filterConfig": [
-                    {"type": "select", "label": "Asset", "property": "asset", "autoSelectFirst": True},
+                    {"type": "select", "label": "Subject", "property": "subject", "autoSelectFirst": True},
                     {"type": "select", "label": "Horizon", "property": "horizon", "autoSelectFirst": True},
                 ],
                 "groupByProperty": "param",
@@ -114,7 +114,7 @@ def auto_report_schema(contract: CrunchContract) -> dict[str, Any]:
                 "xAxis": {"name": "performed_at"},
                 "yAxis": {"series": series, "format": "decimal-2"},
                 "filterConfig": [
-                    {"type": "select", "label": "Asset", "property": "asset", "autoSelectFirst": True},
+                    {"type": "select", "label": "Subject", "property": "subject", "autoSelectFirst": True},
                     {"type": "select", "label": "Horizon", "property": "horizon", "autoSelectFirst": True},
                 ],
                 "groupByProperty": "param",

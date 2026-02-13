@@ -121,7 +121,7 @@ class TestBackfillScaffold(unittest.TestCase):
                 content = script.read_text(encoding="utf-8")
                 self.assertIn("--from", content)
                 self.assertIn("--to", content)
-                self.assertIn("--provider", content)
+                self.assertIn("--source", content)
 
     def test_scaffold_makefile_has_backfill_target(self):
         from tests.test_coordinator_cli_init import _cwd, main

@@ -43,7 +43,11 @@ class FeedReader:
         )
 
     def get_input(self, now: datetime) -> dict[str, Any]:
-        """Provide raw input for this timestep."""
+        """Build raw input dict for this timestep from recent feed records.
+
+        Default implementation returns candle-shaped data (symbol, asof_ts, candles_1m).
+        Override or replace via contract.raw_input_type for non-price feeds.
+        """
         candles = self._load_recent_candles(limit=self.window_size)
 
         if len(candles) < min(3, self.window_size):

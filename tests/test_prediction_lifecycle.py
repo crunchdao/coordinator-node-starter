@@ -48,7 +48,7 @@ class MemPredictionRepository:
             {
                 "id": "CFG_1",
                 "scope_key": "BTC-60-60",
-                "scope_template": {"asset": "BTC"},
+                "scope_template": {"subject": "BTC"},
                 "schedule": {"prediction_interval_seconds": 60, "resolve_after_seconds": 60},
                 "active": True,
                 "order": 1,

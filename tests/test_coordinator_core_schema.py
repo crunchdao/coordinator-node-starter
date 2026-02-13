@@ -1,15 +1,16 @@
 import unittest
 
 from coordinator.db.tables import (
+    CheckpointRow,
     FeedIngestionStateRow,
     FeedRecordRow,
     InputRow,
     LeaderboardRow,
     ModelRow,
-    ModelScoreRow,
     PredictionConfigRow,
     PredictionRow,
     ScoreRow,
+    SnapshotRow,
 )
 
 
@@ -19,7 +20,8 @@ class TestCoordinatorCoreSchema(unittest.TestCase):
         self.assertEqual(InputRow.__tablename__, "inputs")
         self.assertEqual(PredictionRow.__tablename__, "predictions")
         self.assertEqual(ScoreRow.__tablename__, "scores")
-        self.assertEqual(ModelScoreRow.__tablename__, "model_scores")
+        self.assertEqual(SnapshotRow.__tablename__, "snapshots")
+        self.assertEqual(CheckpointRow.__tablename__, "checkpoints")
         self.assertEqual(LeaderboardRow.__tablename__, "leaderboards")
         self.assertEqual(PredictionConfigRow.__tablename__, "scheduled_prediction_configs")
         self.assertEqual(FeedRecordRow.__tablename__, "feed_records")

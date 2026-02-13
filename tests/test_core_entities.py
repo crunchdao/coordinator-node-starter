@@ -29,12 +29,12 @@ class TestCoreEntities(unittest.TestCase):
             id="pre1", input_id="inp1", model_id="m1",
             prediction_config_id="CFG_001",
             scope_key="BTC-60-60",
-            scope={"asset": "BTC", "horizon": 3600},
+            scope={"subject": "BTC", "horizon": 3600},
             status="PENDING", exec_time_ms=12.5,
             inference_output={"distribution": []},
         )
         self.assertEqual(prediction.scope_key, "BTC-60-60")
-        self.assertEqual(prediction.scope["asset"], "BTC")
+        self.assertEqual(prediction.scope["subject"], "BTC")
         self.assertIn("distribution", prediction.inference_output)
 
     def test_score_record(self):

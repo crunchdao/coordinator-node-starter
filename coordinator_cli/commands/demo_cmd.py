@@ -19,7 +19,7 @@ def run_demo(
         name=challenge_name,
         project_root=output_root,
         force=force,
-        pack_name="baseline",
+        pack_name="realtime",
     )
     if code != 0:
         return code

@@ -126,7 +126,7 @@ def resolve_init_config(
     node_name = f"crunch-node-{resolved_name}"
     challenge_name = f"crunch-{resolved_name}"
 
-    selected_pack = str(pack_name or spec.get("pack") or "baseline")
+    selected_pack = str(pack_name or spec.get("pack") or "realtime")
     pack = get_pack(selected_pack)
     normalized_spec = dict(spec)
     normalized_spec["pack"] = selected_pack

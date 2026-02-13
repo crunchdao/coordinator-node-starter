@@ -9,10 +9,8 @@ description = "Starter template runtime for Crunch coordinator nodes"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "densitypdf>=0.1.4",
     "fastapi>=0.121.3",
     "model-runner-client>=0.10.0",
-    "numpy>=2.3.4",
     "psycopg2-binary>=2.9.11",
     "python-binance>=1.0.19",
     "requests>=2.32.5",

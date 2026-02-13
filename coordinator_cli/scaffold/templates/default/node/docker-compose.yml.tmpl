@@ -41,27 +41,27 @@ services:
         condition: service_healthy
     networks: [coordinator-net]
 
-  market-data-worker:
+  feed-data-worker:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: [[node_name]]-market-data-worker
+    container_name: [[node_name]]-feed-data-worker
     restart: always
-    command: ["python", "-m", "coordinator.workers.market_data_worker"]
+    command: ["python", "-m", "coordinator.workers.feed_data_worker"]
     environment:
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_USER: ${POSTGRES_USER:-starter}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
       POSTGRES_DB: ${POSTGRES_DB:-starter}
-      FEED_PROVIDER: ${FEED_PROVIDER:-pyth}
-      FEED_ASSETS: ${FEED_ASSETS:-BTC}
+      FEED_SOURCE: ${FEED_SOURCE:-pyth}
+      FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
       FEED_KIND: ${FEED_KIND:-tick}
       FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
       FEED_POLL_SECONDS: ${FEED_POLL_SECONDS:-5}
       FEED_BACKFILL_MINUTES: ${FEED_BACKFILL_MINUTES:-180}
-      MARKET_RECORD_TTL_DAYS: ${MARKET_RECORD_TTL_DAYS:-90}
-      MARKET_RETENTION_CHECK_SECONDS: ${MARKET_RETENTION_CHECK_SECONDS:-3600}
+      FEED_RECORD_TTL_DAYS: ${FEED_RECORD_TTL_DAYS:-90}
+      FEED_RETENTION_CHECK_SECONDS: ${FEED_RETENTION_CHECK_SECONDS:-3600}
       PYTHONPATH: /app/challenge
     volumes:
       - ../[[challenge_name]]:/app/challenge
@@ -89,15 +89,10 @@ services:
       CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-60}
       CRUNCH_ID: ${CRUNCH_ID:-starter-challenge}
       MODEL_BASE_CLASSNAME: ${MODEL_BASE_CLASSNAME:-tracker.TrackerBase}
-      FEED_PROVIDER: ${FEED_PROVIDER:-pyth}
-      FEED_ASSETS: ${FEED_ASSETS:-BTC}
+      FEED_SOURCE: ${FEED_SOURCE:-pyth}
+      FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
       FEED_KIND: ${FEED_KIND:-tick}
       FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
-      INFERENCE_INPUT_BUILDER: ${INFERENCE_INPUT_BUILDER}
-      INFERENCE_OUTPUT_VALIDATOR: ${INFERENCE_OUTPUT_VALIDATOR}
-      RAW_INPUT_PROVIDER: ${RAW_INPUT_PROVIDER}
-      PREDICTION_SCOPE_BUILDER: ${PREDICTION_SCOPE_BUILDER}
-      PREDICT_CALL_BUILDER: ${PREDICT_CALL_BUILDER}
       PYTHONPATH: /app/challenge
     volumes:
       - ../[[challenge_name]]:/app/challenge
@@ -106,7 +101,7 @@ services:
         condition: service_completed_successfully
       model-orchestrator:
         condition: service_started
-      market-data-worker:
+      feed-data-worker:
         condition: service_started
     networks: [coordinator-net]
 
@@ -124,22 +119,41 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
       POSTGRES_DB: ${POSTGRES_DB:-starter}
       CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-60}
-      FEED_PROVIDER: ${FEED_PROVIDER:-pyth}
-      FEED_ASSETS: ${FEED_ASSETS:-BTC}
+      FEED_SOURCE: ${FEED_SOURCE:-pyth}
+      FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
       FEED_KIND: ${FEED_KIND:-tick}
       FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
       SCORING_FUNCTION: ${SCORING_FUNCTION}
-      MODEL_SCORE_AGGREGATOR: ${MODEL_SCORE_AGGREGATOR}
-      LEADERBOARD_RANKER: ${LEADERBOARD_RANKER}
-      GROUND_TRUTH_RESOLVER: ${GROUND_TRUTH_RESOLVER}
       PYTHONPATH: /app/challenge
     volumes:
       - ../[[challenge_name]]:/app/challenge
     depends_on:
       init-db:
         condition: service_completed_successfully
-      market-data-worker:
+      feed-data-worker:
         condition: service_started
+    networks: [coordinator-net]
+
+  checkpoint-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: [[node_name]]-checkpoint-worker
+    restart: always
+    command: ["python", "-m", "coordinator.workers.checkpoint_worker"]
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-starter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
+      POSTGRES_DB: ${POSTGRES_DB:-starter}
+      CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-604800}
+      PYTHONPATH: /app/challenge
+    volumes:
+      - ../[[challenge_name]]:/app/challenge
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
     networks: [coordinator-net]
 
   report-worker:
@@ -157,7 +171,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-starter}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
       POSTGRES_DB: ${POSTGRES_DB:-starter}
-      REPORT_SCHEMA_PROVIDER: ${REPORT_SCHEMA_PROVIDER}
       PYTHONPATH: /app/challenge
     volumes:
       - ../[[challenge_name]]:/app/challenge

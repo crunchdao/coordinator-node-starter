@@ -23,7 +23,6 @@ def tables_to_reset() -> list[str]:
         "predictions",
         "inputs",
         "leaderboards",
-        "model_scores",
         "feed_records",
         "feed_ingestion_state",
         "scheduled_prediction_configs",

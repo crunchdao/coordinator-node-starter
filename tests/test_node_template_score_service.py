@@ -128,7 +128,7 @@ def _make_prediction(input_id: str = "inp-1", status: str = "PENDING") -> Predic
     return PredictionRecord(
         id="pre-1", input_id=input_id, model_id="m1",
         prediction_config_id="CFG_1",
-        scope_key="BTC-60", scope={"asset": "BTC", "horizon": 60},
+        scope_key="BTC-60", scope={"subject": "BTC", "horizon": 60},
         status=status, exec_time_ms=10.0,
         inference_output={"value": 0.5},
         performed_at=now - timedelta(minutes=5),

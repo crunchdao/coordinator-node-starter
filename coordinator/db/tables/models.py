@@ -36,19 +36,6 @@ class ModelRow(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now, index=True)
 
 
-class ModelScoreRow(SQLModel, table=True):
-    __tablename__ = "model_scores"
-
-    id: str = Field(primary_key=True)
-    model_id: str = Field(index=True, foreign_key="models.id")
-
-    score_payload_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
-    )
-
-    computed_at: datetime = Field(default_factory=utc_now, index=True)
-
-
 class LeaderboardRow(SQLModel, table=True):
     __tablename__ = "leaderboards"
 

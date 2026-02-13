@@ -182,14 +182,14 @@ class PredictService:
         return (inference_input,)
 
     def _encode_predict(self, scope: dict[str, Any]) -> tuple:
-        asset = scope.get("asset", self.contract.scope.asset)
+        subject = scope.get("subject", self.contract.scope.subject)
         horizon = int(scope.get("horizon_seconds", self.contract.scope.horizon_seconds))
         step = int(scope.get("step_seconds", self.contract.scope.step_seconds))
 
         if MODEL_RUNNER_PROTO_AVAILABLE:
             return ([
-                Argument(position=1, data=Variant(type=VariantType.STRING, value=encode_data(VariantType.STRING, asset))),
+                Argument(position=1, data=Variant(type=VariantType.STRING, value=encode_data(VariantType.STRING, subject))),
                 Argument(position=2, data=Variant(type=VariantType.INT, value=encode_data(VariantType.INT, horizon))),
                 Argument(position=3, data=Variant(type=VariantType.INT, value=encode_data(VariantType.INT, step))),
             ], [])
-        return (asset, horizon, step)
+        return (subject, horizon, step)
