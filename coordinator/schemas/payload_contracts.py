@@ -28,72 +28,9 @@ class ScheduledPredictionConfigEnvelope(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class PredictionScopeEnvelope(BaseModel):
-    """Canonical scope envelope written to prediction rows."""
-
-    scope_key: str = Field(min_length=1)
-    scope: dict[str, Any] = Field(default_factory=dict)
-
-    model_config = ConfigDict(extra="allow")
-
-
-class ScoreRankingEnvelope(BaseModel):
-    """Ranking strategy for a score payload."""
-
-    key: str | None = None
-    value: float | None = None
-    direction: Literal["asc", "desc"] = "desc"
-    tie_breakers: list[str] = Field(default_factory=list)
-
-    model_config = ConfigDict(extra="allow")
-
-
-class ScoreEnvelope(BaseModel):
-    """Canonical score envelope used in model/leaderboard JSONB payloads.
-
-    - metrics: named numeric metrics (wealth, hit_rate, loss, ...)
-    - ranking: how to rank these metrics
-    - payload: challenge-specific structured details
-    """
-
-    metrics: dict[str, float | None] = Field(default_factory=dict)
-    ranking: ScoreRankingEnvelope = Field(default_factory=ScoreRankingEnvelope)
-    payload: dict[str, Any] = Field(default_factory=dict)
-
-    model_config = ConfigDict(extra="forbid")
-
-    @property
-    def rank_value(self) -> float | None:
-        if self.ranking.value is not None:
-            return float(self.ranking.value)
-
-        if self.ranking.key is None:
-            return None
-
-        value = self.metrics.get(self.ranking.key)
-        if value is None:
-            return None
-        return float(value)
-
-
-class LeaderboardEntryEnvelope(BaseModel):
-    """Canonical leaderboard entry envelope persisted in `leaderboards.entries_jsonb`."""
-
-    model_id: str
-    score: ScoreEnvelope = Field(default_factory=ScoreEnvelope)
-    rank: int | None = None
-    model_name: str | None = None
-    cruncher_name: str | None = None
-
-    model_config = ConfigDict(extra="allow")
-
-
 # ---------------------------------------------------------------------------
 # Report schema contracts — must match coordinator-webapp FE types
 # ---------------------------------------------------------------------------
-
-_LEADERBOARD_COLUMN_TYPES = {"MODEL", "VALUE", "USERNAME", "CHART"}
-_METRIC_WIDGET_TYPES = {"CHART", "IFRAME"}
 
 
 class ReportLeaderboardColumn(BaseModel):

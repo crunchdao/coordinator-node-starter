@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, status
 from sqlmodel import Session
 
 from coordinator.contracts import CrunchContract
-from coordinator.schemas import LeaderboardEntryEnvelope, ReportSchemaEnvelope
+from coordinator.schemas import ReportSchemaEnvelope
 from coordinator.db import (
     DBLeaderboardRepository,
     DBFeedRecordRepository,
@@ -242,20 +242,19 @@ def get_leaderboard(
 
     normalized_entries = []
     for entry in entries:
-        normalized = LeaderboardEntryEnvelope.model_validate(entry)
-        metrics = dict(normalized.score.metrics)
+        score = entry.get("score", {})
+        metrics = score.get("metrics", {})
 
         normalized_entries.append(
             {
                 "created_at": created_at,
-                "model_id": normalized.model_id,
+                "model_id": entry.get("model_id"),
                 "score_metrics": metrics,
-                "score_ranking": normalized.score.ranking.model_dump(exclude_none=True),
-                "score_payload": dict(normalized.score.payload),
+                "score_ranking": score.get("ranking", {}),
                 **_flatten_metrics(metrics),
-                "rank": normalized.rank if normalized.rank is not None else 999999,
-                "model_name": normalized.model_name,
-                "cruncher_name": normalized.cruncher_name,
+                "rank": entry.get("rank", 999999),
+                "model_name": entry.get("model_name"),
+                "cruncher_name": entry.get("cruncher_name"),
             }
         )
 

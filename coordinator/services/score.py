@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from coordinator.entities.prediction import ScoreRecord
-from coordinator.schemas import LeaderboardEntryEnvelope, ScoreEnvelope
+
 from coordinator.db.repositories import (
     DBInputRepository, DBLeaderboardRepository, DBModelRepository,
     DBPredictionRepository, DBScoreRepository,
@@ -198,18 +198,21 @@ class ScoreService:
                     metrics[window_name] = 0.0
 
             model = models.get(model_id)
-            entries.append(LeaderboardEntryEnvelope(
-                model_id=model_id,
-                score=ScoreEnvelope(
-                    metrics=metrics,
-                    ranking={"key": aggregation.ranking_key,
-                             "value": metrics.get(aggregation.ranking_key, 0.0),
-                             "direction": aggregation.ranking_direction},
-                    payload={},
-                ),
-                model_name=model.name if model else None,
-                cruncher_name=model.player_name if model else None,
-            ).model_dump(exclude_none=True))
+            entry: dict[str, Any] = {
+                "model_id": model_id,
+                "score": {
+                    "metrics": metrics,
+                    "ranking": {
+                        "key": aggregation.ranking_key,
+                        "value": metrics.get(aggregation.ranking_key, 0.0),
+                        "direction": aggregation.ranking_direction,
+                    },
+                },
+            }
+            if model:
+                entry["model_name"] = model.name
+                entry["cruncher_name"] = model.player_name
+            entries.append(entry)
 
         return entries
 

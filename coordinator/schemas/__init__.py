@@ -1,22 +1,14 @@
-from .payload_contracts import (
-    LeaderboardEntryEnvelope,
-    PredictionScopeEnvelope,
+from coordinator.schemas.payload_contracts import (
     ReportLeaderboardColumn,
     ReportMetricWidget,
     ReportSchemaEnvelope,
     ScheduleEnvelope,
     ScheduledPredictionConfigEnvelope,
-    ScoreEnvelope,
-    ScoreRankingEnvelope,
 )
 
 __all__ = [
     "ScheduleEnvelope",
     "ScheduledPredictionConfigEnvelope",
-    "PredictionScopeEnvelope",
-    "ScoreEnvelope",
-    "ScoreRankingEnvelope",
-    "LeaderboardEntryEnvelope",
     "ReportLeaderboardColumn",
     "ReportMetricWidget",
     "ReportSchemaEnvelope",

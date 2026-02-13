@@ -15,7 +15,7 @@ from coordinator.db.tables import (
     PredictionRow,
     ScoreRow,
 )
-from coordinator.schemas import PredictionScopeEnvelope, ScheduledPredictionConfigEnvelope
+from coordinator.schemas import ScheduledPredictionConfigEnvelope
 
 
 class DBModelRepository:
