@@ -13,6 +13,12 @@ class RawInput(BaseModel):
     candles_1m: list[dict] = Field(default_factory=list)
 
 
+class GroundTruth(RawInput):
+    """What the actual outcome looks like. Same shape as RawInput unless you override."""
+
+    pass
+
+
 class InferenceInput(RawInput):
     """What models receive. Same as RawInput unless you override."""
 
@@ -67,6 +73,7 @@ class CrunchContract(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     raw_input_type: type[BaseModel] = RawInput
+    ground_truth_type: type[BaseModel] = GroundTruth
     input_type: type[BaseModel] = InferenceInput
     output_type: type[BaseModel] = InferenceOutput
     score_type: type[BaseModel] = ScoreResult
