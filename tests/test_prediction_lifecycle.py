@@ -160,6 +160,16 @@ class FakeRunner:
         return {FakeModelRun(mid): FakeResult(out) for mid, out in self._outputs.items()}
 
 
+class FakeFeedRecord:
+    def __init__(self, price: float, ts: datetime) -> None:
+        self.source = "pyth"
+        self.subject = "BTC"
+        self.kind = "tick"
+        self.granularity = "1s"
+        self.ts_event = ts
+        self.values = {"close": price}
+
+
 class FakeFeedReader:
     def __init__(self, data: dict[str, Any]) -> None:
         self._data = data
@@ -167,9 +177,13 @@ class FakeFeedReader:
     def get_input(self, now: datetime) -> dict[str, Any]:
         return dict(self._data)
 
-    def get_ground_truth(self, performed_at: datetime, resolvable_at: datetime,
-                         asset: str | None = None) -> dict[str, Any] | None:
-        return {"actual_value": 105.0}
+    def fetch_window(self, start=None, end=None, source=None, subject=None,
+                     kind=None, granularity=None) -> list:
+        now = datetime.now(timezone.utc)
+        return [
+            FakeFeedRecord(100.0, now - timedelta(minutes=5)),
+            FakeFeedRecord(105.0, now - timedelta(minutes=1)),
+        ]
 
 
 # ── lifecycle test ──
@@ -248,7 +262,8 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         # input has actuals resolved
         resolved_inputs = self.input_repo.find(status="RESOLVED")
         self.assertEqual(len(resolved_inputs), 1)
-        self.assertIn("actual_value", resolved_inputs[0].actuals)
+        self.assertIn("entry_price", resolved_inputs[0].actuals)
+        self.assertIn("resolved_price", resolved_inputs[0].actuals)
 
         # score records created
         self.assertEqual(len(self.score_repo.scores), 2)

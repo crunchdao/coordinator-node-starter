@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, Callable
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -93,6 +95,41 @@ class Aggregation(BaseModel):
     ranking_direction: str = "desc"
 
 
+def default_resolve_ground_truth(feed_records: list[Any]) -> dict[str, Any] | None:
+    """Default resolver: compare first and last record's close/price in the window.
+
+    Override for custom ground truth (VWAP, cross-venue, labels, etc.).
+    Receives FeedRecord objects with .values dict and .ts_event.
+    """
+    if len(feed_records) < 1:
+        return None
+
+    def _price(record: Any) -> float | None:
+        values = record.values or {}
+        for key in ("close", "price"):
+            if key in values:
+                try:
+                    return float(values[key])
+                except Exception:
+                    pass
+        return None
+
+    entry = feed_records[0]
+    resolved = feed_records[-1]
+    entry_price = _price(entry)
+    resolved_price = _price(resolved)
+
+    if entry_price is None or resolved_price is None:
+        return None
+
+    return {
+        "entry_price": entry_price,
+        "resolved_price": resolved_price,
+        "return": (resolved_price - entry_price) / max(abs(entry_price), 1e-9),
+        "direction_up": resolved_price > entry_price,
+    }
+
+
 class CrunchContract(BaseModel):
     """Single source of truth for challenge data shapes and aggregation."""
 
@@ -106,3 +143,6 @@ class CrunchContract(BaseModel):
     score_type: type[BaseModel] = ScoreResult
     scope: PredictionScope = Field(default_factory=PredictionScope)
     aggregation: Aggregation = Field(default_factory=Aggregation)
+
+    # Callables
+    resolve_ground_truth: Callable[[list[Any]], dict[str, Any] | None] = default_resolve_ground_truth

@@ -4,6 +4,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from coordinator.entities.feed_record import FeedRecord
 from coordinator.entities.model import Model
 from coordinator.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
 from coordinator.contracts import Aggregation, AggregationWindow, CrunchContract
@@ -89,12 +90,12 @@ class MemLeaderboardRepository:
 
 
 class FakeFeedReader:
-    def __init__(self, actuals: dict[str, Any] | None = None) -> None:
-        self._actuals = actuals
+    def __init__(self, records: list | None = None) -> None:
+        self._records = records or []
 
-    def get_ground_truth(self, performed_at: datetime, resolvable_at: datetime | None,
-                         asset: str | None = None) -> dict[str, Any] | None:
-        return self._actuals
+    def fetch_window(self, start=None, end=None, source=None, subject=None,
+                     kind=None, granularity=None) -> list:
+        return self._records
 
 
 now = datetime.now(timezone.utc)
@@ -103,6 +104,7 @@ now = datetime.now(timezone.utc)
 def _make_input(status: str = "RECEIVED") -> InputRecord:
     return InputRecord(
         id="inp-1", raw_data={"symbol": "BTC"},
+        scope={"source": "pyth", "subject": "BTC", "kind": "tick", "granularity": "1s"},
         status=status, received_at=now - timedelta(minutes=5),
         resolvable_at=now - timedelta(minutes=1),
     )
@@ -120,11 +122,20 @@ def _make_prediction(input_id: str = "inp-1", status: str = "PENDING") -> Predic
     )
 
 
-def _build_service(*, inputs=None, predictions=None, actuals=None, contract=None):
+def _make_feed_records(entry_price: float = 100.0, resolved_price: float = 105.0) -> list[FeedRecord]:
+    return [
+        FeedRecord(source="pyth", subject="BTC", kind="tick", granularity="1s",
+                   ts_event=now - timedelta(minutes=5), values={"close": entry_price}),
+        FeedRecord(source="pyth", subject="BTC", kind="tick", granularity="1s",
+                   ts_event=now - timedelta(minutes=1), values={"close": resolved_price}),
+    ]
+
+
+def _build_service(*, inputs=None, predictions=None, feed_records=None, contract=None):
     return ScoreService(
         checkpoint_interval_seconds=60,
         scoring_function=lambda pred, act: {"value": 0.5, "success": True, "failed_reason": None},
-        feed_reader=FakeFeedReader(actuals=actuals),
+        feed_reader=FakeFeedReader(records=feed_records or []),
         input_repository=MemInputRepository(inputs or []),
         prediction_repository=MemPredictionRepository(predictions or []),
         score_repository=MemScoreRepository(),
@@ -139,7 +150,7 @@ class TestScoreService(unittest.TestCase):
         service = _build_service(
             inputs=[_make_input()],
             predictions=[_make_prediction()],
-            actuals={"actual_value": 105.0},
+            feed_records=_make_feed_records(),
         )
 
         changed = service.run_once()
@@ -152,7 +163,7 @@ class TestScoreService(unittest.TestCase):
         service = _build_service(
             inputs=[_make_input()],
             predictions=[_make_prediction()],
-            actuals=None,
+            feed_records=[],
         )
 
         with self.assertLogs("coordinator.services.score", level="INFO"):
@@ -173,7 +184,7 @@ class TestScoreService(unittest.TestCase):
         service = _build_service(
             inputs=[_make_input()],
             predictions=[_make_prediction()],
-            actuals={"actual_value": 105.0},
+            feed_records=_make_feed_records(),
         )
 
         service.run_once()

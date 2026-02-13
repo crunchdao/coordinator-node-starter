@@ -91,11 +91,17 @@ class ScoreService:
 
         resolved = 0
         for inp in unresolved:
-            actuals = self.feed_reader.get_ground_truth(
-                performed_at=inp.received_at,
-                resolvable_at=inp.resolvable_at,
-                asset=inp.scope.get("asset"),
+            # Query feed records using the input's scope dimensions + time window
+            records = self.feed_reader.fetch_window(
+                start=inp.received_at,
+                end=inp.resolvable_at,
+                source=inp.scope.get("source"),
+                subject=inp.scope.get("subject"),
+                kind=inp.scope.get("kind"),
+                granularity=inp.scope.get("granularity"),
             )
+
+            actuals = self.contract.resolve_ground_truth(records)
             if actuals is None:
                 continue
 

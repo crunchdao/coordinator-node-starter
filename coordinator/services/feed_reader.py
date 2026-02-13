@@ -63,38 +63,46 @@ class FeedReader:
             "candles_1m": candles,
         }
 
-    def get_ground_truth(self, performed_at: datetime, resolvable_at: datetime, subject: str | None = None) -> dict[str, Any] | None:
-        """Look up what actually happened between prediction and resolution time."""
+    def fetch_window(
+        self,
+        start: datetime,
+        end: datetime,
+        source: str | None = None,
+        subject: str | None = None,
+        kind: str | None = None,
+        granularity: str | None = None,
+    ) -> list[FeedRecord]:
+        """Fetch feed records in a time window. Falls back to instance defaults for any missing dimension."""
+        source = source or self.source
         subject = subject or self.subject
+        kind = kind or self.kind
+        granularity = granularity or self.granularity
 
-        entry_record = self._latest_record(at_or_before=performed_at)
-        resolved_record = self._latest_record(at_or_before=resolvable_at)
-
-        if entry_record is None or resolved_record is None:
-            self._recover_window(
-                start=performed_at - timedelta(minutes=10),
-                end=resolvable_at + timedelta(minutes=2),
+        with create_session() as session:
+            repo = DBFeedRecordRepository(session)
+            records = repo.fetch_records(
+                source=source,
+                subject=subject,
+                kind=kind,
+                granularity=granularity,
+                start_ts=self._ensure_utc(start),
+                end_ts=self._ensure_utc(end),
             )
-            entry_record = self._latest_record(at_or_before=performed_at)
-            resolved_record = self._latest_record(at_or_before=resolvable_at)
 
-        if entry_record is None or resolved_record is None:
-            return None
+        if not records:
+            self._recover_window(start=start - timedelta(minutes=2), end=end + timedelta(minutes=2))
+            with create_session() as session:
+                repo = DBFeedRecordRepository(session)
+                records = repo.fetch_records(
+                    source=source,
+                    subject=subject,
+                    kind=kind,
+                    granularity=granularity,
+                    start_ts=self._ensure_utc(start),
+                    end_ts=self._ensure_utc(end),
+                )
 
-        entry_price = self._record_price(entry_record)
-        resolved_price = self._record_price(resolved_record)
-        if entry_price is None or resolved_price is None:
-            return None
-
-        return {
-            "subject": subject,
-            "entry_price": entry_price,
-            "resolved_price": resolved_price,
-            "resolved_market_time": self._ensure_utc(resolved_record.ts_event).isoformat(),
-            "return_5m": (resolved_price - entry_price) / max(abs(entry_price), 1e-9),
-            "y_up": resolved_price > entry_price,
-            "source": self.source,
-        }
+        return records
 
     # ── internals ──
 
