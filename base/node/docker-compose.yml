@@ -27,6 +27,28 @@ services:
       dockerfile: node/Dockerfile
     container_name: starter-challenge-init-db
     command: ["python", "-m", "coordinator_node.db.init_db"]
+    profiles: [init]
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-starter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
+      POSTGRES_DB: ${POSTGRES_DB:-starter}
+      SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
+    volumes:
+      - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [coordinator-net]
+
+  reset-db:
+    build:
+      context: ..
+      dockerfile: node/Dockerfile
+    container_name: starter-challenge-reset-db
+    command: ["python", "-m", "coordinator_node.db.init_db", "--reset"]
+    profiles: [reset]
     environment:
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
@@ -66,8 +88,8 @@ services:
     volumes:
       - ../challenge:/app/challenge
     depends_on:
-      init-db:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     networks: [coordinator-net]
 
   predict-worker:
@@ -97,8 +119,8 @@ services:
     volumes:
       - ../challenge:/app/challenge
     depends_on:
-      init-db:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
       model-orchestrator:
         condition: service_started
       feed-data-worker:
@@ -128,8 +150,8 @@ services:
     volumes:
       - ../challenge:/app/challenge
     depends_on:
-      init-db:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
       feed-data-worker:
         condition: service_started
     networks: [coordinator-net]
@@ -152,8 +174,8 @@ services:
     volumes:
       - ../challenge:/app/challenge
     depends_on:
-      init-db:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     networks: [coordinator-net]
 
   report-worker:
@@ -175,8 +197,8 @@ services:
     volumes:
       - ../challenge:/app/challenge
     depends_on:
-      init-db:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     networks: [coordinator-net]
 
   model-orchestrator:

@@ -1,9 +1,15 @@
 COMPOSE := docker compose -f docker-compose.yml --env-file .local.env
 
-.PHONY: deploy down logs logs-capture verify-e2e check-models starter platform backfill
+.PHONY: deploy down logs logs-capture verify-e2e check-models starter platform backfill init-db reset-db
 
 deploy:
 	$(COMPOSE) up -d --build
+
+init-db:
+	$(COMPOSE) run --rm init-db
+
+reset-db:
+	$(COMPOSE) run --rm reset-db
 
 down:
 	$(COMPOSE) down

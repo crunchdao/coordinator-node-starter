@@ -57,15 +57,13 @@ def load_scheduled_prediction_configs() -> list[dict[str, Any]]:
     return payload
 
 
-def init_db() -> None:
-    print("➡️  Resetting canonical tables...")
-    with engine.begin() as conn:
-        for table in tables_to_reset():
-            conn.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE"))
-
-    print("➡️  Creating coordinator core tables...")
+def migrate() -> None:
+    """Create tables if they don't exist and upsert prediction configs.
+    Safe to run on every boot — never drops data."""
+    print("➡️  Creating tables (if not exist)...")
     SQLModel.metadata.create_all(engine)
 
+    print("➡️  Upserting scheduled prediction configs...")
     with create_session() as session:
         session.exec(delete(PredictionConfigRow))
         for idx, config in enumerate(load_scheduled_prediction_configs(), start=1):
@@ -83,8 +81,42 @@ def init_db() -> None:
             )
         session.commit()
 
-    print("✅ Node-template database initialization complete.")
+    print("✅ Database migration complete.")
+
+
+def reset_db() -> None:
+    """Drop all tables and recreate from scratch. Destroys all data."""
+    print("⚠️  Dropping all tables...")
+    with engine.begin() as conn:
+        for table in tables_to_reset():
+            conn.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE"))
+
+    migrate()
+    print("✅ Database reset complete.")
+
+
+# Keep backward compat
+init_db = reset_db
+
+
+def auto_migrate() -> None:
+    """Run migrate if tables don't exist yet. Called by workers on boot."""
+    try:
+        from sqlalchemy import inspect as sa_inspect
+        inspector = sa_inspect(engine)
+        if not inspector.has_table("models"):
+            migrate()
+    except Exception:
+        # First boot or connection issue — try migrate anyway
+        try:
+            migrate()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
-    init_db()
+    import sys
+    if "--reset" in sys.argv:
+        reset_db()
+    else:
+        migrate()
