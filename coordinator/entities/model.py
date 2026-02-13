@@ -21,6 +21,6 @@ class Model:
     deployment_identifier: str
     overall_score: ModelScore | None = None
     scores_by_scope: list[dict[str, Any]] = field(default_factory=list)
-    meta: dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)           # contract.meta_type (Meta)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
