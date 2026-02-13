@@ -9,10 +9,10 @@ from typing import Any
 class InputRecord:
     """A data point received from the feed. Actuals filled in after horizon passes."""
     id: str
-    raw_data: dict[str, Any] = field(default_factory=dict)
-    actuals: dict[str, Any] | None = None
+    raw_data: dict[str, Any] = field(default_factory=dict)       # contract.raw_input_type
+    actuals: dict[str, Any] | None = None                        # contract.ground_truth_type
     status: str = "RECEIVED"  # RECEIVED → RESOLVED
-    scope: dict[str, Any] = field(default_factory=dict)
+    scope: dict[str, Any] = field(default_factory=dict)          # contract.scope_type (PredictionScope)
     received_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     resolvable_at: datetime | None = None
     meta: dict[str, Any] = field(default_factory=dict)
@@ -26,10 +26,10 @@ class PredictionRecord:
     model_id: str
     prediction_config_id: str | None
     scope_key: str
-    scope: dict[str, Any]
+    scope: dict[str, Any]                                        # contract.scope_type (PredictionScope)
     status: str  # PENDING, SCORED, FAILED, ABSENT
     exec_time_ms: float
-    inference_output: dict[str, Any] = field(default_factory=dict)
+    inference_output: dict[str, Any] = field(default_factory=dict)  # contract.output_type (InferenceOutput)
     meta: dict[str, Any] = field(default_factory=dict)
     performed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     resolvable_at: datetime | None = None
@@ -40,7 +40,7 @@ class ScoreRecord:
     """Scoring result for a prediction."""
     id: str
     prediction_id: str
-    result: dict[str, Any] = field(default_factory=dict)
+    result: dict[str, Any] = field(default_factory=dict)         # contract.score_type (ScoreResult)
     success: bool = True
     failed_reason: str | None = None
     scored_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
