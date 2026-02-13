@@ -3,7 +3,7 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "crunch-node"
+name = "coordinator-node"
 version = "0.1.0"
 description = "Runtime engine for Crunch coordinator nodes"
 readme = "README.md"

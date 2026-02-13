@@ -1,10 +1,50 @@
-# crunch-node
+# coordinator-node
 
-Runtime engine for Crunch coordinator nodes. Published as `crunch-node` on PyPI, imported as `coordinator_node`.
+[![PyPI](https://img.shields.io/pypi/v/coordinator-node)](https://pypi.org/project/coordinator-node/)
+
+Runtime engine for Crunch coordinator nodes. Powers the full competition pipeline — from data ingestion through scoring to on-chain emission checkpoints.
 
 ```bash
-pip install crunch-node
+pip install coordinator-node
 ```
+
+---
+
+## Two ways to use this repo
+
+### 1. Scaffold a new competition (recommended)
+
+Use the Crunch CLI to create a self-contained workspace that pulls `coordinator-node` from PyPI:
+
+```bash
+crunch-cli init-workspace my-challenge
+cd my-challenge
+make deploy
+```
+
+This creates:
+
+```
+my-challenge/
+├── node/          ← docker-compose, config, scripts (uses coordinator-node from PyPI)
+├── challenge/     ← participant-facing package (tracker, scoring, examples)
+└── Makefile
+```
+
+### 2. Develop the engine itself
+
+Clone this repo to work on the `coordinator_node` package directly:
+
+```bash
+git clone https://github.com/crunchdao/coordinator-node-starter.git
+cd coordinator-node-starter
+uv sync
+make deploy    # uses local coordinator_node/ via COPY in Dockerfile
+```
+
+Changes to `coordinator_node/` are picked up immediately on rebuild.
+
+---
 
 ## Architecture
 
@@ -14,35 +54,15 @@ pip install crunch-node
 Feed → Input → Prediction → Score → Snapshot → Checkpoint → On-chain
 ```
 
-**Workers:**
+### Workers
 
 | Worker | Purpose |
 |---|---|
-| `feed-data-worker` | Ingests feed data (Pyth, Binance, etc.) via WebSocket + backfill |
-| `predict-worker` | Event-driven: gets data → ticks models → collects predictions |
+| `feed-data-worker` | Ingests feed data (Pyth, Binance, etc.) via polling + backfill |
+| `predict-worker` | Gets latest data → ticks models → collects predictions |
 | `score-worker` | Resolves actuals → scores predictions → writes snapshots → rebuilds leaderboard |
 | `checkpoint-worker` | Aggregates snapshots → builds EmissionCheckpoint for on-chain submission |
-| `report-worker` | FastAPI: leaderboard, predictions, feeds, snapshots, checkpoints, emissions |
-
-### Contract
-
-All type shapes and behavior are defined in a single `CrunchContract`:
-
-```python
-from coordinator_node.contracts import CrunchContract
-
-class CrunchContract(BaseModel):
-    raw_input_type: type[BaseModel] = RawInput
-    output_type: type[BaseModel] = InferenceOutput
-    score_type: type[BaseModel] = ScoreResult
-    scope: PredictionScope = PredictionScope()
-    aggregation: Aggregation = Aggregation()
-
-    # Callables
-    resolve_ground_truth: Callable = default_resolve_ground_truth
-    aggregate_snapshot: Callable = default_aggregate_snapshot
-    build_emission: Callable = default_build_emission
-```
+| `report-worker` | FastAPI server: leaderboard, predictions, feeds, snapshots, checkpoints |
 
 ### Feed Dimensions
 
@@ -61,22 +81,67 @@ Prediction:  PENDING → SCORED / FAILED / ABSENT
 Checkpoint:  PENDING → SUBMITTED → CLAIMABLE → PAID
 ```
 
-### Emission Checkpoints
+---
 
-Checkpoints produce `EmissionCheckpoint` matching the on-chain protocol:
+## Configuration
 
-```python
-{
-    "crunch": "<pubkey>",
-    "cruncher_rewards": [{"cruncher_index": 0, "reward_pct": 350_000_000}, ...],
-    "compute_provider_rewards": [...],
-    "data_provider_rewards": [...],
-}
+All configuration is via environment variables. Copy the example env file to get started:
+
+```bash
+cp .local.env.example .local.env
 ```
 
-`reward_pct` uses frac64 (1,000,000,000 = 100%).
+Key variables:
 
-### Report API
+| Variable | Description | Default |
+|---|---|---|
+| `CRUNCH_ID` | Competition identifier | `starter-challenge` |
+| `FEED_SOURCE` | Data source | `pyth` |
+| `FEED_SUBJECTS` | Assets to track | `BTC` |
+| `SCORING_FUNCTION` | Dotted path to scoring callable | `coordinator_node.extensions.default_callables:default_score_prediction` |
+| `CHECKPOINT_INTERVAL_SECONDS` | Seconds between checkpoints | `604800` |
+| `MODEL_BASE_CLASSNAME` | Participant model base class | `tracker.TrackerBase` |
+| `MODEL_RUNNER_NODE_HOST` | Model orchestrator host | `model-orchestrator` |
+
+---
+
+## Extension Points
+
+Customize competition behavior by setting callable paths in your env:
+
+| Env var | Purpose |
+|---|---|
+| `SCORING_FUNCTION` | Score a prediction against ground truth |
+| `INFERENCE_INPUT_BUILDER` | Transform raw feed data into model input |
+| `INFERENCE_OUTPUT_VALIDATOR` | Validate model output shape/values |
+| `MODEL_SCORE_AGGREGATOR` | Aggregate per-model scores across predictions |
+| `LEADERBOARD_RANKER` | Custom leaderboard ranking strategy |
+
+---
+
+## Contract
+
+All type shapes and behavior are defined in a single `CrunchContract`:
+
+```python
+from coordinator_node.contracts import CrunchContract
+
+class CrunchContract(BaseModel):
+    raw_input_type: type[BaseModel]
+    output_type: type[BaseModel]
+    score_type: type[BaseModel]
+    scope: PredictionScope
+    aggregation: Aggregation
+
+    # Callables
+    resolve_ground_truth: Callable
+    aggregate_snapshot: Callable
+    build_emission: Callable
+```
+
+---
+
+## Report API
 
 | Endpoint | Description |
 |---|---|
@@ -92,12 +157,72 @@ Checkpoints produce `EmissionCheckpoint` matching the on-chain protocol:
 | `POST /reports/checkpoints/{id}/confirm` | Record tx_hash |
 | `PATCH /reports/checkpoints/{id}/status` | Advance status |
 
-## Scaffolding
+---
 
-Use `crunch-cli init-workspace <name>` to create a new competition workspace from the `base/` template.
+## Emission Checkpoints
 
-## Development
+Checkpoints produce `EmissionCheckpoint` matching the on-chain protocol:
+
+```json
+{
+    "crunch": "<pubkey>",
+    "cruncher_rewards": [{"cruncher_index": 0, "reward_pct": 350000000}],
+    "compute_provider_rewards": [],
+    "data_provider_rewards": []
+}
+```
+
+`reward_pct` uses frac64 (1,000,000,000 = 100%).
+
+---
+
+## Local Development
 
 ```bash
-uv run pytest tests/ -q
+# Run tests
+uv run pytest tests/ -x -q
+
+# Start all services locally
+make deploy
+
+# View logs
+make logs
+
+# Tear down
+make down
+```
+
+---
+
+## Project Structure
+
+```
+coordinator-node-starter/
+├── coordinator_node/       ← core engine (published to PyPI as coordinator-node)
+│   ├── workers/            ← feed, predict, score, checkpoint, report workers
+│   ├── services/           ← business logic
+│   ├── entities/           ← domain models
+│   ├── db/                 ← database tables and init
+│   ├── feeds/              ← data source adapters (Pyth, Binance, etc.)
+│   ├── schemas/            ← API schemas
+│   ├── extensions/         ← default callables
+│   ├── config/             ← runtime configuration
+│   └── contracts.py        ← CrunchContract definition
+├── base/                   ← template used by crunch-cli init-workspace
+│   ├── node/               ← node template (Dockerfile, docker-compose, config)
+│   └── challenge/          ← challenge template (tracker, scoring, examples)
+├── tests/                  ← test suite
+├── docker-compose.yml      ← local dev compose (uses local coordinator_node/)
+├── Dockerfile              ← local dev Dockerfile (COPYs coordinator_node/)
+├── pyproject.toml          ← package definition
+└── Makefile                ← deploy / down / logs / test
+```
+
+---
+
+## Publishing
+
+```bash
+uv build
+twine upload dist/*
 ```
