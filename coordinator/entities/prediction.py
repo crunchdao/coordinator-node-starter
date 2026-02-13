@@ -7,7 +7,12 @@ from typing import Any
 
 @dataclass
 class InputRecord:
-    """A data point received from the feed. Actuals filled in after horizon passes."""
+    """A data point received from the feed. Actuals filled in after horizon passes.
+
+    TODO: Consider adding feed_record_id FK for 1:1 lineage (FeedRecord → InputRecord).
+    Most realtime setups have one feed event per input. Currently raw_data holds a copy
+    which also supports assembled/windowed inputs, but the common case is passthrough.
+    """
     id: str
     raw_data: dict[str, Any] = field(default_factory=dict)       # contract.raw_input_type
     actuals: dict[str, Any] | None = None                        # contract.ground_truth_type
