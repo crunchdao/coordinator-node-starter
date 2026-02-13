@@ -27,6 +27,9 @@ class TestRepositoryAPIs(unittest.TestCase):
         self.assertTrue(callable(getattr(DBScoreRepository, "save", None)))
         self.assertTrue(callable(getattr(DBScoreRepository, "find", None)))
 
+    def test_prediction_repository_has_query_scores_method(self):
+        self.assertTrue(callable(getattr(DBPredictionRepository, "query_scores", None)))
+
     def test_leaderboard_repository_has_required_methods(self):
         self.assertTrue(callable(getattr(DBLeaderboardRepository, "save", None)))
         self.assertTrue(callable(getattr(DBLeaderboardRepository, "get_latest", None)))
