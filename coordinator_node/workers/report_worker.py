@@ -6,6 +6,7 @@ from typing import Annotated, Any, Generator
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
 from coordinator_node.contracts import CrunchContract
@@ -22,6 +23,14 @@ from coordinator_node.db import (
 )
 
 app = FastAPI(title="Node Template Report Worker")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 CONTRACT = CrunchContract()
 
