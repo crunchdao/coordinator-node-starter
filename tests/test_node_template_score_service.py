@@ -78,6 +78,20 @@ class MemModelRepository:
         return self.models
 
 
+class MemSnapshotRepository:
+    def __init__(self) -> None:
+        self.snapshots: list = []
+
+    def save(self, record) -> None:
+        self.snapshots.append(record)
+
+    def find(self, *, model_id=None, since=None, until=None, limit=None) -> list:
+        results = list(self.snapshots)
+        if model_id is not None:
+            results = [s for s in results if s.model_id == model_id]
+        return results
+
+
 class MemLeaderboardRepository:
     def __init__(self) -> None:
         self.latest: Any = None
@@ -139,6 +153,7 @@ def _build_service(*, inputs=None, predictions=None, feed_records=None, contract
         input_repository=MemInputRepository(inputs or []),
         prediction_repository=MemPredictionRepository(predictions or []),
         score_repository=MemScoreRepository(),
+        snapshot_repository=MemSnapshotRepository(),
         model_repository=MemModelRepository(),
         leaderboard_repository=MemLeaderboardRepository(),
         contract=contract,

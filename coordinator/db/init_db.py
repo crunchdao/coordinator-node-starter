@@ -17,6 +17,8 @@ MINUTE = 60
 
 def tables_to_reset() -> list[str]:
     return [
+        "checkpoints",
+        "snapshots",
         "scores",
         "predictions",
         "inputs",

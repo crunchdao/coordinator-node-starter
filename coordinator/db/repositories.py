@@ -6,14 +6,18 @@ from typing import Any, Iterable
 from sqlmodel import Session, delete, select
 
 from coordinator.entities.model import Model
-from coordinator.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
+from coordinator.entities.prediction import (
+    CheckpointRecord, InputRecord, PredictionRecord, ScoreRecord, SnapshotRecord,
+)
 from coordinator.db.tables import (
+    CheckpointRow,
     InputRow,
     LeaderboardRow,
     ModelRow,
     PredictionConfigRow,
     PredictionRow,
     ScoreRow,
+    SnapshotRow,
 )
 from coordinator.schemas import ScheduledPredictionConfigEnvelope
 
@@ -327,3 +331,122 @@ class DBLeaderboardRepository:
     def clear(self) -> None:
         self._session.exec(delete(LeaderboardRow))
         self._session.commit()
+
+
+class DBSnapshotRepository:
+    def __init__(self, session: Session):
+        self._session = session
+
+    def rollback(self) -> None:
+        self._session.rollback()
+
+    def save(self, record: SnapshotRecord) -> None:
+        row = SnapshotRow(
+            id=record.id,
+            model_id=record.model_id,
+            period_start=record.period_start,
+            period_end=record.period_end,
+            prediction_count=record.prediction_count,
+            result_summary_jsonb=record.result_summary,
+            meta_jsonb=record.meta,
+            created_at=record.created_at,
+        )
+        existing = self._session.get(SnapshotRow, row.id)
+        if existing is None:
+            self._session.add(row)
+        else:
+            existing.result_summary_jsonb = row.result_summary_jsonb
+            existing.prediction_count = row.prediction_count
+            existing.meta_jsonb = row.meta_jsonb
+        self._session.commit()
+
+    def find(
+        self, *, model_id: str | None = None,
+        since: datetime | None = None, until: datetime | None = None,
+        limit: int | None = None,
+    ) -> list[SnapshotRecord]:
+        stmt = select(SnapshotRow)
+        if model_id is not None:
+            stmt = stmt.where(SnapshotRow.model_id == model_id)
+        if since is not None:
+            stmt = stmt.where(SnapshotRow.period_end >= since)
+        if until is not None:
+            stmt = stmt.where(SnapshotRow.period_start <= until)
+        if limit is not None:
+            stmt = stmt.limit(max(1, int(limit)))
+        stmt = stmt.order_by(SnapshotRow.created_at.asc())
+        rows = self._session.exec(stmt).all()
+        return [SnapshotRecord(
+            id=r.id, model_id=r.model_id,
+            period_start=r.period_start, period_end=r.period_end,
+            prediction_count=r.prediction_count,
+            result_summary=r.result_summary_jsonb or {},
+            meta=r.meta_jsonb or {},
+            created_at=r.created_at,
+        ) for r in rows]
+
+
+class DBCheckpointRepository:
+    def __init__(self, session: Session):
+        self._session = session
+
+    def rollback(self) -> None:
+        self._session.rollback()
+
+    def save(self, record: CheckpointRecord) -> None:
+        row = CheckpointRow(
+            id=record.id,
+            period_start=record.period_start,
+            period_end=record.period_end,
+            status=record.status,
+            entries_jsonb=record.entries,
+            meta_jsonb=record.meta,
+            created_at=record.created_at,
+            tx_hash=record.tx_hash,
+            submitted_at=record.submitted_at,
+        )
+        existing = self._session.get(CheckpointRow, row.id)
+        if existing is None:
+            self._session.add(row)
+        else:
+            existing.status = row.status
+            existing.entries_jsonb = row.entries_jsonb
+            existing.meta_jsonb = row.meta_jsonb
+            existing.tx_hash = row.tx_hash
+            existing.submitted_at = row.submitted_at
+        self._session.commit()
+
+    def find(
+        self, *, status: str | None = None,
+        limit: int | None = None,
+    ) -> list[CheckpointRecord]:
+        stmt = select(CheckpointRow)
+        if status is not None:
+            stmt = stmt.where(CheckpointRow.status == status)
+        if limit is not None:
+            stmt = stmt.limit(max(1, int(limit)))
+        stmt = stmt.order_by(CheckpointRow.created_at.desc())
+        rows = self._session.exec(stmt).all()
+        return [CheckpointRecord(
+            id=r.id,
+            period_start=r.period_start, period_end=r.period_end,
+            status=r.status, entries=r.entries_jsonb or [],
+            meta=r.meta_jsonb or {},
+            created_at=r.created_at,
+            tx_hash=r.tx_hash, submitted_at=r.submitted_at,
+        ) for r in rows]
+
+    def get_latest(self) -> CheckpointRecord | None:
+        row = self._session.exec(
+            select(CheckpointRow).order_by(CheckpointRow.created_at.desc())
+        ).first()
+        if row is None:
+            return None
+        return CheckpointRecord(
+            id=row.id,
+            period_start=row.period_start, period_end=row.period_end,
+            status=row.status, entries=row.entries_jsonb or [],
+            meta=row.meta_jsonb or {},
+            created_at=row.created_at,
+            tx_hash=row.tx_hash, submitted_at=row.submitted_at,
+        )

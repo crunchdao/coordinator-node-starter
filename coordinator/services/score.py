@@ -6,11 +6,11 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
-from coordinator.entities.prediction import ScoreRecord
+from coordinator.entities.prediction import ScoreRecord, SnapshotRecord
 
 from coordinator.db.repositories import (
     DBInputRepository, DBLeaderboardRepository, DBModelRepository,
-    DBPredictionRepository, DBScoreRepository,
+    DBPredictionRepository, DBScoreRepository, DBSnapshotRepository,
 )
 from coordinator.contracts import CrunchContract
 from coordinator.services.feed_reader import FeedReader
@@ -25,6 +25,7 @@ class ScoreService:
         input_repository: DBInputRepository | None = None,
         prediction_repository: DBPredictionRepository | None = None,
         score_repository: DBScoreRepository | None = None,
+        snapshot_repository: DBSnapshotRepository | None = None,
         model_repository: DBModelRepository | None = None,
         leaderboard_repository: DBLeaderboardRepository | None = None,
         contract: CrunchContract | None = None,
@@ -36,6 +37,7 @@ class ScoreService:
         self.input_repository = input_repository
         self.prediction_repository = prediction_repository
         self.score_repository = score_repository
+        self.snapshot_repository = snapshot_repository
         self.model_repository = model_repository
         self.leaderboard_repository = leaderboard_repository
         self.contract = contract or CrunchContract()
@@ -70,7 +72,10 @@ class ScoreService:
             self.logger.info("No predictions scored this cycle")
             return False
 
-        # 3. rebuild leaderboard
+        # 3. write snapshots (per-model period summary)
+        self._write_snapshots(scored, now)
+
+        # 4. rebuild leaderboard from snapshots
         self._rebuild_leaderboard()
         return True
 
@@ -157,48 +162,69 @@ class ScoreService:
             self.logger.info("Scored %d predictions", len(scored))
         return scored
 
-    # ── 3. leaderboard ──
+    # ── 3. snapshots ──
+
+    def _write_snapshots(self, scored: list[ScoreRecord], now: datetime) -> None:
+        if self.snapshot_repository is None:
+            return
+
+        # Group scores by model (need prediction to get model_id)
+        pred_map: dict[str, str] = {}  # prediction_id → model_id
+        predictions = self.prediction_repository.find(status="SCORED")
+        for p in predictions:
+            pred_map[p.id] = p.model_id
+
+        by_model: dict[str, list[dict[str, Any]]] = {}
+        for score in scored:
+            model_id = pred_map.get(score.prediction_id)
+            if model_id:
+                by_model.setdefault(model_id, []).append(score.result)
+
+        for model_id, results in by_model.items():
+            summary = self.contract.aggregate_snapshot(results)
+            snapshot = SnapshotRecord(
+                id=f"SNAP_{model_id}_{now.strftime('%Y%m%d_%H%M%S')}",
+                model_id=model_id,
+                period_start=min(s.scored_at for s in scored if pred_map.get(s.prediction_id) == model_id),
+                period_end=now,
+                prediction_count=len(results),
+                result_summary=summary,
+                created_at=now,
+            )
+            self.snapshot_repository.save(snapshot)
+
+        self.logger.info("Wrote %d snapshots", len(by_model))
+
+    # ── 4. leaderboard ──
 
     def _rebuild_leaderboard(self) -> None:
-        scores = self.score_repository.find() if self.score_repository else []
         models = self.model_repository.fetch_all()
+        snapshots = self.snapshot_repository.find() if self.snapshot_repository else []
 
-        score_by_pred: dict[str, ScoreRecord] = {}
-        for s in scores:
-            if s.success and s.result:
-                score_by_pred[s.prediction_id] = s
-
-        scored_predictions = self.prediction_repository.find(status="SCORED")
-        aggregated = self._aggregate(scored_predictions, score_by_pred, models)
+        aggregated = self._aggregate_from_snapshots(snapshots, models)
         ranked = self._rank(aggregated)
 
         self.leaderboard_repository.save(
             ranked, meta={"generated_by": "coordinator.score_service"},
         )
 
-    def _aggregate(self, predictions: Any, score_by_pred: dict, models: dict) -> list[dict[str, Any]]:
+    def _aggregate_from_snapshots(self, snapshots: list[SnapshotRecord], models: dict) -> list[dict[str, Any]]:
         now = datetime.now(timezone.utc)
         aggregation = self.contract.aggregation
 
-        by_model: dict[str, list[tuple[datetime, float]]] = {}
-        for pred in predictions:
-            score = score_by_pred.get(pred.id)
-            if score is None:
-                continue
-            # Store the full result dict per timestamp for windowed aggregation
-            by_model.setdefault(pred.model_id, []).append(
-                (pred.performed_at, score.result)
-            )
+        # Group snapshots by model
+        by_model: dict[str, list[SnapshotRecord]] = {}
+        for snap in snapshots:
+            by_model.setdefault(snap.model_id, []).append(snap)
 
         entries: list[dict[str, Any]] = []
-        for model_id, timed_results in by_model.items():
+        for model_id, model_snapshots in by_model.items():
             metrics: dict[str, float] = {}
             for window_name, window in aggregation.windows.items():
                 cutoff = now - timedelta(hours=window.hours)
-                window_results = [r for ts, r in timed_results if ts >= cutoff]
-                if window_results:
-                    # Average the ranking key across the window
-                    vals = [float(r.get(aggregation.ranking_key, 0)) for r in window_results]
+                window_snaps = [s for s in model_snapshots if s.period_end >= cutoff]
+                if window_snaps:
+                    vals = [float(s.result_summary.get(aggregation.ranking_key, 0)) for s in window_snaps]
                     metrics[window_name] = sum(vals) / len(vals)
                 else:
                     metrics[window_name] = 0.0
@@ -246,6 +272,7 @@ class ScoreService:
         for name, repo in [("input", self.input_repository),
                            ("prediction", self.prediction_repository),
                            ("score", self.score_repository),
+                           ("snapshot", self.snapshot_repository),
                            ("model", self.model_repository),
                            ("leaderboard", self.leaderboard_repository)]:
             rollback = getattr(repo, "rollback", None)

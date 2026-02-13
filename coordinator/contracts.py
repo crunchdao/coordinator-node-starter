@@ -111,6 +111,22 @@ def default_resolve_ground_truth(feed_records: list[FeedRecord]) -> dict[str, An
     }
 
 
+def default_aggregate_snapshot(score_results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Default aggregator: average all numeric values across score results in the period."""
+    if not score_results:
+        return {}
+
+    totals: dict[str, float] = {}
+    counts: dict[str, int] = {}
+    for result in score_results:
+        for key, value in result.items():
+            if isinstance(value, (int, float)):
+                totals[key] = totals.get(key, 0.0) + float(value)
+                counts[key] = counts.get(key, 0) + 1
+
+    return {key: totals[key] / counts[key] for key in totals}
+
+
 class CrunchContract(BaseModel):
     """Single source of truth for challenge data shapes and aggregation."""
 
@@ -127,3 +143,4 @@ class CrunchContract(BaseModel):
 
     # Callables
     resolve_ground_truth: Callable[[list[FeedRecord]], dict[str, Any] | None] = default_resolve_ground_truth
+    aggregate_snapshot: Callable[[list[dict[str, Any]]], dict[str, Any]] = default_aggregate_snapshot

@@ -49,3 +49,30 @@ class ScoreRecord:
     success: bool = True
     failed_reason: str | None = None
     scored_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass
+class SnapshotRecord:
+    """Per-model period summary. Written after each score cycle."""
+    id: str
+    model_id: str
+    period_start: datetime
+    period_end: datetime
+    prediction_count: int = 0
+    result_summary: dict[str, Any] = field(default_factory=dict) # contract.aggregate_snapshot output
+    meta: dict[str, Any] = field(default_factory=dict)           # contract.meta_type (Meta)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass
+class CheckpointRecord:
+    """Weekly aggregation of snapshots → on-chain payout."""
+    id: str
+    period_start: datetime
+    period_end: datetime
+    status: str = "PENDING"  # PENDING → SUBMITTED → CLAIMABLE → PAID
+    entries: list[dict[str, Any]] = field(default_factory=list)  # ranked model entries
+    meta: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    tx_hash: str | None = None
+    submitted_at: datetime | None = None

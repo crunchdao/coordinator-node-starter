@@ -114,6 +114,20 @@ class MemModelRepository:
         return dict(self.models)
 
 
+class MemSnapshotRepository:
+    def __init__(self) -> None:
+        self.snapshots: list = []
+
+    def save(self, record) -> None:
+        self.snapshots.append(record)
+
+    def find(self, *, model_id=None, since=None, until=None, limit=None) -> list:
+        results = list(self.snapshots)
+        if model_id is not None:
+            results = [s for s in results if s.model_id == model_id]
+        return results
+
+
 class MemLeaderboardRepository:
     def __init__(self) -> None:
         self.entries: list[dict[str, Any]] = []
@@ -196,6 +210,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         self.input_repo = MemInputRepository()
         self.pred_repo = MemPredictionRepository()
         self.score_repo = MemScoreRepository()
+        self.snapshot_repo = MemSnapshotRepository()
         self.model_repo = MemModelRepository()
         self.lb_repo = MemLeaderboardRepository()
         self.contract = CrunchContract()
@@ -217,6 +232,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
             input_repository=self.input_repo,
             prediction_repository=self.pred_repo,
             score_repository=self.score_repo,
+            snapshot_repository=self.snapshot_repo,
             model_repository=self.model_repo,
             leaderboard_repository=self.lb_repo,
             contract=self.contract,
@@ -225,8 +241,8 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _score_fn(prediction: dict[str, Any], ground_truth: dict[str, Any]) -> dict[str, Any]:
         pred_val = prediction.get("value", 0)
-        actual_val = ground_truth.get("actual_value", 0)
-        error = abs(pred_val - actual_val)
+        actual_return = ground_truth.get("return", 0)
+        error = abs(pred_val - actual_return)
         return {"value": round(1.0 / (1.0 + error), 4), "success": True, "failed_reason": None}
 
     async def test_full_lifecycle(self) -> None:

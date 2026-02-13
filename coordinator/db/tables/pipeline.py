@@ -83,6 +83,47 @@ class ScoreRow(SQLModel, table=True):
     scored_at: datetime = Field(default_factory=utc_now, index=True)
 
 
+class SnapshotRow(SQLModel, table=True):
+    __tablename__ = "snapshots"
+
+    id: str = Field(primary_key=True)
+    model_id: str = Field(index=True, foreign_key="models.id")
+
+    period_start: datetime = Field(index=True)
+    period_end: datetime = Field(index=True)
+    prediction_count: int = Field(default=0)
+
+    result_summary_jsonb: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSONB),
+    )
+    meta_jsonb: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSONB),
+    )
+
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
+class CheckpointRow(SQLModel, table=True):
+    __tablename__ = "checkpoints"
+
+    id: str = Field(primary_key=True)
+
+    period_start: datetime = Field(index=True)
+    period_end: datetime = Field(index=True)
+    status: str = Field(default="PENDING", index=True)
+
+    entries_jsonb: list[dict[str, Any]] = Field(
+        default_factory=list, sa_column=Column(JSONB),
+    )
+    meta_jsonb: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSONB),
+    )
+
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+    tx_hash: Optional[str] = Field(default=None)
+    submitted_at: Optional[datetime] = Field(default=None)
+
+
 class PredictionConfigRow(SQLModel, table=True):
     __tablename__ = "scheduled_prediction_configs"
 

@@ -13,6 +13,7 @@ from coordinator.db import (
     DBModelRepository,
     DBPredictionRepository,
     DBScoreRepository,
+    DBSnapshotRepository,
     create_session,
 )
 from coordinator.services.feed_reader import FeedReader
@@ -45,6 +46,7 @@ def build_service() -> ScoreService:
         input_repository=DBInputRepository(session),
         prediction_repository=DBPredictionRepository(session),
         score_repository=DBScoreRepository(session),
+        snapshot_repository=DBSnapshotRepository(session),
         model_repository=DBModelRepository(session),
         leaderboard_repository=DBLeaderboardRepository(session),
         contract=CrunchContract(),
