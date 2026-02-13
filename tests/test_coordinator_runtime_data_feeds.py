@@ -3,10 +3,10 @@ from __future__ import annotations
 import unittest
 
 from coordinator.feeds.contracts import (
-    AssetDescriptor,
     FeedDataRecord,
     FeedFetchRequest,
     FeedSubscription,
+    SubjectDescriptor,
 )
 from coordinator.feeds.registry import DataFeedRegistry, create_default_registry
 
@@ -27,19 +27,17 @@ class DummyFeed:
 
 class TestCoordinatorRuntimeDataFeeds(unittest.TestCase):
     def test_contracts_capture_core_feed_shapes(self):
-        asset = AssetDescriptor(
+        descriptor = SubjectDescriptor(
             symbol="BTCUSD",
             display_name="Bitcoin / USD",
             kinds=("tick", "candle"),
             granularities=("1s", "1m"),
-            quote="USD",
-            base="BTC",
-            venue="pyth",
+            source="pyth",
         )
 
-        sub = FeedSubscription(assets=("BTCUSD",), kind="tick", granularity="1s")
+        sub = FeedSubscription(subjects=("BTCUSD",), kind="tick", granularity="1s")
         req = FeedFetchRequest(
-            assets=("BTCUSD",),
+            subjects=("BTCUSD",),
             kind="candle",
             granularity="1m",
             start_ts=1700000000,
@@ -55,7 +53,7 @@ class TestCoordinatorRuntimeDataFeeds(unittest.TestCase):
             values={"close": 50000.0},
         )
 
-        self.assertEqual(asset.symbol, "BTCUSD")
+        self.assertEqual(descriptor.symbol, "BTCUSD")
         self.assertEqual(sub.kind, "tick")
         self.assertEqual(req.limit, 100)
         self.assertEqual(rec.values["close"], 50000.0)

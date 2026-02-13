@@ -42,7 +42,7 @@ class BackfillService:
             subject_cursor = cursor_ts
             while subject_cursor < end_ts:
                 req = FeedFetchRequest(
-                    assets=(subject,),
+                    subjects=(subject,),
                     kind=request.kind,
                     granularity=request.granularity,
                     start_ts=subject_cursor,

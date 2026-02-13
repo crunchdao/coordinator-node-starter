@@ -10,7 +10,7 @@ import requests
 
 from coordinator.feeds.base import DataFeed, FeedHandle, FeedSink
 from coordinator.feeds.contracts import (
-    AssetDescriptor,
+    SubjectDescriptor,
     FeedFetchRequest,
     FeedSubscription,
     FeedDataRecord,
@@ -83,7 +83,7 @@ class PythFeed(DataFeed):
         ts_event = int(target_ts or datetime.now(timezone.utc).timestamp())
         return updated, ts_event
 
-    async def list_assets(self) -> Sequence[AssetDescriptor]:
+    async def list_subjects(self) -> Sequence[SubjectDescriptor]:
         feed_map = _load_feed_map(self.settings)
 
         try:
@@ -91,7 +91,7 @@ class PythFeed(DataFeed):
         except Exception:
             rows = []
 
-        descriptors: list[AssetDescriptor] = []
+        descriptors: list[SubjectDescriptor] = []
         if isinstance(rows, list):
             for row in rows:
                 if not isinstance(row, dict):
@@ -101,14 +101,12 @@ class PythFeed(DataFeed):
                     continue
                 feed_id = row.get("id")
                 descriptors.append(
-                    AssetDescriptor(
+                    SubjectDescriptor(
                         symbol=symbol,
                         display_name=symbol,
                         kinds=("tick", "candle"),
                         granularities=("1s", "1m", "5m"),
-                        quote=None,
-                        base=None,
-                        venue="pyth",
+                        source="pyth",
                         metadata={"feed_id": feed_id},
                     )
                 )
@@ -117,14 +115,12 @@ class PythFeed(DataFeed):
             return descriptors
 
         return [
-            AssetDescriptor(
+            SubjectDescriptor(
                 symbol=symbol,
                 display_name=symbol,
                 kinds=("tick", "candle"),
                 granularities=("1s", "1m", "5m"),
-                quote="USD",
-                base=symbol,
-                venue="pyth",
+                source="pyth",
                 metadata={"feed_id": feed_id, "fallback": True},
             )
             for symbol, feed_id in sorted(feed_map.items())
@@ -137,7 +133,7 @@ class PythFeed(DataFeed):
                 try:
                     now_ts = int(datetime.now(timezone.utc).timestamp())
                     req = FeedFetchRequest(
-                        assets=sub.assets,
+                        subjects=sub.subjects,
                         kind=sub.kind,
                         granularity=sub.granularity,
                         end_ts=now_ts,
@@ -162,7 +158,7 @@ class PythFeed(DataFeed):
 
     async def fetch(self, req: FeedFetchRequest) -> Sequence[FeedDataRecord]:
         feed_map = _load_feed_map(self.settings)
-        requested_assets = [asset for asset in req.assets if asset in feed_map]
+        requested_assets = [asset for asset in req.subjects if asset in feed_map]
         if not requested_assets:
             return []
 

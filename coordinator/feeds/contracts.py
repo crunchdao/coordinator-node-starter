@@ -7,16 +7,14 @@ FeedDataKind = Literal["tick", "candle"]
 
 
 @dataclass(frozen=True)
-class AssetDescriptor:
-    """Provider-native asset descriptor with per-asset capabilities."""
+class SubjectDescriptor:
+    """Provider-native subject descriptor with per-subject capabilities."""
 
     symbol: str
     display_name: str | None
     kinds: tuple[FeedDataKind, ...]
     granularities: tuple[str, ...]
-    quote: str | None
-    base: str | None
-    venue: str
+    source: str
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -24,7 +22,7 @@ class AssetDescriptor:
 class FeedSubscription:
     """Push/listen mode subscription request."""
 
-    assets: tuple[str, ...]
+    subjects: tuple[str, ...]
     kind: FeedDataKind
     granularity: str
     fields: tuple[str, ...] = ()
@@ -34,7 +32,7 @@ class FeedSubscription:
 class FeedFetchRequest:
     """Pull/fetch mode request used for backfill and truth windows."""
 
-    assets: tuple[str, ...]
+    subjects: tuple[str, ...]
     kind: FeedDataKind
     granularity: str
     start_ts: int | None = None

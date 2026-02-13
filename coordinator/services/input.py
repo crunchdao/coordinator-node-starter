@@ -151,7 +151,7 @@ class InputService:
             registry = create_default_registry()
             feed = registry.create(self.source)
             request = FeedFetchRequest(
-                assets=(self.subject,),
+                subjects=(self.subject,),
                 kind=self.kind if self.kind in {"tick", "candle"} else "tick",
                 granularity=self.granularity,
                 start_ts=int(self._ensure_utc(start).timestamp()),

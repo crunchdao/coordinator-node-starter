@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Protocol, Sequence
 
 from coordinator.feeds.contracts import (
-    AssetDescriptor,
     FeedDataRecord,
     FeedFetchRequest,
     FeedSubscription,
+    SubjectDescriptor,
 )
 
 
@@ -21,12 +21,12 @@ class FeedHandle(Protocol):
 class DataFeed(Protocol):
     """Generic runtime data feed contract.
 
-    - list_assets: provider-native discovery and capabilities
+    - list_subjects: provider-native discovery and capabilities
     - listen: push mode
     - fetch: pull mode (backfill + truth-window queries)
     """
 
-    async def list_assets(self) -> Sequence[AssetDescriptor]: ...
+    async def list_subjects(self) -> Sequence[SubjectDescriptor]: ...
 
     async def listen(self, sub: FeedSubscription, sink: FeedSink) -> FeedHandle: ...
 

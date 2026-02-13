@@ -9,7 +9,7 @@ import requests
 
 from coordinator.feeds.base import DataFeed, FeedHandle, FeedSink
 from coordinator.feeds.contracts import (
-    AssetDescriptor,
+    SubjectDescriptor,
     FeedFetchRequest,
     FeedSubscription,
     FeedDataRecord,
@@ -117,7 +117,7 @@ class BinanceFeed(DataFeed):
         self.client = client or BinanceRestClient()
         self.poll_seconds = float(settings.options.get("poll_seconds", "5"))
 
-    async def list_assets(self) -> Sequence[AssetDescriptor]:
+    async def list_subjects(self) -> Sequence[SubjectDescriptor]:
         try:
             payload = await asyncio.to_thread(self.client.exchange_info)
             symbols = payload.get("symbols") if isinstance(payload, dict) else []
@@ -128,19 +128,17 @@ class BinanceFeed(DataFeed):
 
         if not symbols:
             return [
-                AssetDescriptor(
+                SubjectDescriptor(
                     symbol="BTCUSDT",
                     display_name="BTC / USDT",
                     kinds=("tick", "candle"),
                     granularities=("1m", "5m", "15m", "1h"),
-                    quote="USDT",
-                    base="BTC",
-                    venue="binance",
+                    source="binance",
                     metadata={"fallback": True},
                 )
             ]
 
-        descriptors: list[AssetDescriptor] = []
+        descriptors: list[SubjectDescriptor] = []
         for row in symbols[:500]:
             if not isinstance(row, dict):
                 continue
@@ -148,15 +146,17 @@ class BinanceFeed(DataFeed):
             if not symbol:
                 continue
             descriptors.append(
-                AssetDescriptor(
+                SubjectDescriptor(
                     symbol=symbol,
                     display_name=symbol,
                     kinds=("tick", "candle"),
                     granularities=("1m", "5m", "15m", "1h"),
-                    quote=row.get("quoteAsset"),
-                    base=row.get("baseAsset"),
-                    venue="binance",
-                    metadata={"status": row.get("status")},
+                    source="binance",
+                    metadata={
+                        "status": row.get("status"),
+                        "quote": row.get("quoteAsset"),
+                        "base": row.get("baseAsset"),
+                    },
                 )
             )
 
@@ -169,7 +169,7 @@ class BinanceFeed(DataFeed):
                 try:
                     now_ts = int(datetime.now(timezone.utc).timestamp())
                     req = FeedFetchRequest(
-                        assets=sub.assets,
+                        subjects=sub.subjects,
                         kind=sub.kind,
                         granularity=sub.granularity,
                         end_ts=now_ts,
@@ -204,7 +204,7 @@ class BinanceFeed(DataFeed):
         end_ms = int(req.end_ts * 1000) if req.end_ts is not None else None
         limit = req.limit or 500
 
-        for asset in req.assets:
+        for asset in req.subjects:
             try:
                 rows = await asyncio.to_thread(
                     self.client.klines,
@@ -246,7 +246,7 @@ class BinanceFeed(DataFeed):
         records: list[FeedDataRecord] = []
         now_ts = int(datetime.now(timezone.utc).timestamp())
 
-        for asset in req.assets:
+        for asset in req.subjects:
             try:
                 price = await asyncio.to_thread(self.client.ticker_price, asset)
             except Exception:
