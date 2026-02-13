@@ -667,6 +667,94 @@ def get_checkpoint_emission_cli_format(
     }
 
 
+@app.get("/reports/checkpoints/{checkpoint_id}/prizes")
+def get_checkpoint_prizes(
+    checkpoint_id: str,
+    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+    total_prize: Annotated[int, Query(description="Total prize pool to distribute (in token lowest denomination)")] = 0,
+) -> list[dict[str, Any]]:
+    """Return checkpoint emission as Prize[] JSON for the coordinator webapp.
+
+    The webapp's CreateCheckpoint UI expects:
+      [{prizeId, timestamp, model, prize}]
+    where `model` is a model ID and `prize` is an absolute token amount.
+
+    This endpoint converts the node's frac64 percentage-based emission into
+    the webapp format by distributing `total_prize` proportionally.
+    """
+    checkpoints = checkpoint_repo.find()
+    checkpoint = next((c for c in checkpoints if c.id == checkpoint_id), None)
+    if checkpoint is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
+    if not checkpoint.entries:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No emission data in checkpoint")
+
+    emission = checkpoint.entries[0]
+    ranking = checkpoint.meta.get("ranking", [])
+    frac64_multiplier = 1_000_000_000
+    timestamp = int(checkpoint.period_end.timestamp())
+
+    prizes: list[dict[str, Any]] = []
+    for reward in emission.get("cruncher_rewards", []):
+        idx = reward["cruncher_index"]
+        pct = reward["reward_pct"] / frac64_multiplier
+        model_id = ranking[idx]["model_id"] if idx < len(ranking) else str(idx)
+
+        prize_amount = int(round(total_prize * pct))
+        prizes.append({
+            "prizeId": f"{checkpoint_id}-{model_id}",
+            "timestamp": timestamp,
+            "model": model_id,
+            "prize": prize_amount,
+        })
+
+    return prizes
+
+
+@app.get("/reports/checkpoints/latest/prizes")
+def get_latest_checkpoint_prizes(
+    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+    total_prize: Annotated[int, Query(description="Total prize pool to distribute (in token lowest denomination)")] = 0,
+) -> dict[str, Any]:
+    """Return the latest checkpoint's prizes in webapp format.
+
+    Convenience wrapper that finds the latest checkpoint and returns its prizes.
+    """
+    checkpoint = checkpoint_repo.get_latest()
+    if checkpoint is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No checkpoints found")
+    if not checkpoint.entries:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No emission data in checkpoint")
+
+    emission = checkpoint.entries[0]
+    ranking = checkpoint.meta.get("ranking", [])
+    frac64_multiplier = 1_000_000_000
+    timestamp = int(checkpoint.period_end.timestamp())
+
+    prizes: list[dict[str, Any]] = []
+    for reward in emission.get("cruncher_rewards", []):
+        idx = reward["cruncher_index"]
+        pct = reward["reward_pct"] / frac64_multiplier
+        model_id = ranking[idx]["model_id"] if idx < len(ranking) else str(idx)
+
+        prize_amount = int(round(total_prize * pct))
+        prizes.append({
+            "prizeId": f"{checkpoint.id}-{model_id}",
+            "timestamp": timestamp,
+            "model": model_id,
+            "prize": prize_amount,
+        })
+
+    return {
+        "checkpoint_id": checkpoint.id,
+        "status": checkpoint.status,
+        "period_start": checkpoint.period_start.isoformat(),
+        "period_end": checkpoint.period_end.isoformat(),
+        "total_prize": total_prize,
+        "prizes": prizes,
+    }
+
+
 @app.get("/reports/emissions/latest")
 def get_latest_emission(
     checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
