@@ -5,11 +5,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Generator
 
 import uvicorn
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from sqlmodel import Session
 
 from coordinator_node.contracts import CrunchContract
-from coordinator_node.entities.prediction import CheckpointRecord, CheckpointStatus
+from coordinator_node.entities.prediction import CheckpointStatus
 from coordinator_node.schemas import ReportSchemaEnvelope
 from coordinator_node.db import (
     DBCheckpointRepository,
@@ -514,97 +514,6 @@ def get_latest_checkpoint(
     checkpoint = checkpoint_repo.get_latest()
     if checkpoint is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No checkpoints found")
-    return _checkpoint_to_dict(checkpoint)
-
-
-@app.post("/reports/checkpoints", status_code=201)
-def create_manual_checkpoint(
-    body: Annotated[dict[str, Any], Body()],
-    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
-    model_repo: Annotated[DBModelRepository, Depends(get_model_repository)],
-) -> dict[str, Any]:
-    """Create a checkpoint manually from a list of prizes.
-
-    Body: { "prizes": [{ "model": "model-id", "prize": 1000000 }, ...] }
-
-    Builds an EmissionCheckpoint from the prize amounts (proportional frac64),
-    saves as PENDING, and returns the checkpoint record.
-    """
-    prizes = body.get("prizes")
-    if not prizes or not isinstance(prizes, list):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="prizes is required and must be a non-empty list",
-        )
-
-    now = datetime.now(timezone.utc)
-    frac64_multiplier = 1_000_000_000
-
-    # Determine period
-    last = checkpoint_repo.get_latest()
-    period_start = last.period_end if last else now - timedelta(days=7)
-
-    # Calculate total prize to derive frac64 percentages
-    total_prize = sum(p.get("prize", 0) for p in prizes)
-    if total_prize <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Total prize must be greater than 0",
-        )
-
-    # Build ranking and cruncher rewards
-    models = model_repo.fetch_all()
-    ranked_entries: list[dict[str, Any]] = []
-    cruncher_rewards: list[dict[str, Any]] = []
-    frac64_values: list[int] = []
-
-    for idx, prize_entry in enumerate(prizes):
-        model_id = prize_entry.get("model", str(idx))
-        prize_amount = prize_entry.get("prize", 0)
-        frac64 = int(round(prize_amount / total_prize * frac64_multiplier))
-        frac64_values.append(frac64)
-
-        model = models.get(model_id)
-        ranked_entries.append({
-            "model_id": model_id,
-            "model_name": model.name if model else None,
-            "cruncher_name": model.player_name if model else None,
-            "rank": idx + 1,
-            "prediction_count": 0,
-        })
-        cruncher_rewards.append({
-            "cruncher_index": idx,
-            "reward_pct": frac64,
-        })
-
-    # Fix rounding so frac64 values sum to exactly FRAC_64_MULTIPLIER
-    if frac64_values:
-        diff = frac64_multiplier - sum(frac64_values)
-        cruncher_rewards[0]["reward_pct"] += diff
-
-    emission = {
-        "crunch": CONTRACT.crunch_pubkey,
-        "cruncher_rewards": cruncher_rewards,
-        "compute_provider_rewards": [],
-        "data_provider_rewards": [],
-    }
-
-    checkpoint = CheckpointRecord(
-        id=f"CKP_{now.strftime('%Y%m%d_%H%M%S')}",
-        period_start=period_start,
-        period_end=now,
-        status=CheckpointStatus.PENDING,
-        entries=[emission],
-        meta={
-            "snapshot_count": 0,
-            "model_count": len(prizes),
-            "ranking": ranked_entries,
-            "manual": True,
-        },
-        created_at=now,
-    )
-
-    checkpoint_repo.save(checkpoint)
     return _checkpoint_to_dict(checkpoint)
 
 
