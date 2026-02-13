@@ -11,10 +11,12 @@ from sqlmodel import Session
 from coordinator.contracts import CrunchContract
 from coordinator.schemas import ReportSchemaEnvelope
 from coordinator.db import (
+    DBCheckpointRepository,
     DBLeaderboardRepository,
     DBFeedRecordRepository,
     DBModelRepository,
     DBPredictionRepository,
+    DBSnapshotRepository,
     create_session,
 )
 
@@ -189,6 +191,18 @@ def get_feed_record_repository(
     session_db: Annotated[Session, Depends(get_db_session)]
 ) -> DBFeedRecordRepository:
     return DBFeedRecordRepository(session_db)
+
+
+def get_snapshot_repository(
+    session_db: Annotated[Session, Depends(get_db_session)]
+) -> DBSnapshotRepository:
+    return DBSnapshotRepository(session_db)
+
+
+def get_checkpoint_repository(
+    session_db: Annotated[Session, Depends(get_db_session)]
+) -> DBCheckpointRepository:
+    return DBCheckpointRepository(session_db)
 
 
 @app.get("/healthz")
@@ -421,6 +435,144 @@ def get_feeds_tail(
         )
 
     return rows
+
+
+# ── Snapshots ──
+
+
+@app.get("/reports/snapshots")
+def get_snapshots(
+    snapshot_repo: Annotated[DBSnapshotRepository, Depends(get_snapshot_repository)],
+    model_id: Annotated[str | None, Query()] = None,
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+) -> list[dict[str, Any]]:
+    snapshots = snapshot_repo.find(model_id=model_id, since=since, until=until, limit=limit)
+    return [
+        {
+            "id": s.id,
+            "model_id": s.model_id,
+            "period_start": s.period_start,
+            "period_end": s.period_end,
+            "prediction_count": s.prediction_count,
+            "result_summary": s.result_summary,
+            "created_at": s.created_at,
+        }
+        for s in snapshots
+    ]
+
+
+# ── Checkpoints ──
+
+
+@app.get("/reports/checkpoints")
+def get_checkpoints(
+    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+    checkpoint_status: Annotated[str | None, Query(alias="status")] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> list[dict[str, Any]]:
+    checkpoints = checkpoint_repo.find(status=checkpoint_status, limit=limit)
+    return [_checkpoint_to_dict(c) for c in checkpoints]
+
+
+@app.get("/reports/checkpoints/latest")
+def get_latest_checkpoint(
+    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+) -> dict[str, Any]:
+    checkpoint = checkpoint_repo.get_latest()
+    if checkpoint is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No checkpoints found")
+    return _checkpoint_to_dict(checkpoint)
+
+
+@app.get("/reports/checkpoints/{checkpoint_id}/payload")
+def get_checkpoint_payload(
+    checkpoint_id: str,
+    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+) -> dict[str, Any]:
+    checkpoints = checkpoint_repo.find()
+    checkpoint = next((c for c in checkpoints if c.id == checkpoint_id), None)
+    if checkpoint is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
+    return {
+        "checkpoint_id": checkpoint.id,
+        "period_start": checkpoint.period_start.isoformat(),
+        "period_end": checkpoint.period_end.isoformat(),
+        "entries": checkpoint.entries,
+    }
+
+
+@app.post("/reports/checkpoints/{checkpoint_id}/confirm")
+def confirm_checkpoint(
+    checkpoint_id: str,
+    body: dict[str, Any],
+    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+) -> dict[str, Any]:
+    checkpoints = checkpoint_repo.find()
+    checkpoint = next((c for c in checkpoints if c.id == checkpoint_id), None)
+    if checkpoint is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
+    if checkpoint.status != "PENDING":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Checkpoint is {checkpoint.status}, expected PENDING",
+        )
+
+    tx_hash = body.get("tx_hash")
+    if not tx_hash:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="tx_hash required")
+
+    checkpoint.status = "SUBMITTED"
+    checkpoint.tx_hash = tx_hash
+    checkpoint.submitted_at = datetime.now(timezone.utc)
+    checkpoint_repo.save(checkpoint)
+
+    return _checkpoint_to_dict(checkpoint)
+
+
+@app.patch("/reports/checkpoints/{checkpoint_id}/status")
+def update_checkpoint_status(
+    checkpoint_id: str,
+    body: dict[str, Any],
+    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+) -> dict[str, Any]:
+    checkpoints = checkpoint_repo.find()
+    checkpoint = next((c for c in checkpoints if c.id == checkpoint_id), None)
+    if checkpoint is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
+
+    new_status = body.get("status")
+    valid_transitions = {
+        "PENDING": ["SUBMITTED"],
+        "SUBMITTED": ["CLAIMABLE"],
+        "CLAIMABLE": ["PAID"],
+    }
+    allowed = valid_transitions.get(checkpoint.status, [])
+    if new_status not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot transition from {checkpoint.status} to {new_status}. Allowed: {allowed}",
+        )
+
+    checkpoint.status = new_status
+    checkpoint_repo.save(checkpoint)
+
+    return _checkpoint_to_dict(checkpoint)
+
+
+def _checkpoint_to_dict(c) -> dict[str, Any]:
+    return {
+        "id": c.id,
+        "period_start": c.period_start,
+        "period_end": c.period_end,
+        "status": c.status,
+        "entries": c.entries,
+        "meta": c.meta,
+        "created_at": c.created_at,
+        "tx_hash": c.tx_hash,
+        "submitted_at": c.submitted_at,
+    }
 
 
 if __name__ == "__main__":
