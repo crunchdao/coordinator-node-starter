@@ -3,6 +3,19 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class Meta(BaseModel):
+    """Untyped by default. Override to add structured metadata with defaults.
+
+    Example:
+        class Meta(BaseModel):
+            model_config = ConfigDict(extra="allow")
+            confidence: float = 0.0
+            strategy: str = "default"
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+
 class RawInput(BaseModel):
     """What the feed produces. Shape is determined by feed config."""
 
@@ -11,6 +24,12 @@ class RawInput(BaseModel):
     symbol: str = "BTC"
     asof_ts: int = 0
     candles_1m: list[dict] = Field(default_factory=list)
+
+
+class GroundTruth(RawInput):
+    """What the actual outcome looks like. Same shape as RawInput unless you override."""
+
+    pass
 
 
 class InferenceInput(RawInput):
@@ -79,7 +98,9 @@ class CrunchContract(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    meta_type: type[BaseModel] = Meta
     raw_input_type: type[BaseModel] = RawInput
+    ground_truth_type: type[BaseModel] = GroundTruth
     input_type: type[BaseModel] = InferenceInput
     output_type: type[BaseModel] = InferenceOutput
     score_type: type[BaseModel] = ScoreResult
