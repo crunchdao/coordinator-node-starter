@@ -489,5 +489,79 @@ class TestPrizesEndpoints(unittest.TestCase):
             get_latest_checkpoint_prizes(repo, total_prize=1000)
 
 
+# ── Manual checkpoint creation ──
+
+
+class TestCreateManualCheckpoint(unittest.TestCase):
+    def test_creates_pending_checkpoint_from_prizes(self):
+        from coordinator_node.workers.report_worker import create_manual_checkpoint
+
+        ckpt_repo = MemCheckpointRepository()
+        model_repo = MemModelRepository()
+
+        body = {
+            "prizes": [
+                {"model": "m1", "prize": 600_000},
+                {"model": "m2", "prize": 400_000},
+            ]
+        }
+        result = create_manual_checkpoint(body, ckpt_repo, model_repo)
+
+        self.assertEqual(result["status"], CheckpointStatus.PENDING)
+        self.assertTrue(result["meta"]["manual"])
+        self.assertEqual(result["meta"]["model_count"], 2)
+        self.assertEqual(len(result["entries"]), 1)
+
+        # Rewards sum to FRAC_64_MULTIPLIER
+        emission = result["entries"][0]
+        total = sum(r["reward_pct"] for r in emission["cruncher_rewards"])
+        self.assertEqual(total, FRAC_64_MULTIPLIER)
+
+        # Saved to repo
+        self.assertEqual(len(ckpt_repo.checkpoints), 1)
+
+    def test_rejects_empty_prizes(self):
+        from coordinator_node.workers.report_worker import create_manual_checkpoint
+        from fastapi import HTTPException
+
+        ckpt_repo = MemCheckpointRepository()
+        model_repo = MemModelRepository()
+
+        with self.assertRaises(HTTPException):
+            create_manual_checkpoint({"prizes": []}, ckpt_repo, model_repo)
+
+    def test_rejects_zero_total_prize(self):
+        from coordinator_node.workers.report_worker import create_manual_checkpoint
+        from fastapi import HTTPException
+
+        ckpt_repo = MemCheckpointRepository()
+        model_repo = MemModelRepository()
+
+        with self.assertRaises(HTTPException):
+            create_manual_checkpoint(
+                {"prizes": [{"model": "m1", "prize": 0}]},
+                ckpt_repo, model_repo,
+            )
+
+    def test_proportional_frac64_distribution(self):
+        from coordinator_node.workers.report_worker import create_manual_checkpoint
+
+        ckpt_repo = MemCheckpointRepository()
+        model_repo = MemModelRepository()
+
+        body = {
+            "prizes": [
+                {"model": "m1", "prize": 750_000},
+                {"model": "m2", "prize": 250_000},
+            ]
+        }
+        result = create_manual_checkpoint(body, ckpt_repo, model_repo)
+        rewards = result["entries"][0]["cruncher_rewards"]
+
+        # m1 gets ~75%, m2 gets ~25%
+        self.assertAlmostEqual(rewards[0]["reward_pct"] / FRAC_64_MULTIPLIER, 0.75, places=4)
+        self.assertAlmostEqual(rewards[1]["reward_pct"] / FRAC_64_MULTIPLIER, 0.25, places=4)
+
+
 if __name__ == "__main__":
     unittest.main()
