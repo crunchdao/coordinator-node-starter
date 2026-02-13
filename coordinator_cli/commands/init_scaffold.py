@@ -1,102 +1,107 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from coordinator_cli.commands.init_config import InitConfig
-from coordinator_cli.commands.pack_templates import render_pack_templates
-from coordinator_cli.commands.scaffold_render import ensure_no_legacy_references
+
+_BASE_DIR = Path(__file__).resolve().parent.parent.parent / "base"
+_PACKS_DIR = Path(__file__).resolve().parent.parent.parent / "packs"
+
+# Tokens to replace in file contents and directory names
+_REPLACEMENTS = {
+    "starter-challenge": "{name}",
+    "starter_challenge": "{module}",
+}
 
 
-def render_scaffold_files(config: InitConfig) -> dict[str, str]:
-    path_values = {
-        "name": config.name,
-        "node_name": config.node_name,
-        "challenge_name": config.challenge_name,
-        "package_module": config.package_module,
-        "crunch_id": config.crunch_id,
+def render_workspace(config: InitConfig, pack: str | None = None) -> Path:
+    """Copy base/ to destination, optionally overlay a pack, replace tokens."""
+    dest = config.dest
+
+    if not _BASE_DIR.exists():
+        raise ValueError(f"Base template not found at {_BASE_DIR}")
+
+    # 1. Copy base
+    shutil.copytree(_BASE_DIR, dest, dirs_exist_ok=True)
+
+    # 2. Overlay pack (if any)
+    if pack:
+        pack_dir = _PACKS_DIR / pack
+        if not pack_dir.exists():
+            raise ValueError(f"Pack '{pack}' not found at {pack_dir}")
+        shutil.copytree(pack_dir, dest, dirs_exist_ok=True)
+
+    # 3. Replace tokens in file contents
+    replacements = {
+        "starter-challenge": config.name,
+        "starter_challenge": config.module,
     }
+    _replace_in_tree(dest, replacements)
 
-    template_files = render_pack_templates("default", path_values)
+    # 4. Rename Python package directory
+    old_pkg = dest / "challenge" / "starter_challenge"
+    new_pkg = dest / "challenge" / config.module
+    if old_pkg.exists() and old_pkg != new_pkg:
+        old_pkg.rename(new_pkg)
 
-    callables_env = "\n".join(f"{k}={v}" for k, v in sorted(config.callables.items()))
-    schedule_json = json.dumps(config.scheduled_prediction_configs, indent=2)
-    local_env = _build_local_env(config)
+    # 5. Vendor coordinator runtime
+    vendor_runtime(dest / "node" / "runtime")
 
-    generated: dict[str, str] = {
-        f"{config.node_name}/.local.env": local_env,
-        f"{config.node_name}/.local.env.example": local_env,
-        f"{config.node_name}/config/callables.env": callables_env,
-        f"{config.node_name}/config/scheduled_prediction_configs.json": schedule_json,
-    }
+    # 6. Write process log
+    _write_process_log(dest, config)
 
-    files = {**template_files, **generated}
-    ensure_no_legacy_references(files)
-    return files
+    return dest
 
 
-def write_tree(base_dir: Path, files: dict[str, str]) -> None:
-    for relative_path, content in files.items():
-        path = base_dir / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content.strip() + "\n", encoding="utf-8")
-
-
-def write_process_log(workspace_dir: Path, events: list[dict[str, Any]]) -> None:
-    path = workspace_dir / "process-log.jsonl"
-    lines: list[str] = []
-    for event in events:
-        payload = {"timestamp": datetime.now(timezone.utc).isoformat(), **event}
-        lines.append(json.dumps(payload, separators=(",", ":")))
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def vendor_runtime_packages(target_runtime_dir: Path) -> None:
+def vendor_runtime(target_dir: Path) -> None:
+    """Copy the coordinator package into the node runtime directory."""
     import coordinator
 
-    source_dir = Path(coordinator.__file__).resolve().parent
-    target_runtime_dir.mkdir(parents=True, exist_ok=True)
-    destination = target_runtime_dir / "coordinator"
+    source = Path(coordinator.__file__).resolve().parent
+    destination = target_dir / "coordinator"
+    target_dir.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         shutil.rmtree(destination)
-    shutil.copytree(source_dir, destination)
+    shutil.copytree(source, destination)
 
 
-def _build_local_env(config: InitConfig) -> str:
-    callables_block = "\n".join(f"{k}={v}" for k, v in sorted(config.callables.items()))
+def _replace_in_tree(root: Path, replacements: dict[str, str]) -> None:
+    """Replace tokens in all text files under root."""
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        if "__pycache__" in path.parts:
+            continue
+        # Skip binary files
+        if path.suffix in (".pyc", ".pyo", ".so", ".dylib", ".whl", ".tar", ".gz", ".zip", ".png", ".jpg", ".pdf"):
+            continue
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, PermissionError):
+            continue
+        new_content = content
+        for old, new in replacements.items():
+            new_content = new_content.replace(old, new)
+        if new_content != content:
+            path.write_text(new_content, encoding="utf-8")
 
-    return f"""
-POSTGRES_USER=starter
-POSTGRES_PASSWORD=starter
-POSTGRES_DB=starter
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5432
 
-MODEL_RUNNER_NODE_HOST=model-orchestrator
-MODEL_RUNNER_NODE_PORT=9091
-MODEL_RUNNER_TIMEOUT_SECONDS=60
-
-# ── Web UI ──────────────────────────────────────────────────────────
-REPORT_UI_APP=starter
-REPORT_UI_BUILD_CONTEXT=https://github.com/crunchdao/coordinator-webapp.git
-REPORT_UI_DOCKERFILE=apps/starter/Dockerfile
-
-FEED_SOURCE=pyth
-FEED_SUBJECTS=BTC
-FEED_KIND=tick
-FEED_GRANULARITY=1s
-FEED_POLL_SECONDS=5
-FEED_BACKFILL_MINUTES=180
-FEED_CANDLES_WINDOW=120
-FEED_RECORD_TTL_DAYS=90
-FEED_RETENTION_CHECK_SECONDS=3600
-
-CRUNCH_ID={config.crunch_id}
-MODEL_BASE_CLASSNAME={config.model_base_classname}
-CHECKPOINT_INTERVAL_SECONDS={config.checkpoint_interval_seconds}
-
-{callables_block}
-"""
+def _write_process_log(dest: Path, config: InitConfig) -> None:
+    path = dest / "process-log.jsonl"
+    events = [
+        {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "phase": "init",
+            "action": "workspace_created",
+            "status": "ok",
+            "name": config.name,
+            "workspace": str(dest),
+        },
+    ]
+    lines = [json.dumps(e, separators=(",", ":")) for e in events]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")

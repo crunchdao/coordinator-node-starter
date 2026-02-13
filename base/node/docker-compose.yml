@@ -1,0 +1,233 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: starter-challenge-postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-starter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
+      POSTGRES_DB: ${POSTGRES_DB:-starter}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d ${POSTGRES_DB:-starter} -U ${POSTGRES_USER:-starter}"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [coordinator-net]
+
+  init-db:
+    build:
+      context: ..
+      dockerfile: node/Dockerfile
+    container_name: starter-challenge-init-db
+    command: ["python", "-m", "coordinator.db.init_db"]
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-starter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
+      POSTGRES_DB: ${POSTGRES_DB:-starter}
+      SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
+    volumes:
+      - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [coordinator-net]
+
+  feed-data-worker:
+    build:
+      context: ..
+      dockerfile: node/Dockerfile
+    container_name: starter-challenge-feed-data-worker
+    restart: always
+    command: ["python", "-m", "coordinator.workers.feed_data_worker"]
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-starter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
+      POSTGRES_DB: ${POSTGRES_DB:-starter}
+      FEED_SOURCE: ${FEED_SOURCE:-pyth}
+      FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
+      FEED_KIND: ${FEED_KIND:-tick}
+      FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
+      FEED_POLL_SECONDS: ${FEED_POLL_SECONDS:-5}
+      FEED_BACKFILL_MINUTES: ${FEED_BACKFILL_MINUTES:-180}
+      FEED_RECORD_TTL_DAYS: ${FEED_RECORD_TTL_DAYS:-90}
+      FEED_RETENTION_CHECK_SECONDS: ${FEED_RETENTION_CHECK_SECONDS:-3600}
+      PYTHONPATH: /app/challenge
+    volumes:
+      - ../challenge:/app/challenge
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [coordinator-net]
+
+  predict-worker:
+    build:
+      context: ..
+      dockerfile: node/Dockerfile
+    container_name: starter-challenge-predict-worker
+    restart: always
+    command: ["python", "-m", "coordinator.workers.predict_worker"]
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-starter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
+      POSTGRES_DB: ${POSTGRES_DB:-starter}
+      MODEL_RUNNER_NODE_HOST: ${MODEL_RUNNER_NODE_HOST:-model-orchestrator}
+      MODEL_RUNNER_NODE_PORT: ${MODEL_RUNNER_NODE_PORT:-9091}
+      MODEL_RUNNER_TIMEOUT_SECONDS: ${MODEL_RUNNER_TIMEOUT_SECONDS:-60}
+      CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-60}
+      CRUNCH_ID: ${CRUNCH_ID:-starter-challenge}
+      MODEL_BASE_CLASSNAME: ${MODEL_BASE_CLASSNAME:-tracker.TrackerBase}
+      FEED_SOURCE: ${FEED_SOURCE:-pyth}
+      FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
+      FEED_KIND: ${FEED_KIND:-tick}
+      FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
+      PYTHONPATH: /app/challenge
+    volumes:
+      - ../challenge:/app/challenge
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+      model-orchestrator:
+        condition: service_started
+      feed-data-worker:
+        condition: service_started
+    networks: [coordinator-net]
+
+  score-worker:
+    build:
+      context: ..
+      dockerfile: node/Dockerfile
+    container_name: starter-challenge-score-worker
+    restart: always
+    command: ["python", "-m", "coordinator.workers.score_worker"]
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-starter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
+      POSTGRES_DB: ${POSTGRES_DB:-starter}
+      CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-60}
+      FEED_SOURCE: ${FEED_SOURCE:-pyth}
+      FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
+      FEED_KIND: ${FEED_KIND:-tick}
+      FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
+      SCORING_FUNCTION: ${SCORING_FUNCTION}
+      PYTHONPATH: /app/challenge
+    volumes:
+      - ../challenge:/app/challenge
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+      feed-data-worker:
+        condition: service_started
+    networks: [coordinator-net]
+
+  checkpoint-worker:
+    build:
+      context: ..
+      dockerfile: node/Dockerfile
+    container_name: starter-challenge-checkpoint-worker
+    restart: always
+    command: ["python", "-m", "coordinator.workers.checkpoint_worker"]
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-starter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
+      POSTGRES_DB: ${POSTGRES_DB:-starter}
+      CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-604800}
+      PYTHONPATH: /app/challenge
+    volumes:
+      - ../challenge:/app/challenge
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [coordinator-net]
+
+  report-worker:
+    build:
+      context: ..
+      dockerfile: node/Dockerfile
+    container_name: starter-challenge-report-worker
+    restart: always
+    command: ["python", "-m", "coordinator.workers.report_worker"]
+    ports:
+      - "8000:8000"
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-starter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
+      POSTGRES_DB: ${POSTGRES_DB:-starter}
+      PYTHONPATH: /app/challenge
+    volumes:
+      - ../challenge:/app/challenge
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [coordinator-net]
+
+  model-orchestrator:
+    build:
+      context: https://github.com/crunchdao/model-orchestrator.git
+    container_name: starter-challenge-model-orchestrator
+    restart: unless-stopped
+    init: true
+    ports:
+      - "9091:9091"
+    environment:
+      DOCKER_NETWORK_NAME: starter-challenge-net
+    volumes:
+      - ./deployment/model-orchestrator-local/data:/app/data
+      - ./deployment/model-orchestrator-local/config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock
+    privileged: true
+    entrypoint: ["sh", "/app/config/docker-entrypoint.sh"]
+    command:
+      [
+        "model-orchestrator",
+        "dev",
+        "--configuration-file",
+        "/app/config/orchestrator.dev.yml",
+        "--rebuild",
+        "if-code-modified",
+      ]
+    networks: [coordinator-net]
+
+  report-ui:
+    build:
+      context: ${REPORT_UI_BUILD_CONTEXT:-https://github.com/crunchdao/coordinator-webapp.git}
+      dockerfile: ${REPORT_UI_DOCKERFILE:-apps/starter/Dockerfile}
+      args:
+        NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://report-worker:8000}"
+        NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR: "${NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR:-http://model-orchestrator:8001}"
+    container_name: starter-challenge-report-ui
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./deployment/report-ui/config:/app/config
+      - ./deployment/report-ui/config:/app/apps/${REPORT_UI_APP:-starter}/config
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - report-worker
+    networks: [coordinator-net]
+
+networks:
+  coordinator-net:
+    driver: bridge
+    name: starter-challenge-net
+
+volumes:
+  postgres-data:

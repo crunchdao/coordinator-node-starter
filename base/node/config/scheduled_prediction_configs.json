@@ -1,0 +1,11 @@
+[
+  {
+    "scope_key": "realtime-btc",
+    "scope_template": {},
+    "schedule": {
+      "every_seconds": 15
+    },
+    "active": true,
+    "order": 0
+  }
+]

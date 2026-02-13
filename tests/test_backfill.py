@@ -114,7 +114,7 @@ class TestBackfillScaffold(unittest.TestCase):
                 code = main(["init", "btc-trader"])
                 self.assertEqual(code, 0)
 
-                script = Path("btc-trader/crunch-node-btc-trader/scripts/backfill.py")
+                script = Path("btc-trader/node/scripts/backfill.py")
                 self.assertTrue(script.exists(), f"backfill script not found at {script}")
                 py_compile.compile(str(script), doraise=True)
 
@@ -131,7 +131,7 @@ class TestBackfillScaffold(unittest.TestCase):
                 code = main(["init", "btc-trader"])
                 self.assertEqual(code, 0)
 
-                makefile = Path("btc-trader/crunch-node-btc-trader/Makefile").read_text(encoding="utf-8")
+                makefile = Path("btc-trader/node/Makefile").read_text(encoding="utf-8")
                 self.assertIn("backfill", makefile)
 
 

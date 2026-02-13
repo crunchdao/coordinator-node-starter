@@ -1,0 +1,15 @@
+{
+  "endpoints": {
+    "leaderboard": "/reports/leaderboard"
+  },
+  "logs": {
+    "containerNames": [
+      "starter-challenge-feed-data-worker",
+      "starter-challenge-predict-worker",
+      "starter-challenge-score-worker",
+      "starter-challenge-checkpoint-worker",
+      "starter-challenge-report-worker",
+      "starter-challenge-model-orchestrator"
+    ]
+  }
+}
