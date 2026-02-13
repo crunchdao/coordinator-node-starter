@@ -9,6 +9,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, status
 from sqlmodel import Session
 
 from coordinator.contracts import CrunchContract
+from coordinator.entities.prediction import CheckpointStatus
 from coordinator.schemas import ReportSchemaEnvelope
 from coordinator.db import (
     DBCheckpointRepository,
@@ -513,7 +514,7 @@ def confirm_checkpoint(
     checkpoint = next((c for c in checkpoints if c.id == checkpoint_id), None)
     if checkpoint is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
-    if checkpoint.status != "PENDING":
+    if checkpoint.status != CheckpointStatus.PENDING:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Checkpoint is {checkpoint.status}, expected PENDING",
@@ -523,7 +524,7 @@ def confirm_checkpoint(
     if not tx_hash:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="tx_hash required")
 
-    checkpoint.status = "SUBMITTED"
+    checkpoint.status = CheckpointStatus.SUBMITTED
     checkpoint.tx_hash = tx_hash
     checkpoint.submitted_at = datetime.now(timezone.utc)
     checkpoint_repo.save(checkpoint)
@@ -543,12 +544,19 @@ def update_checkpoint_status(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
 
     new_status = body.get("status")
-    valid_transitions = {
-        "PENDING": ["SUBMITTED"],
-        "SUBMITTED": ["CLAIMABLE"],
-        "CLAIMABLE": ["PAID"],
+    valid_transitions: dict[CheckpointStatus, list[CheckpointStatus]] = {
+        CheckpointStatus.PENDING: [CheckpointStatus.SUBMITTED],
+        CheckpointStatus.SUBMITTED: [CheckpointStatus.CLAIMABLE],
+        CheckpointStatus.CLAIMABLE: [CheckpointStatus.PAID],
     }
-    allowed = valid_transitions.get(checkpoint.status, [])
+    allowed = valid_transitions.get(CheckpointStatus(checkpoint.status), [])
+    try:
+        new_status = CheckpointStatus(new_status)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid status: {new_status}. Valid: {[s.value for s in CheckpointStatus]}",
+        )
     if new_status not in allowed:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

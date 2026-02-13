@@ -5,7 +5,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from coordinator.entities.prediction import InputRecord, PredictionRecord
+from coordinator.entities.prediction import InputRecord, PredictionRecord, PredictionStatus
 from coordinator.schemas import ScheduleEnvelope
 from coordinator.services.predict import PredictService
 
@@ -107,12 +107,12 @@ class RealtimePredictService(PredictService):
 
                 validation_error = self.validate_output(output)
                 if validation_error:
-                    status = "FAILED"
+                    status = PredictionStatus.FAILED
                     output = {"_validation_error": validation_error, "raw_output": output}
                 elif runner_status == "SUCCESS":
-                    status = "PENDING"
+                    status = PredictionStatus.PENDING
                 else:
-                    status = runner_status
+                    status = PredictionStatus(runner_status) if runner_status in PredictionStatus.__members__ else PredictionStatus.FAILED
 
                 all_predictions.append(self._build_record(
                     model_id=model.id, input_id=inp.id, scope_key=scope_key,
@@ -127,7 +127,7 @@ class RealtimePredictService(PredictService):
                 if model_id not in seen:
                     all_predictions.append(self._build_record(
                         model_id=model_id, input_id=inp.id, scope_key=scope_key,
-                        scope=scope, status="ABSENT", output={},
+                        scope=scope, status=PredictionStatus.ABSENT, output={},
                         now=now, resolvable_at=resolvable_at, config_id=config_id,
                     ))
 

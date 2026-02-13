@@ -6,7 +6,9 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
-from coordinator.entities.prediction import ScoreRecord, SnapshotRecord
+from coordinator.entities.prediction import (
+    CheckpointStatus, InputStatus, PredictionStatus, ScoreRecord, SnapshotRecord,
+)
 
 from coordinator.db.repositories import (
     DBInputRepository, DBLeaderboardRepository, DBModelRepository,
@@ -89,7 +91,7 @@ class ScoreService:
             return 0
 
         unresolved = self.input_repository.find(
-            status="RECEIVED", resolvable_before=now,
+            status=InputStatus.RECEIVED, resolvable_before=now,
         )
         if not unresolved:
             return 0
@@ -111,7 +113,7 @@ class ScoreService:
                 continue
 
             inp.actuals = actuals
-            inp.status = "RESOLVED"
+            inp.status = InputStatus.RESOLVED
             self.input_repository.save(inp)
             resolved += 1
 
@@ -122,7 +124,7 @@ class ScoreService:
     # ── 2. score predictions ──
 
     def _score_predictions(self, now: datetime) -> list[ScoreRecord]:
-        predictions = self.prediction_repository.find(status="PENDING")
+        predictions = self.prediction_repository.find(status=PredictionStatus.PENDING)
         if not predictions:
             return []
 
@@ -130,7 +132,7 @@ class ScoreService:
         input_ids = {p.input_id for p in predictions}
         inputs_by_id: dict[str, Any] = {}
         if self.input_repository is not None:
-            for inp in self.input_repository.find(status="RESOLVED"):
+            for inp in self.input_repository.find(status=InputStatus.RESOLVED):
                 if inp.id in input_ids:
                     inputs_by_id[inp.id] = inp
 
@@ -154,7 +156,7 @@ class ScoreService:
             if self.score_repository is not None:
                 self.score_repository.save(score)
 
-            prediction.status = "SCORED"
+            prediction.status = PredictionStatus.SCORED
             self.prediction_repository.save(prediction)
             scored.append(score)
 
@@ -170,7 +172,7 @@ class ScoreService:
 
         # Group scores by model (need prediction to get model_id)
         pred_map: dict[str, str] = {}  # prediction_id → model_id
-        predictions = self.prediction_repository.find(status="SCORED")
+        predictions = self.prediction_repository.find(status=PredictionStatus.SCORED)
         for p in predictions:
             pred_map[p.id] = p.model_id
 

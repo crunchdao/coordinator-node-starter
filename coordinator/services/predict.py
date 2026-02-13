@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from coordinator.entities.model import Model
-from coordinator.entities.prediction import InputRecord, PredictionRecord
+from coordinator.entities.prediction import InputRecord, PredictionRecord, PredictionStatus
 from coordinator.db.repositories import DBInputRepository, DBModelRepository, DBPredictionRepository
 from coordinator.contracts import CrunchContract
 from coordinator.services.feed_reader import FeedReader
@@ -102,7 +102,7 @@ class PredictService:
         exec_time_ms: float = 0.0, config_id: str | None = None,
     ) -> PredictionRecord:
         """Construct a PredictionRecord from model runner output."""
-        suffix = "ABS" if status == "ABSENT" else "PRE"
+        suffix = "ABS" if status == PredictionStatus.ABSENT else "PRE"
         safe_key = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in scope_key)
         pred_id = f"{suffix}_{model_id}_{safe_key}_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}"
 

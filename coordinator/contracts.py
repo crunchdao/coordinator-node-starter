@@ -107,6 +107,46 @@ def default_resolve_ground_truth(feed_records: list[FeedRecord]) -> dict[str, An
     }
 
 
+USDC_DECIMALS = 6  # 1 USDC = 10^6 micro-units
+
+
+def usdc_to_micro(amount: float) -> int:
+    """Convert USDC float to on-chain micro-units (6 decimals)."""
+    return int(round(amount * 10**USDC_DECIMALS))
+
+
+def default_distribute_prizes(
+    ranked_entries: list[dict[str, Any]], pool_usdc: float,
+) -> list[dict[str, Any]]:
+    """Default prize distribution: 1st=35%, 2-5=10% each, 6-10=5% each (unclaimed remainder stays in pool).
+
+    Returns protocol-format entries: [{"model": "<id>", "prize": <usdc_micro_int>}]
+    """
+    # Tier definition: (rank_start, rank_end_inclusive, pct_of_pool)
+    tiers: list[tuple[int, int, float]] = [
+        (1, 1, 0.35),    # 1st place: 35%
+        (2, 5, 0.10),    # 2nd-5th: 10% each
+        (6, 10, 0.05),   # 6th-10th: 5% each
+    ]
+
+    result: list[dict[str, Any]] = []
+    for entry in ranked_entries:
+        rank = entry.get("rank", 0)
+        pct = 0.0
+        for start, end, tier_pct in tiers:
+            if start <= rank <= end:
+                pct = tier_pct
+                break
+
+        prize_micro = usdc_to_micro(pool_usdc * pct) if pct > 0 else 0
+        result.append({
+            "model": str(entry["model_id"]),
+            "prize": prize_micro,
+        })
+
+    return result
+
+
 def default_aggregate_snapshot(score_results: list[dict[str, Any]]) -> dict[str, Any]:
     """Default aggregator: average all numeric values across score results in the period."""
     if not score_results:
@@ -137,6 +177,10 @@ class CrunchContract(BaseModel):
     scope: PredictionScope = Field(default_factory=PredictionScope)
     aggregation: Aggregation = Field(default_factory=Aggregation)
 
+    # Pool
+    pool_usdc: float = Field(default=1000.0, description="USDC prize pool per checkpoint interval")
+
     # Callables
     resolve_ground_truth: Callable[[list[FeedRecord]], dict[str, Any] | None] = default_resolve_ground_truth
     aggregate_snapshot: Callable[[list[dict[str, Any]]], dict[str, Any]] = default_aggregate_snapshot
+    distribute_prizes: Callable[[list[dict[str, Any]], float], list[dict[str, Any]]] = default_distribute_prizes

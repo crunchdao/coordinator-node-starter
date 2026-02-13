@@ -1,8 +1,9 @@
 """Integration test: full prediction lifecycle with shared in-memory repositories.
 
-feed_reader → predict_service → [input_repo, prediction_repo] → score_service → [score_repo, leaderboard_repo]
+feed_reader → predict_service → [input_repo, prediction_repo] → score_service →
+    [score_repo, snapshot_repo, leaderboard_repo] → checkpoint_service → [checkpoint_repo]
 
-Covers: PENDING → RESOLVED → SCORED, absent model marking, leaderboard rebuild.
+Covers: PENDING → RESOLVED → SCORED, snapshots, checkpoints with prize distribution.
 """
 from __future__ import annotations
 
@@ -10,11 +11,15 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from coordinator.contracts import CrunchContract, usdc_to_micro
 from coordinator.entities.model import Model
-from coordinator.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
-from coordinator.contracts import CrunchContract
+from coordinator.entities.prediction import (
+    CheckpointRecord, CheckpointStatus, InputRecord, InputStatus,
+    PredictionRecord, PredictionStatus, ScoreRecord, SnapshotRecord,
+)
 from coordinator.services.realtime_predict import RealtimePredictService
 from coordinator.services.score import ScoreService
+from coordinator.workers.checkpoint_worker import CheckpointService
 
 
 # ── shared in-memory repositories ──
@@ -128,6 +133,31 @@ class MemSnapshotRepository:
         return results
 
 
+class MemCheckpointRepository:
+    def __init__(self) -> None:
+        self.checkpoints: list[CheckpointRecord] = []
+
+    def save(self, record: CheckpointRecord) -> None:
+        existing = next((c for c in self.checkpoints if c.id == record.id), None)
+        if existing:
+            idx = self.checkpoints.index(existing)
+            self.checkpoints[idx] = record
+        else:
+            self.checkpoints.append(record)
+
+    def find(self, *, status=None, limit=None) -> list[CheckpointRecord]:
+        results = list(self.checkpoints)
+        if status:
+            results = [c for c in results if c.status == status]
+        results.sort(key=lambda c: c.created_at, reverse=True)
+        return results[:limit] if limit else results
+
+    def get_latest(self) -> CheckpointRecord | None:
+        if not self.checkpoints:
+            return None
+        return sorted(self.checkpoints, key=lambda c: c.created_at, reverse=True)[0]
+
+
 class MemLeaderboardRepository:
     def __init__(self) -> None:
         self.entries: list[dict[str, Any]] = []
@@ -211,9 +241,10 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         self.pred_repo = MemPredictionRepository()
         self.score_repo = MemScoreRepository()
         self.snapshot_repo = MemSnapshotRepository()
+        self.checkpoint_repo = MemCheckpointRepository()
         self.model_repo = MemModelRepository()
         self.lb_repo = MemLeaderboardRepository()
-        self.contract = CrunchContract()
+        self.contract = CrunchContract(pool_usdc=1000.0)
 
         self.predict_service = RealtimePredictService(
             checkpoint_interval_seconds=60,
@@ -235,6 +266,13 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
             snapshot_repository=self.snapshot_repo,
             model_repository=self.model_repo,
             leaderboard_repository=self.lb_repo,
+            contract=self.contract,
+        )
+
+        self.checkpoint_service = CheckpointService(
+            snapshot_repository=self.snapshot_repo,
+            checkpoint_repository=self.checkpoint_repo,
+            model_repository=self.model_repo,
             contract=self.contract,
         )
 
@@ -260,7 +298,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         # predictions saved as PENDING
         predictions = self.pred_repo.all
         self.assertEqual(len(predictions), 2)  # m1, m2
-        self.assertTrue(all(p.status == "PENDING" for p in predictions))
+        self.assertTrue(all(p.status == PredictionStatus.PENDING for p in predictions))
         self.assertTrue(all(p.input_id == inp.id for p in predictions))
 
         # models registered
@@ -272,11 +310,11 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(scored)
 
         # predictions now SCORED
-        scored_preds = self.pred_repo.find(status="SCORED")
+        scored_preds = self.pred_repo.find(status=PredictionStatus.SCORED)
         self.assertEqual(len(scored_preds), 2)
 
         # input has actuals resolved
-        resolved_inputs = self.input_repo.find(status="RESOLVED")
+        resolved_inputs = self.input_repo.find(status=InputStatus.RESOLVED)
         self.assertEqual(len(resolved_inputs), 1)
         self.assertIn("entry_price", resolved_inputs[0].actuals)
         self.assertIn("resolved_price", resolved_inputs[0].actuals)
@@ -304,7 +342,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.pred_repo.all), 4)
 
         # all PENDING
-        self.assertTrue(all(p.status == "PENDING" for p in self.pred_repo.all))
+        self.assertTrue(all(p.status == PredictionStatus.PENDING for p in self.pred_repo.all))
 
     async def test_score_skips_when_no_pending(self) -> None:
         """Score service does nothing when there's nothing to score."""
@@ -342,7 +380,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         # Should have 4 total: 2 from first run + 2 from second (m1 PENDING + m2 ABSENT)
         all_preds = self.pred_repo.all
         self.assertEqual(len(all_preds), 4)
-        absent = [p for p in all_preds if p.status == "ABSENT"]
+        absent = [p for p in all_preds if p.status == PredictionStatus.ABSENT]
         self.assertEqual(len(absent), 1)
         self.assertEqual(absent[0].model_id, "m2")
 
@@ -354,6 +392,65 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
 
         ids = [r.id for r in self.input_repo.records]
         self.assertEqual(len(ids), len(set(ids)), "Input IDs should be unique")
+
+    async def test_snapshots_written_after_scoring(self) -> None:
+        """Score cycle writes snapshots per model."""
+        now = datetime.now(timezone.utc) - timedelta(minutes=5)
+        await self.predict_service.run_once(now=now)
+        self.score_service.run_once()
+
+        self.assertEqual(len(self.snapshot_repo.snapshots), 2)  # one per model
+
+        snap_model_ids = {s.model_id for s in self.snapshot_repo.snapshots}
+        self.assertEqual(snap_model_ids, {"m1", "m2"})
+
+        for snap in self.snapshot_repo.snapshots:
+            self.assertGreater(snap.prediction_count, 0)
+            self.assertIn("value", snap.result_summary)
+
+    async def test_full_pipeline_predict_to_checkpoint(self) -> None:
+        """End-to-end: predict → score → snapshot → checkpoint with prize distribution."""
+        now = datetime.now(timezone.utc) - timedelta(minutes=5)
+
+        # ── predict ──
+        await self.predict_service.run_once(now=now)
+        self.assertEqual(len(self.pred_repo.all), 2)
+
+        # ── score (resolves actuals + scores + writes snapshots) ──
+        self.score_service.run_once()
+        self.assertEqual(len(self.score_repo.scores), 2)
+        self.assertEqual(len(self.snapshot_repo.snapshots), 2)
+
+        # ── checkpoint (aggregates snapshots → protocol entries with prizes) ──
+        checkpoint = self.checkpoint_service.create_checkpoint()
+
+        self.assertIsNotNone(checkpoint)
+        self.assertEqual(checkpoint.status, CheckpointStatus.PENDING)
+
+        # Protocol format: [{"model": str, "prize": int}]
+        self.assertEqual(len(checkpoint.entries), 2)
+        for entry in checkpoint.entries:
+            self.assertIn("model", entry)
+            self.assertIn("prize", entry)
+            self.assertIsInstance(entry["model"], str)
+            self.assertIsInstance(entry["prize"], int)
+
+        # 1st place gets 35% of 1000 USDC, 2nd gets 10%
+        prizes = {e["model"]: e["prize"] for e in checkpoint.entries}
+        first_model = checkpoint.meta["ranking"][0]["model_id"]
+        second_model = checkpoint.meta["ranking"][1]["model_id"]
+        self.assertEqual(prizes[first_model], usdc_to_micro(350.0))
+        self.assertEqual(prizes[second_model], usdc_to_micro(100.0))
+
+        # Total prize = 45% of 1000 (only 2 models: 35% + 10%)
+        total = sum(e["prize"] for e in checkpoint.entries)
+        self.assertEqual(total, usdc_to_micro(450.0))
+
+        # Ranking in meta
+        self.assertIn("ranking", checkpoint.meta)
+        self.assertEqual(checkpoint.meta["ranking"][0]["rank"], 1)
+        self.assertEqual(checkpoint.meta["ranking"][1]["rank"], 2)
+        self.assertEqual(checkpoint.meta["pool_usdc"], 1000.0)
 
     async def test_leaderboard_ranking_order(self) -> None:
         """Model with higher score should rank first (default desc)."""

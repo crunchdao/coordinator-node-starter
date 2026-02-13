@@ -146,6 +146,35 @@ def default_resolve_ground_truth(feed_records: list[Any]) -> dict[str, Any] | No
     }
 
 
+USDC_DECIMALS = 6
+
+
+def usdc_to_micro(amount: float) -> int:
+    """Convert USDC float to on-chain micro-units (6 decimals)."""
+    return int(round(amount * 10**USDC_DECIMALS))
+
+
+def default_distribute_prizes(
+    ranked_entries: list[dict[str, Any]], pool_usdc: float,
+) -> list[dict[str, Any]]:
+    """Default: 1st=35%, 2-5=10% each, 6-10=5% each. Returns [{"model": id, "prize": usdc_micro}]."""
+    tiers: list[tuple[int, int, float]] = [
+        (1, 1, 0.35),
+        (2, 5, 0.10),
+        (6, 10, 0.05),
+    ]
+    result: list[dict[str, Any]] = []
+    for entry in ranked_entries:
+        rank = entry.get("rank", 0)
+        pct = 0.0
+        for start, end, tier_pct in tiers:
+            if start <= rank <= end:
+                pct = tier_pct
+                break
+        result.append({"model": str(entry["model_id"]), "prize": usdc_to_micro(pool_usdc * pct) if pct > 0 else 0})
+    return result
+
+
 class CrunchContract(BaseModel):
     """Single source of truth for challenge data shapes and aggregation."""
 
@@ -160,6 +189,10 @@ class CrunchContract(BaseModel):
     scope: PredictionScope = Field(default_factory=PredictionScope)
     aggregation: Aggregation = Field(default_factory=Aggregation)
 
+    # Pool
+    pool_usdc: float = Field(default=1000.0, description="USDC prize pool per checkpoint interval")
+
     # Callables
     resolve_ground_truth: Callable[[list[Any]], dict[str, Any] | None] = default_resolve_ground_truth
     aggregate_snapshot: Callable[[list[dict[str, Any]]], dict[str, Any]] = default_aggregate_snapshot
+    distribute_prizes: Callable[[list[dict[str, Any]], float], list[dict[str, Any]]] = default_distribute_prizes

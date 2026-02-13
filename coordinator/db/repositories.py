@@ -7,7 +7,8 @@ from sqlmodel import Session, delete, select
 
 from coordinator.entities.model import Model
 from coordinator.entities.prediction import (
-    CheckpointRecord, InputRecord, PredictionRecord, ScoreRecord, SnapshotRecord,
+    CheckpointRecord, CheckpointStatus, InputRecord, InputStatus,
+    PredictionRecord, PredictionStatus, ScoreRecord, SnapshotRecord,
 )
 from coordinator.db.tables import (
     CheckpointRow,
@@ -139,7 +140,7 @@ class DBInputRepository:
             stmt = stmt.limit(max(1, int(limit)))
         rows = self._session.exec(stmt).all()
         return [InputRecord(
-            id=r.id, status=r.status, raw_data=r.raw_data_jsonb or {},
+            id=r.id, status=InputStatus(r.status), raw_data=r.raw_data_jsonb or {},
             actuals=r.actuals_jsonb, scope=r.scope_jsonb or {},
             meta=r.meta_jsonb or {}, received_at=r.received_at,
             resolvable_at=r.resolvable_at,
@@ -243,7 +244,7 @@ class DBPredictionRepository:
             prediction_config_id=row.prediction_config_id,
             scope_key=row.scope_key,
             scope=row.scope_jsonb or {},
-            status=row.status,
+            status=PredictionStatus(row.status),
             exec_time_ms=row.exec_time_ms,
             inference_output=row.inference_output_jsonb or {},
             meta=row.meta_jsonb or {},
@@ -430,7 +431,7 @@ class DBCheckpointRepository:
         return [CheckpointRecord(
             id=r.id,
             period_start=r.period_start, period_end=r.period_end,
-            status=r.status, entries=r.entries_jsonb or [],
+            status=CheckpointStatus(r.status), entries=r.entries_jsonb or [],
             meta=r.meta_jsonb or {},
             created_at=r.created_at,
             tx_hash=r.tx_hash, submitted_at=r.submitted_at,
@@ -445,7 +446,7 @@ class DBCheckpointRepository:
         return CheckpointRecord(
             id=row.id,
             period_start=row.period_start, period_end=row.period_end,
-            status=row.status, entries=row.entries_jsonb or [],
+            status=CheckpointStatus(row.status), entries=row.entries_jsonb or [],
             meta=row.meta_jsonb or {},
             created_at=row.created_at,
             tx_hash=row.tx_hash, submitted_at=row.submitted_at,

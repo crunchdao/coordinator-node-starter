@@ -14,7 +14,7 @@ from coordinator.db import (
     DBSnapshotRepository,
     create_session,
 )
-from coordinator.entities.prediction import CheckpointRecord
+from coordinator.entities.prediction import CheckpointRecord, CheckpointStatus
 
 
 def configure_logging() -> None:
@@ -77,7 +77,7 @@ class CheckpointService:
         for snap in snapshots:
             by_model.setdefault(snap.model_id, []).append(snap)
 
-        entries: list[dict[str, Any]] = []
+        ranked_entries: list[dict[str, Any]] = []
         for model_id, model_snapshots in by_model.items():
             # Weighted average by prediction count
             total_preds = sum(s.prediction_count for s in model_snapshots)
@@ -92,7 +92,7 @@ class CheckpointService:
                         summary[key] = summary.get(key, 0.0) + float(value) * weight
 
             model = models.get(model_id)
-            entries.append({
+            ranked_entries.append({
                 "model_id": model_id,
                 "model_name": model.name if model else None,
                 "cruncher_name": model.player_name if model else None,
@@ -104,27 +104,35 @@ class CheckpointService:
         # Rank by the aggregation ranking key
         ranking_key = aggregation.ranking_key
         reverse = aggregation.ranking_direction == "desc"
-        entries.sort(
+        ranked_entries.sort(
             key=lambda e: float(e.get("result_summary", {}).get(ranking_key, 0)),
             reverse=reverse,
         )
-        for idx, entry in enumerate(entries, start=1):
+        for idx, entry in enumerate(ranked_entries, start=1):
             entry["rank"] = idx
+
+        # Distribute prizes → protocol-format entries [{"model": "id", "prize": usdc_micro}]
+        entries = self.contract.distribute_prizes(ranked_entries, self.contract.pool_usdc)
 
         checkpoint = CheckpointRecord(
             id=f"CKP_{now.strftime('%Y%m%d_%H%M%S')}",
             period_start=period_start,
             period_end=now,
-            status="PENDING",
+            status=CheckpointStatus.PENDING,
             entries=entries,
-            meta={"snapshot_count": len(snapshots), "model_count": len(entries)},
+            meta={
+                "snapshot_count": len(snapshots),
+                "model_count": len(ranked_entries),
+                "pool_usdc": self.contract.pool_usdc,
+                "ranking": ranked_entries,
+            },
             created_at=now,
         )
 
         self.checkpoint_repository.save(checkpoint)
         self.logger.info(
             "Created checkpoint %s: %d models, %d snapshots, period %s → %s",
-            checkpoint.id, len(entries), len(snapshots),
+            checkpoint.id, len(ranked_entries), len(snapshots),
             period_start.isoformat(), now.isoformat(),
         )
         return checkpoint
@@ -136,11 +144,12 @@ class CheckpointService:
 def build_service() -> CheckpointService:
     session = create_session()
     interval = int(os.getenv("CHECKPOINT_INTERVAL_SECONDS", str(7 * 24 * 3600)))
+    pool = float(os.getenv("CHECKPOINT_POOL_USDC", "1000"))
     return CheckpointService(
         snapshot_repository=DBSnapshotRepository(session),
         checkpoint_repository=DBCheckpointRepository(session),
         model_repository=DBModelRepository(session),
-        contract=CrunchContract(),
+        contract=CrunchContract(pool_usdc=pool),
         interval_seconds=interval,
     )
 

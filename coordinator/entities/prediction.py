@@ -2,7 +2,27 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import StrEnum
 from typing import Any
+
+
+class InputStatus(StrEnum):
+    RECEIVED = "RECEIVED"
+    RESOLVED = "RESOLVED"
+
+
+class PredictionStatus(StrEnum):
+    PENDING = "PENDING"
+    SCORED = "SCORED"
+    FAILED = "FAILED"
+    ABSENT = "ABSENT"
+
+
+class CheckpointStatus(StrEnum):
+    PENDING = "PENDING"
+    SUBMITTED = "SUBMITTED"
+    CLAIMABLE = "CLAIMABLE"
+    PAID = "PAID"
 
 
 @dataclass
@@ -16,7 +36,7 @@ class InputRecord:
     id: str
     raw_data: dict[str, Any] = field(default_factory=dict)       # contract.raw_input_type
     actuals: dict[str, Any] | None = None                        # contract.ground_truth_type
-    status: str = "RECEIVED"  # RECEIVED → RESOLVED
+    status: InputStatus = InputStatus.RECEIVED
     scope: dict[str, Any] = field(default_factory=dict)          # contract.scope_type (PredictionScope)
     received_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     resolvable_at: datetime | None = None
@@ -32,7 +52,7 @@ class PredictionRecord:
     prediction_config_id: str | None
     scope_key: str
     scope: dict[str, Any]                                        # contract.scope_type (PredictionScope)
-    status: str  # PENDING, SCORED, FAILED, ABSENT
+    status: PredictionStatus
     exec_time_ms: float
     inference_output: dict[str, Any] = field(default_factory=dict)  # contract.output_type (InferenceOutput)
     meta: dict[str, Any] = field(default_factory=dict)           # contract.meta_type (Meta)
@@ -70,8 +90,8 @@ class CheckpointRecord:
     id: str
     period_start: datetime
     period_end: datetime
-    status: str = "PENDING"  # PENDING → SUBMITTED → CLAIMABLE → PAID
-    entries: list[dict[str, Any]] = field(default_factory=list)  # ranked model entries
+    status: CheckpointStatus = CheckpointStatus.PENDING
+    entries: list[dict[str, Any]] = field(default_factory=list)  # protocol: [{"model": "id", "prize": usdc_micro}]
     meta: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     tx_hash: str | None = None

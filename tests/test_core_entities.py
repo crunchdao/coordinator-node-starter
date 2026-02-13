@@ -1,7 +1,9 @@
 import unittest
 
 from coordinator.entities.model import Model
-from coordinator.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
+from coordinator.entities.prediction import (
+    InputRecord, InputStatus, PredictionRecord, PredictionStatus, ScoreRecord,
+)
 
 
 class TestCoreEntities(unittest.TestCase):
@@ -21,7 +23,7 @@ class TestCoreEntities(unittest.TestCase):
     def test_input_record(self):
         record = InputRecord(id="inp1", raw_data={"symbol": "BTC", "price": 100.0})
         self.assertEqual(record.raw_data["symbol"], "BTC")
-        self.assertEqual(record.status, "RECEIVED")
+        self.assertEqual(record.status, InputStatus.RECEIVED)
         self.assertIsNone(record.actuals)
 
     def test_prediction_record_carries_scope_and_output(self):
@@ -30,7 +32,7 @@ class TestCoreEntities(unittest.TestCase):
             prediction_config_id="CFG_001",
             scope_key="BTC-60-60",
             scope={"subject": "BTC", "horizon": 3600},
-            status="PENDING", exec_time_ms=12.5,
+            status=PredictionStatus.PENDING, exec_time_ms=12.5,
             inference_output={"distribution": []},
         )
         self.assertEqual(prediction.scope_key, "BTC-60-60")
