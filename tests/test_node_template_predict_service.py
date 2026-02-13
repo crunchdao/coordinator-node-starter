@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timezone
 
 from coordinator_node.entities.model import Model
-from coordinator_node.entities.prediction import PredictionRecord
+from coordinator_node.entities.prediction import InputRecord, PredictionRecord
 from coordinator_node.contracts import CrunchContract
 from coordinator_node.services.realtime_predict import RealtimePredictService
 
@@ -111,16 +111,33 @@ class InMemoryPredictionRepository:
         ]
 
 
+class InMemoryInputRepository:
+    def __init__(self):
+        self.records: list[InputRecord] = []
+
+    def save(self, record: InputRecord):
+        for i, r in enumerate(self.records):
+            if r.id == record.id:
+                self.records[i] = record
+                return
+        self.records.append(record)
+
+    def find(self, **kwargs):
+        return list(self.records)
+
+
 class NoConfigPredictionRepository(InMemoryPredictionRepository):
     def fetch_active_configs(self):
         return []
 
 
-def _make_service(feed_reader=None, prediction_repo=None, runner=None, contract=None):
+def _make_service(feed_reader=None, prediction_repo=None, input_repo=None,
+                  runner=None, contract=None):
     return RealtimePredictService(
         checkpoint_interval_seconds=60,
         feed_reader=feed_reader or FakeFeedReader(),
         contract=contract or CrunchContract(),
+        input_repository=input_repo,
         model_repository=InMemoryModelRepository(),
         prediction_repository=prediction_repo or InMemoryPredictionRepository(),
         runner=runner or FakeRunner(),
@@ -189,6 +206,53 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pred.status, "FAILED")
         self.assertIn("_validation_error", pred.inference_output)
         self.assertTrue(any("INFERENCE_OUTPUT_VALIDATION_ERROR" in line for line in logs.output))
+
+
+    async def test_run_once_sets_input_scope_with_feed_dimensions(self):
+        """Regression: input scope must include source/subject/kind/granularity
+        so the score worker can query matching feed records for ground truth."""
+        input_repo = InMemoryInputRepository()
+        pred_repo = InMemoryPredictionRepository()
+        feed_reader = FakeFeedReader({"symbol": "BTC"})
+        feed_reader.source = "binance"
+        feed_reader.subject = "BTC"
+        feed_reader.kind = "candle"
+        feed_reader.granularity = "1m"
+
+        service = _make_service(
+            feed_reader=feed_reader,
+            prediction_repo=pred_repo,
+            input_repo=input_repo,
+        )
+
+        await service.run_once(raw_input={"symbol": "BTC"}, now=datetime.now(timezone.utc))
+
+        self.assertEqual(len(input_repo.records), 1)
+        inp = input_repo.records[0]
+        # Feed dimensions must be in scope for score worker to query feed records
+        self.assertEqual(inp.scope.get("source"), "binance")
+        self.assertEqual(inp.scope.get("kind"), "candle")
+        self.assertEqual(inp.scope.get("granularity"), "1m")
+        # subject comes from config scope_template, which may override feed_reader
+        self.assertIn("subject", inp.scope)
+
+    async def test_run_once_sets_input_resolvable_at(self):
+        """Regression: input resolvable_at must be set so the score worker
+        can find inputs that are ready for ground truth resolution."""
+        input_repo = InMemoryInputRepository()
+        pred_repo = InMemoryPredictionRepository()
+        service = _make_service(
+            prediction_repo=pred_repo,
+            input_repo=input_repo,
+        )
+
+        now = datetime.now(timezone.utc)
+        await service.run_once(raw_input={"symbol": "BTC"}, now=now)
+
+        self.assertEqual(len(input_repo.records), 1)
+        inp = input_repo.records[0]
+        self.assertIsNotNone(inp.resolvable_at)
+        self.assertGreater(inp.resolvable_at, now)
 
 
 if __name__ == "__main__":
