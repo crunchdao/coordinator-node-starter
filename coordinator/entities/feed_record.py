@@ -10,21 +10,21 @@ def _utc_now() -> datetime:
 
 
 @dataclass
-class MarketRecord:
-    provider: str
-    asset: str
+class FeedRecord:
+    source: str
+    subject: str
     kind: str
     granularity: str
     ts_event: datetime
-    values: dict[str, Any]
-    meta: dict[str, Any] = field(default_factory=dict)
+    values: dict[str, Any]                                       # contract.raw_input_type
+    meta: dict[str, Any] = field(default_factory=dict)           # contract.meta_type (Meta)
     ts_ingested: datetime = field(default_factory=_utc_now)
 
 
 @dataclass
-class MarketIngestionState:
-    provider: str
-    asset: str
+class FeedIngestionState:
+    source: str
+    subject: str
     kind: str
     granularity: str
     last_event_ts: datetime | None

@@ -13,7 +13,7 @@ from coordinator.feeds.contracts import (
     AssetDescriptor,
     FeedFetchRequest,
     FeedSubscription,
-    MarketRecord,
+    FeedDataRecord,
 )
 from coordinator.feeds.registry import FeedSettings
 
@@ -145,10 +145,10 @@ class PythFeed(DataFeed):
                     )
                     records = await self.fetch(req)
                     for record in records:
-                        last_ts = watermark.get(record.asset)
+                        last_ts = watermark.get(record.subject)
                         if last_ts is not None and record.ts_event <= last_ts:
                             continue
-                        watermark[record.asset] = record.ts_event
+                        watermark[record.subject] = record.ts_event
                         await sink.on_record(record)
                 except asyncio.CancelledError:
                     raise
@@ -160,7 +160,7 @@ class PythFeed(DataFeed):
         task = asyncio.create_task(_loop())
         return _PollingFeedHandle(task)
 
-    async def fetch(self, req: FeedFetchRequest) -> Sequence[MarketRecord]:
+    async def fetch(self, req: FeedFetchRequest) -> Sequence[FeedDataRecord]:
         feed_map = _load_feed_map(self.settings)
         requested_assets = [asset for asset in req.assets if asset in feed_map]
         if not requested_assets:
@@ -179,7 +179,7 @@ class PythFeed(DataFeed):
                 continue
             by_feed_id[str(row.get("id") or "").lower()] = row
 
-        records: list[MarketRecord] = []
+        records: list[FeedDataRecord] = []
         for asset in requested_assets:
             feed_id = feed_map[asset]
             parsed = by_feed_id.get(feed_id.lower())
@@ -212,8 +212,8 @@ class PythFeed(DataFeed):
             if req.kind == "candle":
                 bucket = _bucket_ts(ts_event, req.granularity)
                 records.append(
-                    MarketRecord(
-                        asset=asset,
+                    FeedDataRecord(
+                        subject=asset,
                         kind="candle",
                         granularity=req.granularity,
                         ts_event=bucket,
@@ -229,8 +229,8 @@ class PythFeed(DataFeed):
                 )
             else:
                 records.append(
-                    MarketRecord(
-                        asset=asset,
+                    FeedDataRecord(
+                        subject=asset,
                         kind="tick",
                         granularity=req.granularity,
                         ts_event=ts_event,

@@ -5,9 +5,9 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from coordinator.entities.market_record import MarketRecord
+from coordinator.entities.feed_record import FeedRecord
 from coordinator.feeds import FeedFetchRequest, create_default_registry
-from coordinator.db.market_records import DBMarketRecordRepository
+from coordinator.db.feed_records import DBFeedRecordRepository
 from coordinator.db.session import create_session
 
 logger = logging.getLogger(__name__)
@@ -18,25 +18,25 @@ class InputService:
 
     def __init__(
         self,
-        provider: str = "pyth",
-        asset: str = "BTC",
+        source: str = "pyth",
+        subject: str = "BTC",
         kind: str = "tick",
         granularity: str = "1s",
         window_size: int = 120,
     ):
-        self.provider = provider
-        self.asset = asset
+        self.source = source
+        self.subject = subject
         self.kind = kind
         self.granularity = granularity
         self.window_size = window_size
 
     @classmethod
     def from_env(cls) -> "InputService":
-        assets_raw = os.getenv("FEED_ASSETS", "BTC")
-        assets = [p.strip() for p in assets_raw.split(",") if p.strip()]
+        subjects_raw = os.getenv("FEED_SUBJECTS", os.getenv("FEED_ASSETS", "BTC"))
+        subjects = [p.strip() for p in subjects_raw.split(",") if p.strip()]
         return cls(
-            provider=os.getenv("FEED_PROVIDER", "pyth").strip().lower(),
-            asset=assets[0] if assets else "BTC",
+            source=os.getenv("FEED_SOURCE", os.getenv("FEED_PROVIDER", "pyth")).strip().lower(),
+            subject=subjects[0] if subjects else "BTC",
             kind=os.getenv("FEED_KIND", "tick").strip().lower(),
             granularity=os.getenv("FEED_GRANULARITY", "1s").strip(),
             window_size=int(os.getenv("FEED_CANDLES_WINDOW", "120")),
@@ -58,14 +58,14 @@ class InputService:
             asof_ts = int(candles[-1].get("ts", asof_ts))
 
         return {
-            "symbol": self.asset,
+            "symbol": self.subject,
             "asof_ts": asof_ts,
             "candles_1m": candles,
         }
 
-    def get_ground_truth(self, performed_at: datetime, resolvable_at: datetime, asset: str | None = None) -> dict[str, Any] | None:
+    def get_ground_truth(self, performed_at: datetime, resolvable_at: datetime, subject: str | None = None) -> dict[str, Any] | None:
         """Look up what actually happened between prediction and resolution time."""
-        asset = asset or self.asset
+        subject = subject or self.subject
 
         entry_record = self._latest_record(at_or_before=performed_at)
         resolved_record = self._latest_record(at_or_before=resolvable_at)
@@ -87,23 +87,23 @@ class InputService:
             return None
 
         return {
-            "asset": asset,
+            "subject": subject,
             "entry_price": entry_price,
             "resolved_price": resolved_price,
             "resolved_market_time": self._ensure_utc(resolved_record.ts_event).isoformat(),
             "return_5m": (resolved_price - entry_price) / max(abs(entry_price), 1e-9),
             "y_up": resolved_price > entry_price,
-            "source": self.provider,
+            "source": self.source,
         }
 
     # ── internals ──
 
     def _load_recent_candles(self, limit: int) -> list[dict[str, Any]]:
         with create_session() as session:
-            repo = DBMarketRecordRepository(session)
+            repo = DBFeedRecordRepository(session)
             records = repo.fetch_records(
-                provider=self.provider,
-                asset=self.asset,
+                source=self.source,
+                subject=self.subject,
                 kind=self.kind,
                 granularity=self.granularity,
                 limit=max(1, limit),
@@ -137,10 +137,10 @@ class InputService:
 
     def _latest_record(self, at_or_before: datetime) -> Any:
         with create_session() as session:
-            repo = DBMarketRecordRepository(session)
+            repo = DBFeedRecordRepository(session)
             return repo.fetch_latest_record(
-                provider=self.provider,
-                asset=self.asset,
+                source=self.source,
+                subject=self.subject,
                 kind=self.kind,
                 granularity=self.granularity,
                 at_or_before=self._ensure_utc(at_or_before),
@@ -149,9 +149,9 @@ class InputService:
     def _recover_window(self, start: datetime, end: datetime) -> None:
         try:
             registry = create_default_registry()
-            feed = registry.create(self.provider)
+            feed = registry.create(self.source)
             request = FeedFetchRequest(
-                assets=(self.asset,),
+                assets=(self.subject,),
                 kind=self.kind if self.kind in {"tick", "candle"} else "tick",
                 granularity=self.granularity,
                 start_ts=int(self._ensure_utc(start).timestamp()),
@@ -166,13 +166,13 @@ class InputService:
             return
 
         with create_session() as session:
-            repo = DBMarketRecordRepository(session)
-            domain: list[MarketRecord] = []
+            repo = DBFeedRecordRepository(session)
+            domain: list[FeedRecord] = []
             for row in records:
                 ts_event = datetime.fromtimestamp(int(row.ts_event), tz=timezone.utc)
-                domain.append(MarketRecord(
-                    provider=row.source or self.provider,
-                    asset=row.asset,
+                domain.append(FeedRecord(
+                    source=row.source or self.source,
+                    subject=row.subject,
                     kind=row.kind,
                     granularity=row.granularity,
                     ts_event=ts_event,

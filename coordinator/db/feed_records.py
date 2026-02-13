@@ -7,22 +7,22 @@ from typing import Iterable
 from sqlalchemy import func
 from sqlmodel import Session, delete, select
 
-from coordinator.entities.market_record import MarketIngestionState, MarketRecord
-from coordinator.db.tables import MarketIngestionStateRow, MarketRecordRow
+from coordinator.entities.feed_record import FeedIngestionState, FeedRecord
+from coordinator.db.tables import FeedIngestionStateRow, FeedRecordRow
 
 
-class DBMarketRecordRepository:
+class DBFeedRecordRepository:
     def __init__(self, session: Session):
         self._session = session
 
     def rollback(self) -> None:
         self._session.rollback()
 
-    def append_records(self, records: Iterable[MarketRecord]) -> int:
+    def append_records(self, records: Iterable[FeedRecord]) -> int:
         count = 0
         for record in records:
             row = self._domain_to_row(record)
-            existing = self._session.get(MarketRecordRow, row.id)
+            existing = self._session.get(FeedRecordRow, row.id)
 
             if existing is None:
                 self._session.add(row)
@@ -39,41 +39,41 @@ class DBMarketRecordRepository:
     def fetch_records(
         self,
         *,
-        provider: str,
-        asset: str,
+        source: str,
+        subject: str,
         kind: str,
         granularity: str,
         start_ts: datetime | None = None,
         end_ts: datetime | None = None,
         limit: int | None = None,
-    ) -> list[MarketRecord]:
+    ) -> list[FeedRecord]:
         stmt = (
-            select(MarketRecordRow)
-            .where(MarketRecordRow.provider == provider)
-            .where(MarketRecordRow.asset == asset)
-            .where(MarketRecordRow.kind == kind)
-            .where(MarketRecordRow.granularity == granularity)
-            .order_by(MarketRecordRow.ts_event.asc())
+            select(FeedRecordRow)
+            .where(FeedRecordRow.source == source)
+            .where(FeedRecordRow.subject == subject)
+            .where(FeedRecordRow.kind == kind)
+            .where(FeedRecordRow.granularity == granularity)
+            .order_by(FeedRecordRow.ts_event.asc())
         )
 
         if start_ts is not None:
-            stmt = stmt.where(MarketRecordRow.ts_event >= start_ts)
+            stmt = stmt.where(FeedRecordRow.ts_event >= start_ts)
         if end_ts is not None:
-            stmt = stmt.where(MarketRecordRow.ts_event <= end_ts)
+            stmt = stmt.where(FeedRecordRow.ts_event <= end_ts)
         if limit is not None:
             stmt = stmt.limit(max(0, int(limit)))
 
         rows = self._session.exec(stmt).all()
         return [self._row_to_domain(row) for row in rows]
 
-    def prune_market_time_before(self, cutoff_ts: datetime) -> int:
+    def prune_before(self, cutoff_ts: datetime) -> int:
         rows = self._session.exec(
-            select(MarketRecordRow.id).where(MarketRecordRow.ts_event < cutoff_ts)
+            select(FeedRecordRow.id).where(FeedRecordRow.ts_event < cutoff_ts)
         ).all()
         deleted = len(rows)
 
         if deleted:
-            self._session.exec(delete(MarketRecordRow).where(MarketRecordRow.ts_event < cutoff_ts))
+            self._session.exec(delete(FeedRecordRow).where(FeedRecordRow.ts_event < cutoff_ts))
             self._session.commit()
 
         return deleted
@@ -81,24 +81,24 @@ class DBMarketRecordRepository:
     def fetch_latest_record(
         self,
         *,
-        provider: str,
-        asset: str,
+        source: str,
+        subject: str,
         kind: str,
         granularity: str,
         at_or_before: datetime | None = None,
-    ) -> MarketRecord | None:
+    ) -> FeedRecord | None:
         stmt = (
-            select(MarketRecordRow)
-            .where(MarketRecordRow.provider == provider)
-            .where(MarketRecordRow.asset == asset)
-            .where(MarketRecordRow.kind == kind)
-            .where(MarketRecordRow.granularity == granularity)
-            .order_by(MarketRecordRow.ts_event.desc())
+            select(FeedRecordRow)
+            .where(FeedRecordRow.source == source)
+            .where(FeedRecordRow.subject == subject)
+            .where(FeedRecordRow.kind == kind)
+            .where(FeedRecordRow.granularity == granularity)
+            .order_by(FeedRecordRow.ts_event.desc())
             .limit(1)
         )
 
         if at_or_before is not None:
-            stmt = stmt.where(MarketRecordRow.ts_event <= at_or_before)
+            stmt = stmt.where(FeedRecordRow.ts_event <= at_or_before)
 
         row = self._session.exec(stmt).first()
         return self._row_to_domain(row) if row is not None else None
@@ -106,41 +106,41 @@ class DBMarketRecordRepository:
     def list_indexed_feeds(self) -> list[dict[str, object]]:
         grouped_rows = self._session.exec(
             select(
-                MarketRecordRow.provider,
-                MarketRecordRow.asset,
-                MarketRecordRow.kind,
-                MarketRecordRow.granularity,
-                func.count(MarketRecordRow.id),
-                func.min(MarketRecordRow.ts_event),
-                func.max(MarketRecordRow.ts_event),
+                FeedRecordRow.source,
+                FeedRecordRow.subject,
+                FeedRecordRow.kind,
+                FeedRecordRow.granularity,
+                func.count(FeedRecordRow.id),
+                func.min(FeedRecordRow.ts_event),
+                func.max(FeedRecordRow.ts_event),
             )
             .group_by(
-                MarketRecordRow.provider,
-                MarketRecordRow.asset,
-                MarketRecordRow.kind,
-                MarketRecordRow.granularity,
+                FeedRecordRow.source,
+                FeedRecordRow.subject,
+                FeedRecordRow.kind,
+                FeedRecordRow.granularity,
             )
             .order_by(
-                MarketRecordRow.provider.asc(),
-                MarketRecordRow.asset.asc(),
-                MarketRecordRow.kind.asc(),
-                MarketRecordRow.granularity.asc(),
+                FeedRecordRow.source.asc(),
+                FeedRecordRow.subject.asc(),
+                FeedRecordRow.kind.asc(),
+                FeedRecordRow.granularity.asc(),
             )
         ).all()
 
         watermarks = {
-            (row.provider, row.asset, row.kind, row.granularity): row
-            for row in self._session.exec(select(MarketIngestionStateRow)).all()
+            (row.source, row.subject, row.kind, row.granularity): row
+            for row in self._session.exec(select(FeedIngestionStateRow)).all()
         }
 
         summaries: list[dict[str, object]] = []
-        for provider, asset, kind, granularity, count, oldest_ts, newest_ts in grouped_rows:
-            key = (provider, asset, kind, granularity)
+        for source, subject, kind, granularity, count, oldest_ts, newest_ts in grouped_rows:
+            key = (source, subject, kind, granularity)
             state = watermarks.get(key)
             summaries.append(
                 {
-                    "provider": provider,
-                    "asset": asset,
+                    "source": source,
+                    "subject": subject,
                     "kind": kind,
                     "granularity": granularity,
                     "record_count": int(count or 0),
@@ -164,22 +164,22 @@ class DBMarketRecordRepository:
     def tail_records(
         self,
         *,
-        provider: str | None = None,
-        asset: str | None = None,
+        source: str | None = None,
+        subject: str | None = None,
         kind: str | None = None,
         granularity: str | None = None,
         limit: int = 20,
-    ) -> list[MarketRecord]:
-        stmt = select(MarketRecordRow).order_by(MarketRecordRow.ts_event.desc())
+    ) -> list[FeedRecord]:
+        stmt = select(FeedRecordRow).order_by(FeedRecordRow.ts_event.desc())
 
-        if provider:
-            stmt = stmt.where(MarketRecordRow.provider == provider)
-        if asset:
-            stmt = stmt.where(MarketRecordRow.asset == asset)
+        if source:
+            stmt = stmt.where(FeedRecordRow.source == source)
+        if subject:
+            stmt = stmt.where(FeedRecordRow.subject == subject)
         if kind:
-            stmt = stmt.where(MarketRecordRow.kind == kind)
+            stmt = stmt.where(FeedRecordRow.kind == kind)
         if granularity:
-            stmt = stmt.where(MarketRecordRow.granularity == granularity)
+            stmt = stmt.where(FeedRecordRow.granularity == granularity)
 
         stmt = stmt.limit(max(1, int(limit)))
 
@@ -189,19 +189,19 @@ class DBMarketRecordRepository:
     def get_watermark(
         self,
         *,
-        provider: str,
-        asset: str,
+        source: str,
+        subject: str,
         kind: str,
         granularity: str,
-    ) -> MarketIngestionState | None:
-        row = self._session.get(MarketIngestionStateRow, _watermark_id(provider, asset, kind, granularity))
+    ) -> FeedIngestionState | None:
+        row = self._session.get(FeedIngestionStateRow, _watermark_id(source, subject, kind, granularity))
         if row is None:
             return None
         return self._watermark_row_to_domain(row)
 
-    def set_watermark(self, state: MarketIngestionState) -> None:
+    def set_watermark(self, state: FeedIngestionState) -> None:
         row = self._watermark_domain_to_row(state)
-        existing = self._session.get(MarketIngestionStateRow, row.id)
+        existing = self._session.get(FeedIngestionStateRow, row.id)
 
         if existing is None:
             self._session.add(row)
@@ -213,14 +213,14 @@ class DBMarketRecordRepository:
         self._session.commit()
 
     @staticmethod
-    def _domain_to_row(record: MarketRecord) -> MarketRecordRow:
+    def _domain_to_row(record: FeedRecord) -> FeedRecordRow:
         normalized_ts_event = _ensure_utc(record.ts_event)
         normalized_ts_ingested = _ensure_utc(record.ts_ingested)
 
-        return MarketRecordRow(
-            id=_record_id(record.provider, record.asset, record.kind, record.granularity, normalized_ts_event),
-            provider=record.provider,
-            asset=record.asset,
+        return FeedRecordRow(
+            id=_record_id(record.source, record.subject, record.kind, record.granularity, normalized_ts_event),
+            source=record.source,
+            subject=record.subject,
             kind=record.kind,
             granularity=record.granularity,
             ts_event=normalized_ts_event,
@@ -230,10 +230,10 @@ class DBMarketRecordRepository:
         )
 
     @staticmethod
-    def _row_to_domain(row: MarketRecordRow) -> MarketRecord:
-        return MarketRecord(
-            provider=row.provider,
-            asset=row.asset,
+    def _row_to_domain(row: FeedRecordRow) -> FeedRecord:
+        return FeedRecord(
+            source=row.source,
+            subject=row.subject,
             kind=row.kind,
             granularity=row.granularity,
             ts_event=_ensure_utc(row.ts_event),
@@ -243,11 +243,11 @@ class DBMarketRecordRepository:
         )
 
     @staticmethod
-    def _watermark_domain_to_row(state: MarketIngestionState) -> MarketIngestionStateRow:
-        return MarketIngestionStateRow(
-            id=_watermark_id(state.provider, state.asset, state.kind, state.granularity),
-            provider=state.provider,
-            asset=state.asset,
+    def _watermark_domain_to_row(state: FeedIngestionState) -> FeedIngestionStateRow:
+        return FeedIngestionStateRow(
+            id=_watermark_id(state.source, state.subject, state.kind, state.granularity),
+            source=state.source,
+            subject=state.subject,
             kind=state.kind,
             granularity=state.granularity,
             last_event_ts=_ensure_utc(state.last_event_ts) if state.last_event_ts is not None else None,
@@ -256,10 +256,10 @@ class DBMarketRecordRepository:
         )
 
     @staticmethod
-    def _watermark_row_to_domain(row: MarketIngestionStateRow) -> MarketIngestionState:
-        return MarketIngestionState(
-            provider=row.provider,
-            asset=row.asset,
+    def _watermark_row_to_domain(row: FeedIngestionStateRow) -> FeedIngestionState:
+        return FeedIngestionState(
+            source=row.source,
+            subject=row.subject,
             kind=row.kind,
             granularity=row.granularity,
             last_event_ts=_ensure_utc(row.last_event_ts) if row.last_event_ts is not None else None,
@@ -268,12 +268,12 @@ class DBMarketRecordRepository:
         )
 
 
-def _watermark_id(provider: str, asset: str, kind: str, granularity: str) -> str:
-    return f"{provider}:{asset}:{kind}:{granularity}"
+def _watermark_id(source: str, subject: str, kind: str, granularity: str) -> str:
+    return f"{source}:{subject}:{kind}:{granularity}"
 
 
-def _record_id(provider: str, asset: str, kind: str, granularity: str, ts_event: datetime) -> str:
-    fingerprint = f"{provider}|{asset}|{kind}|{granularity}|{_ensure_utc(ts_event).isoformat()}"
+def _record_id(source: str, subject: str, kind: str, granularity: str, ts_event: datetime) -> str:
+    fingerprint = f"{source}|{subject}|{kind}|{granularity}|{_ensure_utc(ts_event).isoformat()}"
     return hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()  # noqa: S324
 
 

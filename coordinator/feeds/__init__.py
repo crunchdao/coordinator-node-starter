@@ -1,10 +1,10 @@
 from coordinator.feeds.base import DataFeed, FeedHandle, FeedSink
 from coordinator.feeds.contracts import (
     AssetDescriptor,
+    FeedDataKind,
+    FeedDataRecord,
     FeedFetchRequest,
     FeedSubscription,
-    MarketDataKind,
-    MarketRecord,
 )
 from coordinator.feeds.registry import (
     DataFeedRegistry,
@@ -17,8 +17,8 @@ __all__ = [
     "AssetDescriptor",
     "FeedSubscription",
     "FeedFetchRequest",
-    "MarketRecord",
-    "MarketDataKind",
+    "FeedDataRecord",
+    "FeedDataKind",
     "FeedSink",
     "FeedHandle",
     "DataFeed",

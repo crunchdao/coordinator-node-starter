@@ -11,11 +11,11 @@ from coordinator.db.session import database_url
 
 logger = logging.getLogger(__name__)
 
-CHANNEL = "new_market_data"
+CHANNEL = "new_feed_data"
 
 
 def notify(connection: Any = None) -> None:
-    """Send a NOTIFY on the market data channel. Uses raw psycopg2 connection."""
+    """Send a NOTIFY on the feed data channel. Uses raw psycopg2 connection."""
     own_conn = connection is None
     if own_conn:
         connection = _raw_connection()

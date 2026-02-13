@@ -12,7 +12,7 @@ from coordinator.contracts import CrunchContract
 from coordinator.schemas import LeaderboardEntryEnvelope, ReportSchemaEnvelope
 from coordinator.db import (
     DBLeaderboardRepository,
-    DBMarketRecordRepository,
+    DBFeedRecordRepository,
     DBModelRepository,
     DBPredictionRepository,
     create_session,
@@ -185,10 +185,10 @@ def get_prediction_repository(
     return DBPredictionRepository(session_db)
 
 
-def get_market_record_repository(
+def get_feed_record_repository(
     session_db: Annotated[Session, Depends(get_db_session)]
-) -> DBMarketRecordRepository:
-    return DBMarketRecordRepository(session_db)
+) -> DBFeedRecordRepository:
+    return DBFeedRecordRepository(session_db)
 
 
 @app.get("/healthz")
@@ -384,23 +384,23 @@ def get_predictions(
 
 @app.get("/reports/feeds")
 def get_feeds(
-    market_repo: Annotated[DBMarketRecordRepository, Depends(get_market_record_repository)],
+    feed_repo: Annotated[DBFeedRecordRepository, Depends(get_feed_record_repository)],
 ) -> list[dict[str, Any]]:
-    return market_repo.list_indexed_feeds()
+    return feed_repo.list_indexed_feeds()
 
 
 @app.get("/reports/feeds/tail")
 def get_feeds_tail(
-    market_repo: Annotated[DBMarketRecordRepository, Depends(get_market_record_repository)],
-    provider: Annotated[str | None, Query()] = None,
-    asset: Annotated[str | None, Query()] = None,
+    feed_repo: Annotated[DBFeedRecordRepository, Depends(get_feed_record_repository)],
+    source: Annotated[str | None, Query()] = None,
+    subject: Annotated[str | None, Query()] = None,
     kind: Annotated[str | None, Query()] = None,
     granularity: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 20,
 ) -> list[dict[str, Any]]:
-    records = market_repo.tail_records(
-        provider=provider,
-        asset=asset,
+    records = feed_repo.tail_records(
+        source=source,
+        subject=subject,
         kind=kind,
         granularity=granularity,
         limit=limit,
@@ -410,8 +410,8 @@ def get_feeds_tail(
     for record in records:
         rows.append(
             {
-                "provider": record.provider,
-                "asset": record.asset,
+                "source": record.source,
+                "subject": record.subject,
                 "kind": record.kind,
                 "granularity": record.granularity,
                 "ts_event": record.ts_event,

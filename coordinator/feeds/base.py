@@ -4,14 +4,14 @@ from typing import Protocol, Sequence
 
 from coordinator.feeds.contracts import (
     AssetDescriptor,
+    FeedDataRecord,
     FeedFetchRequest,
     FeedSubscription,
-    MarketRecord,
 )
 
 
 class FeedSink(Protocol):
-    async def on_record(self, record: MarketRecord) -> None: ...
+    async def on_record(self, record: FeedDataRecord) -> None: ...
 
 
 class FeedHandle(Protocol):
@@ -30,4 +30,4 @@ class DataFeed(Protocol):
 
     async def listen(self, sub: FeedSubscription, sink: FeedSink) -> FeedHandle: ...
 
-    async def fetch(self, req: FeedFetchRequest) -> Sequence[MarketRecord]: ...
+    async def fetch(self, req: FeedFetchRequest) -> Sequence[FeedDataRecord]: ...

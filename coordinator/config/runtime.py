@@ -13,7 +13,7 @@ class RuntimeSettings:
     crunch_id: str
     base_classname: str
     feed_provider: str
-    market_record_ttl_days: int
+    feed_record_ttl_days: int
 
     @classmethod
     def from_env(cls) -> "RuntimeSettings":
@@ -25,5 +25,5 @@ class RuntimeSettings:
             crunch_id=os.getenv("CRUNCH_ID", "starter-challenge"),
             base_classname=os.getenv("MODEL_BASE_CLASSNAME", "tracker.TrackerBase"),
             feed_provider=os.getenv("FEED_PROVIDER", "pyth"),
-            market_record_ttl_days=int(os.getenv("MARKET_RECORD_TTL_DAYS", "90")),
+            feed_record_ttl_days=int(os.getenv("FEED_RECORD_TTL_DAYS", "90")),
         )

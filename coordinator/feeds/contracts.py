@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-MarketDataKind = Literal["tick", "candle"]
+FeedDataKind = Literal["tick", "candle"]
 
 
 @dataclass(frozen=True)
@@ -12,7 +12,7 @@ class AssetDescriptor:
 
     symbol: str
     display_name: str | None
-    kinds: tuple[MarketDataKind, ...]
+    kinds: tuple[FeedDataKind, ...]
     granularities: tuple[str, ...]
     quote: str | None
     base: str | None
@@ -25,7 +25,7 @@ class FeedSubscription:
     """Push/listen mode subscription request."""
 
     assets: tuple[str, ...]
-    kind: MarketDataKind
+    kind: FeedDataKind
     granularity: str
     fields: tuple[str, ...] = ()
 
@@ -35,7 +35,7 @@ class FeedFetchRequest:
     """Pull/fetch mode request used for backfill and truth windows."""
 
     assets: tuple[str, ...]
-    kind: MarketDataKind
+    kind: FeedDataKind
     granularity: str
     start_ts: int | None = None
     end_ts: int | None = None
@@ -44,13 +44,13 @@ class FeedFetchRequest:
 
 
 @dataclass(frozen=True)
-class MarketRecord:
-    """Canonical market record shape normalized by feed adapters."""
+class FeedDataRecord:
+    """Canonical feed record shape normalized by feed adapters."""
 
-    asset: str
-    kind: MarketDataKind
+    source: str
+    subject: str
+    kind: FeedDataKind
     granularity: str
     ts_event: int
     values: dict[str, Any]
-    source: str
     metadata: dict[str, Any] = field(default_factory=dict)

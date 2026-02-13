@@ -12,7 +12,7 @@ from coordinator.feeds.contracts import (
     AssetDescriptor,
     FeedFetchRequest,
     FeedSubscription,
-    MarketRecord,
+    FeedDataRecord,
 )
 from coordinator.feeds.registry import FeedSettings
 
@@ -177,10 +177,10 @@ class BinanceFeed(DataFeed):
                     )
                     records = await self.fetch(req)
                     for record in records:
-                        last_ts = watermark.get(record.asset)
+                        last_ts = watermark.get(record.subject)
                         if last_ts is not None and record.ts_event <= last_ts:
                             continue
-                        watermark[record.asset] = record.ts_event
+                        watermark[record.subject] = record.ts_event
                         await sink.on_record(record)
                 except asyncio.CancelledError:
                     raise
@@ -192,13 +192,13 @@ class BinanceFeed(DataFeed):
         task = asyncio.create_task(_loop())
         return _PollingFeedHandle(task)
 
-    async def fetch(self, req: FeedFetchRequest) -> Sequence[MarketRecord]:
+    async def fetch(self, req: FeedFetchRequest) -> Sequence[FeedDataRecord]:
         if req.kind == "candle":
             return await self._fetch_candles(req)
         return await self._fetch_ticks(req)
 
-    async def _fetch_candles(self, req: FeedFetchRequest) -> list[MarketRecord]:
-        records: list[MarketRecord] = []
+    async def _fetch_candles(self, req: FeedFetchRequest) -> list[FeedDataRecord]:
+        records: list[FeedDataRecord] = []
         interval = _to_binance_interval(req.granularity)
         start_ms = int(req.start_ts * 1000) if req.start_ts is not None else None
         end_ms = int(req.end_ts * 1000) if req.end_ts is not None else None
@@ -222,8 +222,8 @@ class BinanceFeed(DataFeed):
                     continue
                 try:
                     ts_event = int(row[0]) // 1000
-                    record = MarketRecord(
-                        asset=asset,
+                    record = FeedDataRecord(
+                        subject=asset,
                         kind="candle",
                         granularity=req.granularity,
                         ts_event=ts_event,
@@ -242,8 +242,8 @@ class BinanceFeed(DataFeed):
 
         return records
 
-    async def _fetch_ticks(self, req: FeedFetchRequest) -> list[MarketRecord]:
-        records: list[MarketRecord] = []
+    async def _fetch_ticks(self, req: FeedFetchRequest) -> list[FeedDataRecord]:
+        records: list[FeedDataRecord] = []
         now_ts = int(datetime.now(timezone.utc).timestamp())
 
         for asset in req.assets:
@@ -253,8 +253,8 @@ class BinanceFeed(DataFeed):
                 continue
 
             records.append(
-                MarketRecord(
-                    asset=asset,
+                FeedDataRecord(
+                    subject=asset,
                     kind="tick",
                     granularity=req.granularity,
                     ts_event=now_ts,

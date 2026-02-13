@@ -4,9 +4,9 @@ import unittest
 
 from coordinator.feeds.contracts import (
     AssetDescriptor,
+    FeedDataRecord,
     FeedFetchRequest,
     FeedSubscription,
-    MarketRecord,
 )
 from coordinator.feeds.registry import DataFeedRegistry, create_default_registry
 
@@ -46,13 +46,13 @@ class TestCoordinatorRuntimeDataFeeds(unittest.TestCase):
             end_ts=1700000600,
             limit=100,
         )
-        rec = MarketRecord(
-            asset="BTCUSD",
+        rec = FeedDataRecord(
+            source="pyth",
+            subject="BTCUSD",
             kind="candle",
             granularity="1m",
             ts_event=1700000000,
             values={"close": 50000.0},
-            source="pyth",
         )
 
         self.assertEqual(asset.symbol, "BTCUSD")

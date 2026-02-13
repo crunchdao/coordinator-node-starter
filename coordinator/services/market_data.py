@@ -7,19 +7,19 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Sequence
 
-from coordinator.entities.market_record import MarketIngestionState, MarketRecord
+from coordinator.entities.feed_record import FeedIngestionState, FeedRecord
 from coordinator.feeds import (
+    FeedDataRecord,
     FeedFetchRequest,
     FeedSubscription,
-    MarketRecord as FeedMarketRecord,
     create_default_registry,
 )
 
 
 @dataclass(frozen=True)
-class MarketDataSettings:
-    provider: str
-    assets: tuple[str, ...]
+class FeedDataSettings:
+    source: str
+    subjects: tuple[str, ...]
     kind: str
     granularity: str
     poll_seconds: float
@@ -28,51 +28,51 @@ class MarketDataSettings:
     retention_check_seconds: int
 
     @classmethod
-    def from_env(cls) -> "MarketDataSettings":
-        assets_raw = os.getenv("FEED_ASSETS", "BTC")
-        assets = tuple(part.strip() for part in assets_raw.split(",") if part.strip())
+    def from_env(cls) -> "FeedDataSettings":
+        subjects_raw = os.getenv("FEED_SUBJECTS", os.getenv("FEED_ASSETS", "BTC"))
+        subjects = tuple(part.strip() for part in subjects_raw.split(",") if part.strip())
 
         return cls(
-            provider=os.getenv("FEED_PROVIDER", "pyth").strip().lower(),
-            assets=assets or ("BTC",),
+            source=os.getenv("FEED_SOURCE", os.getenv("FEED_PROVIDER", "pyth")).strip().lower(),
+            subjects=subjects or ("BTC",),
             kind=os.getenv("FEED_KIND", "tick").strip().lower(),
             granularity=os.getenv("FEED_GRANULARITY", "1s").strip(),
             poll_seconds=float(os.getenv("FEED_POLL_SECONDS", "5")),
             backfill_minutes=int(os.getenv("FEED_BACKFILL_MINUTES", "180")),
-            ttl_days=int(os.getenv("MARKET_RECORD_TTL_DAYS", "90")),
-            retention_check_seconds=int(os.getenv("MARKET_RETENTION_CHECK_SECONDS", "3600")),
+            ttl_days=int(os.getenv("FEED_RECORD_TTL_DAYS", os.getenv("MARKET_RECORD_TTL_DAYS", "90"))),
+            retention_check_seconds=int(os.getenv("FEED_RETENTION_CHECK_SECONDS", os.getenv("MARKET_RETENTION_CHECK_SECONDS", "3600"))),
         )
 
 
-class MarketDataService:
+class FeedDataService:
     def __init__(
         self,
-        settings: MarketDataSettings,
-        market_record_repository,
+        settings: FeedDataSettings,
+        feed_record_repository,
     ):
         self.settings = settings
-        self.market_record_repository = market_record_repository
+        self.feed_record_repository = feed_record_repository
         self.logger = logging.getLogger(__name__)
         self.stop_event = asyncio.Event()
         self._handles = []
 
     async def run(self) -> None:
         self.logger.info(
-            "market data service started provider=%s assets=%s kind=%s granularity=%s",
-            self.settings.provider,
-            ",".join(self.settings.assets),
+            "feed data service started source=%s subjects=%s kind=%s granularity=%s",
+            self.settings.source,
+            ",".join(self.settings.subjects),
             self.settings.kind,
             self.settings.granularity,
         )
 
         registry = create_default_registry()
-        feed = registry.create_from_env(default_provider=self.settings.provider)
+        feed = registry.create_from_env(default_provider=self.settings.source)
 
         await self._backfill(feed)
 
-        sink = _RepositorySink(self.market_record_repository)
+        sink = _RepositorySink(self.feed_record_repository)
         subscription = FeedSubscription(
-            assets=self.settings.assets,
+            assets=self.settings.subjects,
             kind=self.settings.kind if self.settings.kind in {"tick", "candle"} else "tick",
             granularity=self.settings.granularity,
         )
@@ -97,10 +97,10 @@ class MarketDataService:
     async def _backfill(self, feed) -> None:
         now = datetime.now(timezone.utc)
 
-        for asset in self.settings.assets:
-            watermark = self.market_record_repository.get_watermark(
-                provider=self.settings.provider,
-                asset=asset,
+        for subject in self.settings.subjects:
+            watermark = self.feed_record_repository.get_watermark(
+                source=self.settings.source,
+                subject=subject,
                 kind=self.settings.kind,
                 granularity=self.settings.granularity,
             )
@@ -112,7 +112,7 @@ class MarketDataService:
             )
 
             req = FeedFetchRequest(
-                assets=(asset,),
+                assets=(subject,),
                 kind=self.settings.kind if self.settings.kind in {"tick", "candle"} else "tick",
                 granularity=self.settings.granularity,
                 start_ts=int(start.timestamp()),
@@ -124,27 +124,27 @@ class MarketDataService:
             written = self._append_feed_records(records)
             if written:
                 latest_ts = max(record.ts_event for record in records)
-                self.market_record_repository.set_watermark(
-                    MarketIngestionState(
-                        provider=self.settings.provider,
-                        asset=asset,
+                self.feed_record_repository.set_watermark(
+                    FeedIngestionState(
+                        source=self.settings.source,
+                        subject=subject,
                         kind=self.settings.kind,
                         granularity=self.settings.granularity,
                         last_event_ts=datetime.fromtimestamp(latest_ts, tz=timezone.utc),
                         meta={"phase": "backfill"},
                     )
                 )
-                self.logger.info("backfill asset=%s wrote=%d", asset, written)
+                self.logger.info("backfill subject=%s wrote=%d", subject, written)
 
     async def _retention_loop(self) -> None:
         while not self.stop_event.is_set():
             cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, self.settings.ttl_days))
             try:
-                deleted = self.market_record_repository.prune_market_time_before(cutoff)
+                deleted = self.feed_record_repository.prune_before(cutoff)
                 if deleted:
-                    self.logger.info("market record retention pruned=%d cutoff=%s", deleted, cutoff.isoformat())
+                    self.logger.info("feed record retention pruned=%d cutoff=%s", deleted, cutoff.isoformat())
             except Exception as exc:
-                self.logger.warning("market record retention failed: %s", exc)
+                self.logger.warning("feed record retention failed: %s", exc)
 
             try:
                 await asyncio.wait_for(
@@ -154,25 +154,25 @@ class MarketDataService:
             except asyncio.TimeoutError:
                 pass
 
-    def _append_feed_records(self, records: Sequence[FeedMarketRecord]) -> int:
+    def _append_feed_records(self, records: Sequence[FeedDataRecord]) -> int:
         if not records:
             return 0
 
-        converted = [_feed_to_domain(self.settings.provider, record) for record in records]
-        return self.market_record_repository.append_records(converted)
+        converted = [_feed_to_domain(self.settings.source, record) for record in records]
+        return self.feed_record_repository.append_records(converted)
 
 
 class _RepositorySink:
     def __init__(self, repository):
         self._repository = repository
 
-    async def on_record(self, record: FeedMarketRecord) -> None:
+    async def on_record(self, record: FeedDataRecord) -> None:
         domain = _feed_to_domain(record.source, record)
         self._repository.append_records([domain])
         self._repository.set_watermark(
-            MarketIngestionState(
-                provider=record.source,
-                asset=record.asset,
+            FeedIngestionState(
+                source=record.source,
+                subject=record.subject,
                 kind=record.kind,
                 granularity=record.granularity,
                 last_event_ts=datetime.fromtimestamp(record.ts_event, tz=timezone.utc),
@@ -186,11 +186,11 @@ class _RepositorySink:
             pass
 
 
-def _feed_to_domain(default_provider: str, record: FeedMarketRecord) -> MarketRecord:
-    provider = record.source or default_provider
-    return MarketRecord(
-        provider=provider,
-        asset=record.asset,
+def _feed_to_domain(default_source: str, record: FeedDataRecord) -> FeedRecord:
+    source = record.source or default_source
+    return FeedRecord(
+        source=source,
+        subject=record.subject,
         kind=record.kind,
         granularity=record.granularity,
         ts_event=datetime.fromtimestamp(int(record.ts_event), tz=timezone.utc),

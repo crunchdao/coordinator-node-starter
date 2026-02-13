@@ -1,4 +1,4 @@
-"""Market data ingestion tables."""
+"""Feed data ingestion tables."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -13,13 +13,13 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class MarketRecordRow(SQLModel, table=True):
-    __tablename__ = "market_records"
+class FeedRecordRow(SQLModel, table=True):
+    __tablename__ = "feed_records"
 
     id: str = Field(primary_key=True)
 
-    provider: str = Field(index=True)
-    asset: str = Field(index=True)
+    source: str = Field(index=True)
+    subject: str = Field(index=True)
     kind: str = Field(index=True)
     granularity: str = Field(index=True)
 
@@ -35,20 +35,20 @@ class MarketRecordRow(SQLModel, table=True):
 
     __table_args__ = (
         Index(
-            "uq_market_records_event",
-            "provider", "asset", "kind", "granularity", "ts_event",
+            "uq_feed_records_event",
+            "source", "subject", "kind", "granularity", "ts_event",
             unique=True,
         ),
     )
 
 
-class MarketIngestionStateRow(SQLModel, table=True):
-    __tablename__ = "market_ingestion_state"
+class FeedIngestionStateRow(SQLModel, table=True):
+    __tablename__ = "feed_ingestion_state"
 
     id: str = Field(primary_key=True)
 
-    provider: str = Field(index=True)
-    asset: str = Field(index=True)
+    source: str = Field(index=True)
+    subject: str = Field(index=True)
     kind: str = Field(index=True)
     granularity: str = Field(index=True)
 
@@ -61,8 +61,8 @@ class MarketIngestionStateRow(SQLModel, table=True):
 
     __table_args__ = (
         Index(
-            "uq_market_ingestion_scope",
-            "provider", "asset", "kind", "granularity",
+            "uq_feed_ingestion_scope",
+            "source", "subject", "kind", "granularity",
             unique=True,
         ),
     )

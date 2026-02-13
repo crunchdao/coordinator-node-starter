@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from coordinator.entities.market_record import MarketRecord
+from coordinator.entities.feed_record import FeedRecord
 from coordinator.entities.model import Model
 from coordinator.contracts import CrunchContract
 from coordinator.workers.report_worker import (
@@ -44,20 +44,20 @@ class InMemoryLeaderboardRepository:
         return self._latest
 
 
-class InMemoryMarketRecordRepository:
-    def __init__(self, records: list[MarketRecord], summaries: list[dict] | None = None):
+class InMemoryFeedRecordRepository:
+    def __init__(self, records: list[FeedRecord], summaries: list[dict] | None = None):
         self._records = records
         self._summaries = summaries or []
 
     def list_indexed_feeds(self):
         return list(self._summaries)
 
-    def tail_records(self, *, provider=None, asset=None, kind=None, granularity=None, limit=20):
+    def tail_records(self, *, source=None, subject=None, kind=None, granularity=None, limit=20):
         rows = list(self._records)
-        if provider:
-            rows = [r for r in rows if r.provider == provider]
-        if asset:
-            rows = [r for r in rows if r.asset == asset]
+        if source:
+            rows = [r for r in rows if r.source == source]
+        if subject:
+            rows = [r for r in rows if r.subject == subject]
         rows.sort(key=lambda r: r.ts_event, reverse=True)
         return rows[:limit]
 
@@ -93,23 +93,23 @@ class TestNodeTemplateReportWorker(unittest.TestCase):
 
     def test_get_feeds_returns_indexed_feed_summaries(self):
         summaries = [
-            {"provider": "binance", "asset": "BTC", "kind": "candle", "granularity": "1m",
+            {"source": "binance", "subject": "BTC", "kind": "candle", "granularity": "1m",
              "record_count": 100, "first_event": "2025-01-01T00:00:00Z",
              "last_event": "2025-01-02T00:00:00Z"},
         ]
-        repo = InMemoryMarketRecordRepository(records=[], summaries=summaries)
+        repo = InMemoryFeedRecordRepository(records=[], summaries=summaries)
         response = get_feeds(repo)
         self.assertEqual(len(response), 1)
-        self.assertEqual(response[0]["provider"], "binance")
+        self.assertEqual(response[0]["source"], "binance")
 
     def test_get_feeds_tail_returns_recent_samples(self):
         now = datetime.now(timezone.utc)
         records = [
-            MarketRecord(provider="binance", asset="BTC", kind="candle", granularity="1m",
-                         ts_event=now - timedelta(minutes=i), values={"close": 100.0 + i})
+            FeedRecord(source="binance", subject="BTC", kind="candle", granularity="1m",
+                       ts_event=now - timedelta(minutes=i), values={"close": 100.0 + i})
             for i in range(5)
         ]
-        repo = InMemoryMarketRecordRepository(records=records)
+        repo = InMemoryFeedRecordRepository(records=records)
         response = get_feeds_tail(repo, "binance", "BTC", "candle", "1m", 3)
         self.assertEqual(len(response), 3)
         self.assertIn("close", response[0]["values"])
