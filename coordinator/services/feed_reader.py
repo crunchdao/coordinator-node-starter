@@ -13,7 +13,7 @@ from coordinator.db.session import create_session
 logger = logging.getLogger(__name__)
 
 
-class InputService:
+class FeedReader:
     """Reads feed data from DB, backfills from feed provider if needed."""
 
     def __init__(
@@ -31,7 +31,7 @@ class InputService:
         self.window_size = window_size
 
     @classmethod
-    def from_env(cls) -> "InputService":
+    def from_env(cls) -> "FeedReader":
         subjects_raw = os.getenv("FEED_SUBJECTS", os.getenv("FEED_ASSETS", "BTC"))
         subjects = [p.strip() for p in subjects_raw.split(",") if p.strip()]
         return cls(

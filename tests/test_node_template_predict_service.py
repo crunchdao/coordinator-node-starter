@@ -36,7 +36,7 @@ class FakeRunner:
         return {FakeModelRun("m1"): FakePredictionResult()}
 
 
-class FakeInputService:
+class FakeFeedReader:
     def __init__(self, payload=None):
         self._payload = payload or {}
 
@@ -112,10 +112,10 @@ class NoConfigPredictionRepository(InMemoryPredictionRepository):
         return []
 
 
-def _make_service(input_service=None, prediction_repo=None, runner=None, contract=None):
+def _make_service(feed_reader=None, prediction_repo=None, runner=None, contract=None):
     return RealtimePredictService(
         checkpoint_interval_seconds=60,
-        input_service=input_service or FakeInputService(),
+        feed_reader=feed_reader or FakeFeedReader(),
         contract=contract or CrunchContract(),
         model_repository=InMemoryModelRepository(),
         prediction_repository=prediction_repo or InMemoryPredictionRepository(),
@@ -139,10 +139,10 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(pred.input_id)
         self.assertIn("value", pred.inference_output)
 
-    async def test_run_once_uses_input_service_when_no_raw_input(self):
+    async def test_run_once_uses_feed_reader_when_no_raw_input(self):
         repo = InMemoryPredictionRepository()
         service = _make_service(
-            input_service=FakeInputService({"symbol": "ETH", "asof_ts": 999}),
+            feed_reader=FakeFeedReader({"symbol": "ETH", "asof_ts": 999}),
             prediction_repo=repo,
         )
 

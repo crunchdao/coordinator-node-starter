@@ -11,7 +11,7 @@ from coordinator.entities.model import Model
 from coordinator.entities.prediction import InputRecord, PredictionRecord
 from coordinator.db.repositories import DBInputRepository, DBModelRepository, DBPredictionRepository
 from coordinator.contracts import CrunchContract
-from coordinator.services.input import InputService
+from coordinator.services.feed_reader import FeedReader
 
 try:
     from model_runner_client.grpc.generated.commons_pb2 import Argument, Variant, VariantType
@@ -32,7 +32,7 @@ class PredictService:
 
     def __init__(
         self,
-        input_service: InputService,
+        feed_reader: FeedReader,
         contract: CrunchContract | None = None,
         transform: Callable | None = None,
         input_repository: DBInputRepository | None = None,
@@ -46,7 +46,7 @@ class PredictService:
         base_classname: str = "tracker.TrackerBase",
         **kwargs,
     ):
-        self.input_service = input_service
+        self.feed_reader = feed_reader
         self.contract = contract or CrunchContract()
         self.transform = transform
         self.input_repository = input_repository
@@ -70,7 +70,7 @@ class PredictService:
 
     def get_data(self, now: datetime) -> InputRecord:
         """Fetch input, apply optional transform, save to DB."""
-        raw = self.input_service.get_input(now)
+        raw = self.feed_reader.get_input(now)
         data = self.transform(raw) if self.transform is not None else raw
 
         record = InputRecord(

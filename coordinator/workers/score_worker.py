@@ -15,7 +15,7 @@ from coordinator.db import (
     DBScoreRepository,
     create_session,
 )
-from coordinator.services.input import InputService
+from coordinator.services.feed_reader import FeedReader
 from coordinator.services.score import ScoreService
 
 
@@ -41,7 +41,7 @@ def build_service() -> ScoreService:
     return ScoreService(
         checkpoint_interval_seconds=runtime_settings.checkpoint_interval_seconds,
         scoring_function=scoring_function,
-        input_service=InputService.from_env(),
+        feed_reader=FeedReader.from_env(),
         input_repository=DBInputRepository(session),
         prediction_repository=DBPredictionRepository(session),
         score_repository=DBScoreRepository(session),

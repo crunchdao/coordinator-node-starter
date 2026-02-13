@@ -1,6 +1,6 @@
 """Integration test: full prediction lifecycle with shared in-memory repositories.
 
-input_service → predict_service → [input_repo, prediction_repo] → score_service → [score_repo, leaderboard_repo]
+feed_reader → predict_service → [input_repo, prediction_repo] → score_service → [score_repo, leaderboard_repo]
 
 Covers: PENDING → RESOLVED → SCORED, absent model marking, leaderboard rebuild.
 """
@@ -160,7 +160,7 @@ class FakeRunner:
         return {FakeModelRun(mid): FakeResult(out) for mid, out in self._outputs.items()}
 
 
-class FakeInputService:
+class FakeFeedReader:
     def __init__(self, data: dict[str, Any]) -> None:
         self._data = data
 
@@ -188,7 +188,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
 
         self.predict_service = RealtimePredictService(
             checkpoint_interval_seconds=60,
-            input_service=FakeInputService({"symbol": "BTC", "asof_ts": 100}),
+            feed_reader=FakeFeedReader({"symbol": "BTC", "asof_ts": 100}),
             contract=self.contract,
             input_repository=self.input_repo,
             model_repository=self.model_repo,
@@ -199,7 +199,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         self.score_service = ScoreService(
             checkpoint_interval_seconds=60,
             scoring_function=self._score_fn,
-            input_service=FakeInputService({"symbol": "BTC", "asof_ts": 100}),
+            feed_reader=FakeFeedReader({"symbol": "BTC", "asof_ts": 100}),
             input_repository=self.input_repo,
             prediction_repository=self.pred_repo,
             score_repository=self.score_repo,

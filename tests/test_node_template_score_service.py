@@ -88,7 +88,7 @@ class MemLeaderboardRepository:
         return self.latest
 
 
-class FakeInputService:
+class FakeFeedReader:
     def __init__(self, actuals: dict[str, Any] | None = None) -> None:
         self._actuals = actuals
 
@@ -124,7 +124,7 @@ def _build_service(*, inputs=None, predictions=None, actuals=None, contract=None
     return ScoreService(
         checkpoint_interval_seconds=60,
         scoring_function=lambda pred, act: {"value": 0.5, "success": True, "failed_reason": None},
-        input_service=FakeInputService(actuals=actuals),
+        feed_reader=FakeFeedReader(actuals=actuals),
         input_repository=MemInputRepository(inputs or []),
         prediction_repository=MemPredictionRepository(predictions or []),
         score_repository=MemScoreRepository(),

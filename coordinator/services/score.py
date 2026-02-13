@@ -13,7 +13,7 @@ from coordinator.db.repositories import (
     DBPredictionRepository, DBScoreRepository,
 )
 from coordinator.contracts import CrunchContract
-from coordinator.services.input import InputService
+from coordinator.services.feed_reader import FeedReader
 
 
 class ScoreService:
@@ -21,7 +21,7 @@ class ScoreService:
         self,
         checkpoint_interval_seconds: int,
         scoring_function: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]],
-        input_service: InputService | None = None,
+        feed_reader: FeedReader | None = None,
         input_repository: DBInputRepository | None = None,
         prediction_repository: DBPredictionRepository | None = None,
         score_repository: DBScoreRepository | None = None,
@@ -32,7 +32,7 @@ class ScoreService:
     ):
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
         self.scoring_function = scoring_function
-        self.input_service = input_service
+        self.feed_reader = feed_reader
         self.input_repository = input_repository
         self.prediction_repository = prediction_repository
         self.score_repository = score_repository
@@ -80,7 +80,7 @@ class ScoreService:
     # ── 1. resolve actuals on inputs ──
 
     def _resolve_inputs(self, now: datetime) -> int:
-        if self.input_repository is None or self.input_service is None:
+        if self.input_repository is None or self.feed_reader is None:
             return 0
 
         unresolved = self.input_repository.find(
@@ -91,7 +91,7 @@ class ScoreService:
 
         resolved = 0
         for inp in unresolved:
-            actuals = self.input_service.get_ground_truth(
+            actuals = self.feed_reader.get_ground_truth(
                 performed_at=inp.received_at,
                 resolvable_at=inp.resolvable_at,
                 asset=inp.scope.get("asset"),
