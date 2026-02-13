@@ -1,25 +1,21 @@
 import unittest
 
-from coordinator.entities.model import Model, ModelScore
+from coordinator.entities.model import Model
 from coordinator.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
 
 
 class TestCoreEntities(unittest.TestCase):
-    def test_model_score_supports_metrics_ranking_and_payload(self):
-        score = ModelScore(
-            metrics={"wealth": 1000.0, "hit_rate": 0.7},
-            ranking={"key": "wealth", "direction": "desc", "value": 1000.0},
-            payload={"crps": 0.55},
-        )
-        self.assertEqual(score.metrics["wealth"], 1000.0)
-        self.assertEqual(score.ranking["key"], "wealth")
-        self.assertEqual(score.payload["crps"], 0.55)
-
-    def test_model_has_jsonb_extension_payload(self):
+    def test_model_overall_score_is_plain_dict(self):
         model = Model(
             id="m1", name="alpha", player_id="p1", player_name="alice",
-            deployment_identifier="d1", meta={"tier": "gold"},
+            deployment_identifier="d1",
+            overall_score={
+                "metrics": {"wealth": 1000.0, "hit_rate": 0.7},
+                "ranking": {"key": "wealth", "direction": "desc", "value": 1000.0},
+            },
+            meta={"tier": "gold"},
         )
+        self.assertEqual(model.overall_score["metrics"]["wealth"], 1000.0)
         self.assertEqual(model.meta["tier"], "gold")
 
     def test_input_record(self):

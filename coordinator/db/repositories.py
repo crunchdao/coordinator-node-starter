@@ -5,7 +5,7 @@ from typing import Any, Iterable
 
 from sqlmodel import Session, delete, select
 
-from coordinator.entities.model import Model, ModelScore
+from coordinator.entities.model import Model
 from coordinator.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
 from coordinator.db.tables import (
     InputRow,
@@ -15,7 +15,7 @@ from coordinator.db.tables import (
     PredictionRow,
     ScoreRow,
 )
-from coordinator.schemas import PredictionScopeEnvelope, ScheduledPredictionConfigEnvelope, ScoreEnvelope
+from coordinator.schemas import PredictionScopeEnvelope, ScheduledPredictionConfigEnvelope
 
 
 class DBModelRepository:
@@ -63,15 +63,13 @@ class DBModelRepository:
 
     @staticmethod
     def _row_to_domain(row: ModelRow) -> Model:
-        score = DBModelRepository._json_to_score(row.overall_score_jsonb or {})
-
         return Model(
             id=row.id,
             name=row.name,
             player_id=row.player_id,
             player_name=row.player_name,
             deployment_identifier=row.deployment_identifier,
-            overall_score=score,
+            overall_score=row.overall_score_jsonb or None,
             scores_by_scope=row.scores_by_scope_jsonb or [],
             meta=row.meta_jsonb or {},
             created_at=row.created_at,
@@ -86,37 +84,13 @@ class DBModelRepository:
             deployment_identifier=model.deployment_identifier,
             player_id=model.player_id,
             player_name=model.player_name,
-            overall_score_jsonb=DBModelRepository._score_to_json(model.overall_score),
+            overall_score_jsonb=model.overall_score or {},
             scores_by_scope_jsonb=model.scores_by_scope,
             meta_jsonb=model.meta,
             created_at=model.created_at,
             updated_at=datetime.now(timezone.utc),
         )
 
-    @staticmethod
-    def _score_to_json(score: ModelScore | None) -> dict[str, Any]:
-        if score is None:
-            return {}
-        envelope = ScoreEnvelope.model_validate(
-            {
-                "metrics": dict(score.metrics),
-                "ranking": dict(score.ranking),
-                "payload": dict(score.payload),
-            }
-        )
-        return envelope.model_dump()
-
-    @staticmethod
-    def _json_to_score(score_payload: dict[str, Any]) -> ModelScore | None:
-        if not score_payload:
-            return None
-
-        envelope = ScoreEnvelope.model_validate(score_payload)
-        return ModelScore(
-            metrics=dict(envelope.metrics),
-            ranking=envelope.ranking.model_dump(exclude_none=True),
-            payload=dict(envelope.payload),
-        )
 
 
 class DBInputRepository:
