@@ -8,7 +8,7 @@ WORKDIR /app
 
 # Coordinator engine (from PyPI)
 # Bump this to force Docker to re-pull the latest package version
-ARG COORDINATOR_NODE_VERSION=0.1.4
+ARG COORDINATOR_NODE_VERSION=0.1.5
 RUN pip install --no-cache-dir "coordinator-node>=${COORDINATOR_NODE_VERSION}"
 
 # Challenge package
