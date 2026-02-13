@@ -176,6 +176,35 @@ Checkpoints produce `EmissionCheckpoint` matching the on-chain protocol:
 
 ---
 
+## Database Tables
+
+### Feed layer
+
+| Table | Purpose |
+|---|---|
+| `feed_records` | Raw data points from external sources. Keyed by `(source, subject, kind, granularity, ts_event)`. Values and metadata stored as JSONB. |
+| `feed_ingestion_state` | Tracks the last ingested timestamp per feed scope to enable incremental polling and backfill. |
+
+### Pipeline layer
+
+| Table | Purpose |
+|---|---|
+| `inputs` | Incoming data events. Status: `RECEIVED → RESOLVED`. Holds raw data, actuals (once known), and scope metadata. |
+| `predictions` | One row per model per input. Links to a `scheduled_prediction_config`. Stores inference output, execution time, and resolution timestamp. Status: `PENDING → SCORED / FAILED / ABSENT`. |
+| `scores` | One row per scored prediction. Stores the result payload, success flag, and optional failure reason. |
+| `snapshots` | Per-model period summaries. Aggregates prediction counts and result metrics over a time window. |
+| `checkpoints` | Periodic emission checkpoints. Aggregates snapshots into on-chain reward distributions. Status: `PENDING → SUBMITTED → CLAIMABLE → PAID`. |
+| `scheduled_prediction_configs` | Defines when and what to predict — scope template, schedule, and ordering. Seeded at init from `scheduled_prediction_configs.json`. |
+
+### Model layer
+
+| Table | Purpose |
+|---|---|
+| `models` | Registered participant models. Tracks overall and per-scope scores as JSONB. |
+| `leaderboards` | Point-in-time leaderboard snapshots with ranked entries as JSONB. |
+
+---
+
 ## Local Development
 
 ```bash
@@ -207,7 +236,7 @@ coordinator-node-starter/
 │   ├── schemas/            ← API schemas
 │   ├── extensions/         ← default callables
 │   ├── config/             ← runtime configuration
-│   └── contracts.py        ← CrunchContract definition
+│   └── contracts.py        ← competition shape: types, scope, and callable hooks
 ├── base/                   ← template used by crunch-cli init-workspace
 │   ├── node/               ← node template (Dockerfile, docker-compose, config)
 │   └── challenge/          ← challenge template (tracker, scoring, examples)
