@@ -23,12 +23,15 @@ make logs-capture
 
 ## Where to edit code
 
-- Challenge behavior (model contract, inference, validation, scoring):
-  `[[challenge_name]]/`
-- Runtime wiring (.env/callables/schedules/deployment):
+- **Challenge behavior** (tracker, scoring, examples):
+  `[[challenge_name]]/[[package_module]]/`
+- **Runtime contract** (types, callables, emission config):
+  `[[node_name]]/runtime_definitions/contracts.py`
+- **Node config** (.env, deployment, schedules):
   `[[node_name]]/`
-- Vendored runtime packages are under `[[node_name]]/runtime/`.
-  Avoid editing them unless intentionally patching runtime internals.
+
+Vendored runtime packages are under `[[node_name]]/runtime/`.
+Avoid editing them unless intentionally patching runtime internals.
 
 ## Validation after changes
 

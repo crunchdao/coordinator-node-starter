@@ -7,25 +7,20 @@ summary: Agent instructions for implementing challenge logic.
 
 ## Primary implementation files
 
-- `[[package_module]]/tracker.py`
-- `[[package_module]]/scoring.py`
-- `[[package_module]]/examples/mean_reversion_tracker.py`
-- `[[package_module]]/examples/trend_following_tracker.py`
-- `[[package_module]]/examples/volatility_regime_tracker.py`
+- `[[package_module]]/tracker.py` — model interface (participants implement this)
+- `[[package_module]]/scoring.py` — scoring function for local self-eval
+- `[[package_module]]/examples/` — quickstarter implementations
 
-## Runtime definition touchpoints (node-private)
+## Runtime contract (node-private)
 
-- `../[[node_name]]/runtime_definitions/inference.py`
-- `../[[node_name]]/runtime_definitions/validation.py`
-- `../[[node_name]]/runtime_definitions/data.py`
-- `../[[node_name]]/runtime_definitions/reporting.py`
-- `../[[node_name]]/runtime_definitions/contracts.py`
+- `../[[node_name]]/runtime_definitions/contracts.py` — CrunchContract defining types, scoring, emission
 
 ## Development guidance
 
 - Keep participant-facing challenge logic in this package.
-- Keep runtime input/validation/data/reporting callables in `../[[node_name]]/runtime_definitions`.
-- Export challenge callables referenced by node env files.
+- Keep runtime contracts and deployment config in `../[[node_name]]/`.
+- The scoring function in `scoring.py` is used for local self-eval.
+  The runtime scoring callable is configured in `contracts.py`.
 
 ## Validate from node workspace
 

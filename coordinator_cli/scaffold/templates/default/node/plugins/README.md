@@ -8,24 +8,11 @@ Use this folder for **node-side integrations** that should not live in the publi
 - you need infrastructure-specific data shaping
 - logic is operational, not challenge-contract logic
 
-## Typical modules
+## Typical use cases
 
-- `raw_input.py` → source data adapters
-- `ground_truth.py` → truth resolvers
+- Custom feed providers beyond built-in Pyth/Binance
+- External API integrations for data enrichment
+- Infrastructure-specific adapters
 
-## Expected callable shapes
-
-```python
-def provide_raw_input(now):
-    ...
-
-def resolve_ground_truth(prediction):
-    ...  # return dict or None
-```
-
-## Wire via env
-
-- `RAW_INPUT_PROVIDER=plugins.raw_input:provide_raw_input`
-- `GROUND_TRUTH_RESOLVER=plugins.ground_truth:resolve_ground_truth`
-
-Keep these functions pure and deterministic where possible.
+Most scoring and ground-truth customization belongs in
+`runtime_definitions/contracts.py` on the `CrunchContract`.
