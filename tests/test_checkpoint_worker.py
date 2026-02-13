@@ -397,5 +397,97 @@ class TestEmissionEndpoints(unittest.TestCase):
         self.assertEqual(result["emission"]["crunch"], "crunch_abc")
 
 
+# ── Prizes endpoint tests ──
+
+
+class TestPrizesEndpoints(unittest.TestCase):
+    def _make_checkpoint(self) -> CheckpointRecord:
+        return CheckpointRecord(
+            id="CKP_001",
+            period_start=now - timedelta(days=7),
+            period_end=now,
+            status=CheckpointStatus.PENDING,
+            entries=[{
+                "crunch": "crunch_abc",
+                "cruncher_rewards": [
+                    {"cruncher_index": 0, "reward_pct": 600_000_000},
+                    {"cruncher_index": 1, "reward_pct": 400_000_000},
+                ],
+                "compute_provider_rewards": [],
+                "data_provider_rewards": [],
+            }],
+            meta={"ranking": [
+                {"model_id": "m1", "rank": 1},
+                {"model_id": "m2", "rank": 2},
+            ]},
+            created_at=now,
+        )
+
+    def test_get_checkpoint_prizes_format(self):
+        from coordinator_node.workers.report_worker import get_checkpoint_prizes
+
+        repo = MemCheckpointRepository([self._make_checkpoint()])
+        result = get_checkpoint_prizes("CKP_001", repo, total_prize=1_000_000)
+
+        self.assertEqual(len(result), 2)
+        # First model gets 60%
+        self.assertEqual(result[0]["model"], "m1")
+        self.assertEqual(result[0]["prize"], 600_000)
+        self.assertEqual(result[0]["prizeId"], "CKP_001-m1")
+        self.assertIn("timestamp", result[0])
+        # Second model gets 40%
+        self.assertEqual(result[1]["model"], "m2")
+        self.assertEqual(result[1]["prize"], 400_000)
+
+    def test_get_checkpoint_prizes_zero_total(self):
+        from coordinator_node.workers.report_worker import get_checkpoint_prizes
+
+        repo = MemCheckpointRepository([self._make_checkpoint()])
+        result = get_checkpoint_prizes("CKP_001", repo, total_prize=0)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["prize"], 0)
+        self.assertEqual(result[1]["prize"], 0)
+
+    def test_get_checkpoint_prizes_not_found(self):
+        from coordinator_node.workers.report_worker import get_checkpoint_prizes
+        from fastapi import HTTPException
+
+        repo = MemCheckpointRepository()
+        with self.assertRaises(HTTPException):
+            get_checkpoint_prizes("CKP_NONEXISTENT", repo, total_prize=1000)
+
+    def test_get_checkpoint_prizes_sums_to_total(self):
+        from coordinator_node.workers.report_worker import get_checkpoint_prizes
+
+        repo = MemCheckpointRepository([self._make_checkpoint()])
+        total = 999_999
+        result = get_checkpoint_prizes("CKP_001", repo, total_prize=total)
+
+        actual_sum = sum(p["prize"] for p in result)
+        # May differ by ±1 due to rounding, but should be close
+        self.assertAlmostEqual(actual_sum, total, delta=len(result))
+
+    def test_get_latest_checkpoint_prizes(self):
+        from coordinator_node.workers.report_worker import get_latest_checkpoint_prizes
+
+        repo = MemCheckpointRepository([self._make_checkpoint()])
+        result = get_latest_checkpoint_prizes(repo, total_prize=1_000_000)
+
+        self.assertEqual(result["checkpoint_id"], "CKP_001")
+        self.assertEqual(result["total_prize"], 1_000_000)
+        self.assertEqual(len(result["prizes"]), 2)
+        self.assertEqual(result["prizes"][0]["model"], "m1")
+        self.assertEqual(result["prizes"][0]["prize"], 600_000)
+
+    def test_get_latest_checkpoint_prizes_not_found(self):
+        from coordinator_node.workers.report_worker import get_latest_checkpoint_prizes
+        from fastapi import HTTPException
+
+        repo = MemCheckpointRepository()
+        with self.assertRaises(HTTPException):
+            get_latest_checkpoint_prizes(repo, total_prize=1000)
+
+
 if __name__ == "__main__":
     unittest.main()
