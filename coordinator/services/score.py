@@ -135,9 +135,8 @@ class ScoreService:
             score = ScoreRecord(
                 id=f"SCR_{prediction.id}",
                 prediction_id=prediction.id,
-                value=validated.value,
-                success=validated.success,
-                failed_reason=validated.failed_reason,
+                result=validated.model_dump(),
+                success=True,
                 scored_at=now,
             )
 
@@ -160,7 +159,7 @@ class ScoreService:
 
         score_by_pred: dict[str, ScoreRecord] = {}
         for s in scores:
-            if s.value is not None and s.success:
+            if s.success and s.result:
                 score_by_pred[s.prediction_id] = s
 
         scored_predictions = self.prediction_repository.find(status="SCORED")
@@ -180,17 +179,23 @@ class ScoreService:
             score = score_by_pred.get(pred.id)
             if score is None:
                 continue
+            # Store the full result dict per timestamp for windowed aggregation
             by_model.setdefault(pred.model_id, []).append(
-                (pred.performed_at, float(score.value))
+                (pred.performed_at, score.result)
             )
 
         entries: list[dict[str, Any]] = []
-        for model_id, timed_scores in by_model.items():
+        for model_id, timed_results in by_model.items():
             metrics: dict[str, float] = {}
-            for name, window in aggregation.windows.items():
+            for window_name, window in aggregation.windows.items():
                 cutoff = now - timedelta(hours=window.hours)
-                vals = [v for ts, v in timed_scores if ts >= cutoff]
-                metrics[name] = sum(vals) / len(vals) if vals else 0.0
+                window_results = [r for ts, r in timed_results if ts >= cutoff]
+                if window_results:
+                    # Average the ranking key across the window
+                    vals = [float(r.get(aggregation.ranking_key, 0)) for r in window_results]
+                    metrics[window_name] = sum(vals) / len(vals)
+                else:
+                    metrics[window_name] = 0.0
 
             model = models.get(model_id)
             entries.append(LeaderboardEntryEnvelope(

@@ -55,7 +55,7 @@ class TestCoordinatorCoreSchema(unittest.TestCase):
         self.assertTrue(required_prediction_fields.issubset(PredictionRow.model_fields.keys()))
 
     def test_score_columns_exist(self):
-        required = {"id", "prediction_id", "value", "success", "scored_at"}
+        required = {"id", "prediction_id", "result_jsonb", "success", "scored_at"}
         self.assertTrue(required.issubset(ScoreRow.model_fields.keys()))
 
 

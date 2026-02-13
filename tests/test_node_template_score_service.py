@@ -146,7 +146,7 @@ class TestScoreService(unittest.TestCase):
 
         self.assertTrue(changed)
         self.assertEqual(len(service.score_repository.scores), 1)
-        self.assertEqual(service.score_repository.scores[0].value, 0.5)
+        self.assertEqual(service.score_repository.scores[0].result["value"], 0.5)
 
     def test_no_actuals_means_no_scoring(self):
         service = _build_service(

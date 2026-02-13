@@ -75,7 +75,9 @@ class ScoreRow(SQLModel, table=True):
     id: str = Field(primary_key=True)
     prediction_id: str = Field(index=True, foreign_key="predictions.id")
 
-    value: Optional[float] = None
+    result_jsonb: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSONB),
+    )
     success: Optional[bool] = None
     failed_reason: Optional[str] = None
     scored_at: datetime = Field(default_factory=utc_now, index=True)

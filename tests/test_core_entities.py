@@ -44,9 +44,10 @@ class TestCoreEntities(unittest.TestCase):
     def test_score_record(self):
         score = ScoreRecord(
             id="scr1", prediction_id="pre1",
-            value=0.42, success=True,
+            result={"value": 0.42, "pnl": 120.5}, success=True,
         )
-        self.assertEqual(score.value, 0.42)
+        self.assertEqual(score.result["value"], 0.42)
+        self.assertEqual(score.result["pnl"], 120.5)
         self.assertTrue(score.success)
 
 

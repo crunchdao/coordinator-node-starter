@@ -253,7 +253,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         # score records created
         self.assertEqual(len(self.score_repo.scores), 2)
         for score in self.score_repo.scores:
-            self.assertIsNotNone(score.value)
+            self.assertIn("value", score.result)
             self.assertTrue(score.success)
 
         # leaderboard rebuilt with both models ranked

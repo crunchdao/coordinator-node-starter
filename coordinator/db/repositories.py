@@ -282,7 +282,7 @@ class DBScoreRepository:
         row = ScoreRow(
             id=record.id,
             prediction_id=record.prediction_id,
-            value=record.value,
+            result_jsonb=record.result,
             success=record.success,
             failed_reason=record.failed_reason,
             scored_at=record.scored_at,
@@ -291,7 +291,7 @@ class DBScoreRepository:
         if existing is None:
             self._session.add(row)
         else:
-            existing.value = row.value
+            existing.result_jsonb = row.result_jsonb
             existing.success = row.success
             existing.failed_reason = row.failed_reason
             existing.scored_at = row.scored_at
@@ -314,7 +314,7 @@ class DBScoreRepository:
         stmt = stmt.order_by(ScoreRow.scored_at.asc())
         rows = self._session.exec(stmt).all()
         return [ScoreRecord(
-            id=r.id, prediction_id=r.prediction_id, value=r.value,
+            id=r.id, prediction_id=r.prediction_id, result=r.result_jsonb or {},
             success=bool(r.success), failed_reason=r.failed_reason,
             scored_at=r.scored_at,
         ) for r in rows]

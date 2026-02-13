@@ -40,7 +40,7 @@ class ScoreRecord:
     """Scoring result for a prediction."""
     id: str
     prediction_id: str
-    value: float | None = None
+    result: dict[str, Any] = field(default_factory=dict)
     success: bool = True
     failed_reason: str | None = None
     scored_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
