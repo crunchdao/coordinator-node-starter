@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 from coordinator.db import DBFeedRecordRepository, create_session
-from coordinator.services.market_data import FeedDataService, FeedDataSettings
+from coordinator.services.feed_data import FeedDataService, FeedDataSettings
 
 
 def configure_logging() -> None:
