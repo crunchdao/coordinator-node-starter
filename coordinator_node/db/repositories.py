@@ -218,6 +218,54 @@ class DBPredictionRepository:
             configs.append(envelope.model_dump())
         return configs
 
+    def query_scores(
+        self, *, model_ids: list[str],
+        _from: datetime | None = None, to: datetime | None = None,
+    ) -> dict[str, list["ScoredPrediction"]]:
+        """Return predictions with scores joined, grouped by model_id."""
+        from coordinator_node.entities.prediction import ScoredPrediction
+
+        stmt = (
+            select(PredictionRow, ScoreRow)
+            .outerjoin(ScoreRow, ScoreRow.prediction_id == PredictionRow.id)
+            .where(PredictionRow.model_id.in_(model_ids))
+        )
+        if _from is not None:
+            stmt = stmt.where(PredictionRow.performed_at >= _from)
+        if to is not None:
+            stmt = stmt.where(PredictionRow.performed_at <= to)
+        stmt = stmt.order_by(PredictionRow.performed_at.asc())
+
+        results: dict[str, list[ScoredPrediction]] = {}
+        for pred_row, score_row in self._session.exec(stmt).all():
+            score = None
+            if score_row is not None:
+                score = ScoreRecord(
+                    id=score_row.id,
+                    prediction_id=score_row.prediction_id,
+                    result=score_row.result_jsonb or {},
+                    success=score_row.success if score_row.success is not None else True,
+                    failed_reason=score_row.failed_reason,
+                    scored_at=score_row.scored_at,
+                )
+            sp = ScoredPrediction(
+                id=pred_row.id,
+                input_id=pred_row.input_id,
+                model_id=pred_row.model_id,
+                prediction_config_id=pred_row.prediction_config_id,
+                scope_key=pred_row.scope_key,
+                scope=pred_row.scope_jsonb or {},
+                status=PredictionStatus(pred_row.status),
+                exec_time_ms=pred_row.exec_time_ms,
+                inference_output=pred_row.inference_output_jsonb or {},
+                meta=pred_row.meta_jsonb or {},
+                performed_at=pred_row.performed_at,
+                resolvable_at=pred_row.resolvable_at,
+                score=score,
+            )
+            results.setdefault(pred_row.model_id, []).append(sp)
+        return results
+
     @staticmethod
     def _domain_to_row(prediction: PredictionRecord) -> PredictionRow:
         return PredictionRow(

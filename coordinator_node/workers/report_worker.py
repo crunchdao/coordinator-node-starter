@@ -278,12 +278,22 @@ def get_leaderboard(
 
 @app.get("/reports/models/global")
 def get_models_global(
-    model_ids: Annotated[list[str], Query(..., alias="projectIds")],
-    start: Annotated[datetime, Query(...)],
-    end: Annotated[datetime, Query(...)],
     prediction_repo: Annotated[DBPredictionRepository, Depends(get_prediction_repository)],
+    model_repo: Annotated[DBModelRepository, Depends(get_model_repository)],
+    model_ids: Annotated[list[str] | None, Query(alias="projectIds")] = None,
+    start: Annotated[datetime | None, Query()] = None,
+    end: Annotated[datetime | None, Query()] = None,
 ) -> list[dict]:
-    model_ids = _normalize_project_ids(model_ids)
+    if not model_ids:
+        model_ids = list(model_repo.fetch_all().keys())
+    else:
+        model_ids = _normalize_project_ids(model_ids)
+    if not model_ids:
+        return []
+    if end is None:
+        end = datetime.now(timezone.utc)
+    if start is None:
+        start = end - timedelta(days=7)
     predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
 
     rows: list[dict] = []
@@ -318,12 +328,22 @@ def get_models_global(
 
 @app.get("/reports/models/params")
 def get_models_params(
-    model_ids: Annotated[list[str], Query(..., alias="projectIds")],
-    start: Annotated[datetime, Query(...)],
-    end: Annotated[datetime, Query(...)],
     prediction_repo: Annotated[DBPredictionRepository, Depends(get_prediction_repository)],
+    model_repo: Annotated[DBModelRepository, Depends(get_model_repository)],
+    model_ids: Annotated[list[str] | None, Query(alias="projectIds")] = None,
+    start: Annotated[datetime | None, Query()] = None,
+    end: Annotated[datetime | None, Query()] = None,
 ) -> list[dict]:
-    model_ids = _normalize_project_ids(model_ids)
+    if not model_ids:
+        model_ids = list(model_repo.fetch_all().keys())
+    else:
+        model_ids = _normalize_project_ids(model_ids)
+    if not model_ids:
+        return []
+    if end is None:
+        end = datetime.now(timezone.utc)
+    if start is None:
+        start = end - timedelta(days=7)
     predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
 
     grouped: dict[tuple[str, str], list] = {}
@@ -367,12 +387,22 @@ def get_models_params(
 
 @app.get("/reports/predictions")
 def get_predictions(
-    model_ids: Annotated[list[str], Query(..., alias="projectIds")],
-    start: Annotated[datetime, Query(...)],
-    end: Annotated[datetime, Query(...)],
     prediction_repo: Annotated[DBPredictionRepository, Depends(get_prediction_repository)],
+    model_repo: Annotated[DBModelRepository, Depends(get_model_repository)],
+    model_ids: Annotated[list[str] | None, Query(alias="projectIds")] = None,
+    start: Annotated[datetime | None, Query()] = None,
+    end: Annotated[datetime | None, Query()] = None,
 ) -> list[dict]:
-    model_ids = _normalize_project_ids(model_ids)
+    if not model_ids:
+        model_ids = list(model_repo.fetch_all().keys())
+    else:
+        model_ids = _normalize_project_ids(model_ids)
+    if not model_ids:
+        return []
+    if end is None:
+        end = datetime.now(timezone.utc)
+    if start is None:
+        start = end - timedelta(days=7)
     predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
 
     rows: list[dict] = []

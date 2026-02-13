@@ -303,7 +303,7 @@ wheels = [
 ]
 
 [[package]]
-name = "crunch-node"
+name = "coordinator-node"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

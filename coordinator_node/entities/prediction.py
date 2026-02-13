@@ -70,6 +70,30 @@ class ScoreRecord:
     failed_reason: str | None = None
     scored_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
+    @property
+    def value(self) -> float | None:
+        """Shortcut to result['value'] (the primary score metric)."""
+        v = self.result.get("value")
+        return float(v) if v is not None else None
+
+
+@dataclass
+class ScoredPrediction:
+    """Prediction with its score attached (used by report endpoints)."""
+    id: str
+    input_id: str
+    model_id: str
+    prediction_config_id: str | None
+    scope_key: str
+    scope: dict[str, Any]
+    status: PredictionStatus
+    exec_time_ms: float
+    inference_output: dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
+    performed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    resolvable_at: datetime | None = None
+    score: ScoreRecord | None = None
+
 
 @dataclass
 class SnapshotRecord:
