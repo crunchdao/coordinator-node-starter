@@ -335,5 +335,67 @@ class TestCheckpointEndpoints(unittest.TestCase):
             update_checkpoint_status("CKP_001", {"status": "PAID"}, repo)
 
 
+class TestEmissionEndpoints(unittest.TestCase):
+    def _make_checkpoint(self) -> CheckpointRecord:
+        return CheckpointRecord(
+            id="CKP_001",
+            period_start=now - timedelta(days=7),
+            period_end=now,
+            status=CheckpointStatus.PENDING,
+            entries=[{
+                "crunch": "crunch_abc",
+                "cruncher_rewards": [
+                    {"cruncher_index": 0, "reward_pct": 600_000_000},
+                    {"cruncher_index": 1, "reward_pct": 400_000_000},
+                ],
+                "compute_provider_rewards": [
+                    {"provider": "compute_wallet", "reward_pct": FRAC_64_MULTIPLIER},
+                ],
+                "data_provider_rewards": [],
+            }],
+            meta={"ranking": [
+                {"model_id": "m1", "rank": 1},
+                {"model_id": "m2", "rank": 2},
+            ]},
+            created_at=now,
+        )
+
+    def test_get_emission_returns_protocol_format(self):
+        from coordinator.workers.report_worker import get_checkpoint_emission
+
+        repo = MemCheckpointRepository([self._make_checkpoint()])
+        result = get_checkpoint_emission("CKP_001", repo)
+
+        self.assertEqual(result["crunch"], "crunch_abc")
+        self.assertEqual(len(result["cruncher_rewards"]), 2)
+        total = sum(r["reward_pct"] for r in result["cruncher_rewards"])
+        self.assertEqual(total, FRAC_64_MULTIPLIER)
+
+    def test_get_emission_cli_format(self):
+        from coordinator.workers.report_worker import get_checkpoint_emission_cli_format
+
+        repo = MemCheckpointRepository([self._make_checkpoint()])
+        result = get_checkpoint_emission_cli_format("CKP_001", repo)
+
+        self.assertEqual(result["crunch"], "crunch_abc")
+        # crunchEmission keyed by model_id with percentages
+        self.assertAlmostEqual(result["crunchEmission"]["m1"], 60.0, places=3)
+        self.assertAlmostEqual(result["crunchEmission"]["m2"], 40.0, places=3)
+        # compute provider
+        self.assertAlmostEqual(result["computeProvider"]["compute_wallet"], 100.0, places=3)
+        # no data provider
+        self.assertEqual(len(result["dataProvider"]), 0)
+
+    def test_get_latest_emission(self):
+        from coordinator.workers.report_worker import get_latest_emission
+
+        repo = MemCheckpointRepository([self._make_checkpoint()])
+        result = get_latest_emission(repo)
+
+        self.assertEqual(result["checkpoint_id"], "CKP_001")
+        self.assertIn("emission", result)
+        self.assertEqual(result["emission"]["crunch"], "crunch_abc")
+
+
 if __name__ == "__main__":
     unittest.main()

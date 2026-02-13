@@ -569,6 +569,93 @@ def update_checkpoint_status(
     return _checkpoint_to_dict(checkpoint)
 
 
+# ── Emissions ──
+
+
+@app.get("/reports/checkpoints/{checkpoint_id}/emission")
+def get_checkpoint_emission(
+    checkpoint_id: str,
+    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+) -> dict[str, Any]:
+    """Return the EmissionCheckpoint in protocol format for on-chain submission."""
+    checkpoints = checkpoint_repo.find()
+    checkpoint = next((c for c in checkpoints if c.id == checkpoint_id), None)
+    if checkpoint is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
+    if not checkpoint.entries:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No emission data in checkpoint")
+    return checkpoint.entries[0]
+
+
+@app.get("/reports/checkpoints/{checkpoint_id}/emission/cli-format")
+def get_checkpoint_emission_cli_format(
+    checkpoint_id: str,
+    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+) -> dict[str, Any]:
+    """Return emission in coordinator-cli JSON file format.
+
+    Format: {crunch, crunchEmission: {wallet: pct}, computeProvider: {addr: pct}, dataProvider: {addr: pct}}
+    where pct values are percentages (0-100).
+    """
+    checkpoints = checkpoint_repo.find()
+    checkpoint = next((c for c in checkpoints if c.id == checkpoint_id), None)
+    if checkpoint is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
+    if not checkpoint.entries:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No emission data in checkpoint")
+
+    emission = checkpoint.entries[0]
+    frac64_multiplier = 1_000_000_000
+
+    # Build crunchEmission: map cruncher_index → percentage
+    # Note: in production, cruncher_index maps to wallet addresses via the on-chain AddressIndexMap.
+    # The ranking in checkpoint.meta provides model_id for each index.
+    ranking = checkpoint.meta.get("ranking", [])
+    crunch_emission: dict[str, float] = {}
+    for reward in emission.get("cruncher_rewards", []):
+        idx = reward["cruncher_index"]
+        pct = reward["reward_pct"] / frac64_multiplier * 100.0
+        # Use model_id from ranking as key (operator maps to wallet externally)
+        model_id = ranking[idx]["model_id"] if idx < len(ranking) else str(idx)
+        crunch_emission[model_id] = round(pct, 6)
+
+    compute_provider: dict[str, float] = {}
+    for reward in emission.get("compute_provider_rewards", []):
+        pct = reward["reward_pct"] / frac64_multiplier * 100.0
+        compute_provider[reward["provider"]] = round(pct, 6)
+
+    data_provider: dict[str, float] = {}
+    for reward in emission.get("data_provider_rewards", []):
+        pct = reward["reward_pct"] / frac64_multiplier * 100.0
+        data_provider[reward["provider"]] = round(pct, 6)
+
+    return {
+        "crunch": emission.get("crunch", ""),
+        "crunchEmission": crunch_emission,
+        "computeProvider": compute_provider,
+        "dataProvider": data_provider,
+    }
+
+
+@app.get("/reports/emissions/latest")
+def get_latest_emission(
+    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+) -> dict[str, Any]:
+    """Return the emission from the most recent checkpoint."""
+    checkpoint = checkpoint_repo.get_latest()
+    if checkpoint is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No checkpoints found")
+    if not checkpoint.entries:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No emission data in checkpoint")
+    return {
+        "checkpoint_id": checkpoint.id,
+        "status": checkpoint.status,
+        "period_start": checkpoint.period_start,
+        "period_end": checkpoint.period_end,
+        "emission": checkpoint.entries[0],
+    }
+
+
 def _checkpoint_to_dict(c) -> dict[str, Any]:
     return {
         "id": c.id,
