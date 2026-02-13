@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Coordinator engine (from PyPI)
-RUN pip install --no-cache-dir coordinator-node>=0.1.0
+RUN pip install --no-cache-dir coordinator-node>=0.1.1
 
 # Challenge package
 COPY challenge ./challenge
