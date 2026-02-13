@@ -8,41 +8,56 @@ x-common-env:
 
 x-common-build: &common-build
   build:
-    context: ${PROJECT_DIR:-./}
+    context: .
     dockerfile: Dockerfile
 
 services:
   postgres:
     image: postgres:15
-    environment:
-      <<: *common-db-env
-      READONLY_USER_PASSWORD: ${READONLY_USER_PASSWORD:-readonly}
-    container_name: condor-postgres
+    environment: *common-db-env
+    container_name: coordinator-starter-postgres
     restart: always
     ports:
       - "5432:5432"
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -d ${POSTGRES_DB} -U ${POSTGRES_USER}" ]
+      test: ["CMD-SHELL", "pg_isready -d ${POSTGRES_DB:-starter} -U ${POSTGRES_USER:-starter}"]
       interval: 2s
       timeout: 5s
       retries: 20
       start_period: 10s
     volumes:
-      - ./deployment/postgres/data:/var/lib/postgresql/data
-      - ./deployment/postgres/init-scripts:/docker-entrypoint-initdb.d
-    networks: [ condornet ]
+      - ./data/postgres_data:/var/lib/postgresql/data
+    networks: [coordinator-net]
 
   init-db:
     <<: *common-build
     environment:
       <<: *common-db-env
       SCHEDULED_PREDICTION_CONFIGS_PATH: ${SCHEDULED_PREDICTION_CONFIGS_PATH:-}
-    # todo improve and handle migration
-    command: [ "python", "-m", "node_template.infrastructure.db.init_db" ]
+    command: ["python", "-m", "coordinator.db.init_db"]
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [ condornet ]
+    networks: [coordinator-net]
+
+  feed-data-worker:
+    <<: *common-build
+    environment:
+      <<: *common-db-env
+      FEED_SOURCE: ${FEED_SOURCE:-pyth}
+      FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
+      FEED_KIND: ${FEED_KIND:-tick}
+      FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
+      FEED_POLL_SECONDS: ${FEED_POLL_SECONDS:-5}
+      FEED_BACKFILL_MINUTES: ${FEED_BACKFILL_MINUTES:-180}
+      FEED_RECORD_TTL_DAYS: ${FEED_RECORD_TTL_DAYS:-90}
+      FEED_RETENTION_CHECK_SECONDS: ${FEED_RETENTION_CHECK_SECONDS:-3600}
+    restart: always
+    command: ["python", "-m", "coordinator.workers.feed_data_worker"]
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [coordinator-net]
 
   predict-worker:
     <<: *common-build
@@ -54,90 +69,64 @@ services:
       CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-60}
       CRUNCH_ID: ${CRUNCH_ID:-starter-challenge}
       MODEL_BASE_CLASSNAME: ${MODEL_BASE_CLASSNAME:-tracker.TrackerBase}
-      INFERENCE_INPUT_BUILDER: ${INFERENCE_INPUT_BUILDER:-node_template.extensions.default_callables:default_build_inference_input}
-      INFERENCE_OUTPUT_VALIDATOR: ${INFERENCE_OUTPUT_VALIDATOR:-node_template.extensions.default_callables:default_validate_inference_output}
-      RAW_INPUT_PROVIDER: ${RAW_INPUT_PROVIDER:-node_template.extensions.default_callables:default_provide_raw_input}
-      PREDICTION_SCOPE_BUILDER: ${PREDICTION_SCOPE_BUILDER:-node_template.extensions.default_callables:default_build_prediction_scope}
-      PREDICT_CALL_BUILDER: ${PREDICT_CALL_BUILDER:-node_template.extensions.default_callables:default_build_predict_call}
-      PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
-      PYTH_TIMEOUT_SECONDS: ${PYTH_TIMEOUT_SECONDS:-5}
-      PYTH_ASSETS: ${PYTH_ASSETS:-BTC,ETH,SOL,BNB,XRP,ADA,DOGE,AVAX}
-      POSITIVE_CLASS_WEIGHT: ${POSITIVE_CLASS_WEIGHT:-10}
-      SB_DETECTOR_Z_THRESHOLD: ${SB_DETECTOR_Z_THRESHOLD:-3.0}
-      SB_DETECTOR_VARIANCE_RATIO_THRESHOLD: ${SB_DETECTOR_VARIANCE_RATIO_THRESHOLD:-2.5}
+      FEED_SOURCE: ${FEED_SOURCE:-pyth}
+      FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
+      FEED_KIND: ${FEED_KIND:-tick}
+      FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
+      SCORING_FUNCTION: ${SCORING_FUNCTION:-coordinator.extensions.default_callables:default_score_prediction}
     restart: always
-    command: [ "python", "-m", "node_template.workers.predict_worker" ]
+    command: ["python", "-m", "coordinator.workers.predict_worker"]
     depends_on:
       init-db:
         condition: service_completed_successfully
-      model-orchestrator:
+      feed-data-worker:
         condition: service_started
-    networks: [ condornet ]
+    networks: [coordinator-net]
 
   score-worker:
     <<: *common-build
     environment:
       <<: *common-db-env
       CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-60}
-      SCORING_FUNCTION: ${SCORING_FUNCTION:-node_template.extensions.default_callables:default_score_prediction}
-      MODEL_SCORE_AGGREGATOR: ${MODEL_SCORE_AGGREGATOR:-node_template.extensions.default_callables:default_aggregate_model_scores}
-      LEADERBOARD_RANKER: ${LEADERBOARD_RANKER:-node_template.extensions.default_callables:default_rank_leaderboard}
-      GROUND_TRUTH_RESOLVER: ${GROUND_TRUTH_RESOLVER:-node_template.extensions.default_callables:default_resolve_ground_truth}
-      PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
-      PYTH_TIMEOUT_SECONDS: ${PYTH_TIMEOUT_SECONDS:-5}
-      PYTH_ASSETS: ${PYTH_ASSETS:-BTC,ETH,SOL,BNB,XRP,ADA,DOGE,AVAX}
-      POSITIVE_CLASS_WEIGHT: ${POSITIVE_CLASS_WEIGHT:-10}
-      SB_DETECTOR_Z_THRESHOLD: ${SB_DETECTOR_Z_THRESHOLD:-3.0}
-      SB_DETECTOR_VARIANCE_RATIO_THRESHOLD: ${SB_DETECTOR_VARIANCE_RATIO_THRESHOLD:-2.5}
+      FEED_SOURCE: ${FEED_SOURCE:-pyth}
+      FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
+      FEED_KIND: ${FEED_KIND:-tick}
+      FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
+      SCORING_FUNCTION: ${SCORING_FUNCTION:-coordinator.extensions.default_callables:default_score_prediction}
     restart: always
-    command: [ "python", "-m", "node_template.workers.score_worker" ]
+    command: ["python", "-m", "coordinator.workers.score_worker"]
     depends_on:
       init-db:
         condition: service_completed_successfully
-    networks: [ condornet ]
+      feed-data-worker:
+        condition: service_started
+    networks: [coordinator-net]
 
-  report-worker:
+  checkpoint-worker:
     <<: *common-build
     environment:
       <<: *common-db-env
-      REPORT_SCHEMA_PROVIDER: ${REPORT_SCHEMA_PROVIDER:-node_template.extensions.default_callables:default_report_schema}
+      CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-604800}
     restart: always
-    command: [ "python", "-m", "node_template.workers.report_worker" ]
+    command: ["python", "-m", "coordinator.workers.checkpoint_worker"]
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [coordinator-net]
+
+  report-worker:
+    <<: *common-build
+    environment: *common-db-env
+    restart: always
+    command: ["python", "-m", "coordinator.workers.report_worker"]
     ports:
       - "8000:8000"
     depends_on:
       init-db:
         condition: service_completed_successfully
-    networks: [ condornet ]
-
-  # required only for production environment
-  webto3:
-    container_name: webto3
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    networks: [ condornet ]
-    profiles: [ production ]
-
-  model-orchestrator:
-    container_name: model-orchestrator
-    restart: unless-stopped
-    init: true
-    ports:
-      - "9091:9091"
-    networks: [ condornet ]
-
-  documentation:
-    image: squidfunk/mkdocs-material
-    container_name: mkdocs-local
-    command: [ "serve", "-a", "0.0.0.0:8000" ]
-    ports:
-      - "8080:8000"
-    volumes:
-      - ${PROJECT_DIR:-./}:/docs/
-
+    networks: [coordinator-net]
 
 networks:
-  condornet:
+  coordinator-net:
     driver: bridge
-    name: condornet
+    name: coordinator-starter-net
