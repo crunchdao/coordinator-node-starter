@@ -7,7 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Coordinator engine (from PyPI)
-RUN pip install --no-cache-dir coordinator-node>=0.1.1
+# Bump this to force Docker to re-pull the latest package version
+ARG COORDINATOR_NODE_VERSION=0.1.1
+RUN pip install --no-cache-dir "coordinator-node>=${COORDINATOR_NODE_VERSION}"
 
 # Challenge package
 COPY challenge ./challenge
