@@ -264,6 +264,26 @@ class TestReportSchema(unittest.TestCase):
         self.assertTrue(len(schema.get("leaderboard_columns", [])) > 0)
 
 
+# ── /info ────────────────────────────────────────────────────────────────
+
+
+class TestGetNodeInfo(unittest.TestCase):
+    def test_returns_crunch_identity(self):
+        from fastapi.testclient import TestClient
+        from coordinator_node.workers.report_worker import app
+
+        with TestClient(app) as client:
+            response = client.get("/info")
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertIn("crunch_id", data)
+            self.assertIn("crunch_address", data)
+            self.assertIn("network", data)
+            self.assertIsInstance(data["crunch_id"], str)
+            self.assertIsInstance(data["crunch_address"], str)
+            self.assertIsInstance(data["network"], str)
+
+
 # ── /reports/models ──────────────────────────────────────────────────────
 
 

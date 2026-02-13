@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "coordinator-node"
-version = "0.1.5"
+version = "0.1.6"
 description = "Runtime engine for Crunch coordinator nodes"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -31,5 +31,6 @@ package = true
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "pytest>=9.0",
 ]

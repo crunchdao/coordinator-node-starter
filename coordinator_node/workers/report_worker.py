@@ -9,6 +9,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
+from coordinator_node.config.runtime import RuntimeSettings
 from coordinator_node.contracts import CrunchContract
 from coordinator_node.entities.prediction import CheckpointStatus
 from coordinator_node.schemas import ReportSchemaEnvelope
@@ -33,6 +34,17 @@ app.add_middleware(
 )
 
 CONTRACT = CrunchContract()
+SETTINGS = RuntimeSettings.from_env()
+
+
+@app.get("/info")
+def get_node_info() -> dict[str, Any]:
+    """Return node identity: crunch address and network."""
+    return {
+        "crunch_id": SETTINGS.crunch_id,
+        "crunch_address": SETTINGS.crunch_pubkey,
+        "network": SETTINGS.network,
+    }
 
 
 def auto_report_schema(contract: CrunchContract) -> dict[str, Any]:

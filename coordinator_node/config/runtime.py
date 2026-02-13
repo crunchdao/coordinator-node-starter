@@ -11,6 +11,8 @@ class RuntimeSettings:
     model_runner_node_port: int
     model_runner_timeout_seconds: float
     crunch_id: str
+    crunch_pubkey: str
+    network: str
     base_classname: str
     feed_provider: str
     feed_record_ttl_days: int
@@ -23,6 +25,8 @@ class RuntimeSettings:
             model_runner_node_port=int(os.getenv("MODEL_RUNNER_NODE_PORT", "9091")),
             model_runner_timeout_seconds=float(os.getenv("MODEL_RUNNER_TIMEOUT_SECONDS", "60")),
             crunch_id=os.getenv("CRUNCH_ID", "starter-challenge"),
+            crunch_pubkey=os.getenv("CRUNCH_PUBKEY", ""),
+            network=os.getenv("NETWORK", "devnet"),
             base_classname=os.getenv("MODEL_BASE_CLASSNAME", "tracker.TrackerBase"),
             feed_provider=os.getenv("FEED_PROVIDER", "pyth"),
             feed_record_ttl_days=int(os.getenv("FEED_RECORD_TTL_DAYS", "90")),
