@@ -13,4 +13,4 @@ RUN uv sync --no-install-project
 ENV VIRTUAL_ENV=/app/.venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-COPY coordinator ./coordinator
+COPY coordinator_node ./coordinator_node

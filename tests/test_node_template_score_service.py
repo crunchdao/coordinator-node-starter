@@ -4,11 +4,11 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from coordinator.entities.feed_record import FeedRecord
-from coordinator.entities.model import Model
-from coordinator.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
-from coordinator.contracts import Aggregation, AggregationWindow, CrunchContract
-from coordinator.services.score import ScoreService
+from coordinator_node.entities.feed_record import FeedRecord
+from coordinator_node.entities.model import Model
+from coordinator_node.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
+from coordinator_node.contracts import Aggregation, AggregationWindow, CrunchContract
+from coordinator_node.services.score import ScoreService
 
 
 class MemInputRepository:
@@ -181,7 +181,7 @@ class TestScoreService(unittest.TestCase):
             feed_records=[],
         )
 
-        with self.assertLogs("coordinator.services.score", level="INFO"):
+        with self.assertLogs("coordinator_node.services.score", level="INFO"):
             changed = service.run_once()
 
         self.assertFalse(changed)
@@ -190,7 +190,7 @@ class TestScoreService(unittest.TestCase):
     def test_no_predictions_means_no_scoring(self):
         service = _build_service()
 
-        with self.assertLogs("coordinator.services.score", level="INFO"):
+        with self.assertLogs("coordinator_node.services.score", level="INFO"):
             changed = service.run_once()
 
         self.assertFalse(changed)
@@ -205,7 +205,7 @@ class TestScoreService(unittest.TestCase):
         service.run_once()
         self.assertEqual(len(service.score_repository.scores), 1)
 
-        with self.assertLogs("coordinator.services.score", level="INFO"):
+        with self.assertLogs("coordinator_node.services.score", level="INFO"):
             changed = service.run_once()
         self.assertFalse(changed)
         self.assertEqual(len(service.score_repository.scores), 1)
@@ -237,7 +237,7 @@ class TestScoreServiceRunLoop(unittest.IsolatedAsyncioTestCase):
 
         service.run_once = boom
 
-        with self.assertLogs("coordinator.services.score", level="ERROR"):
+        with self.assertLogs("coordinator_node.services.score", level="ERROR"):
             await service.run()
 
 

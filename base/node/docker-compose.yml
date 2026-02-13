@@ -26,7 +26,7 @@ services:
       context: ..
       dockerfile: node/Dockerfile
     container_name: starter-challenge-init-db
-    command: ["python", "-m", "coordinator.db.init_db"]
+    command: ["python", "-m", "coordinator_node.db.init_db"]
     environment:
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
@@ -47,7 +47,7 @@ services:
       dockerfile: node/Dockerfile
     container_name: starter-challenge-feed-data-worker
     restart: always
-    command: ["python", "-m", "coordinator.workers.feed_data_worker"]
+    command: ["python", "-m", "coordinator_node.workers.feed_data_worker"]
     environment:
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
@@ -76,7 +76,7 @@ services:
       dockerfile: node/Dockerfile
     container_name: starter-challenge-predict-worker
     restart: always
-    command: ["python", "-m", "coordinator.workers.predict_worker"]
+    command: ["python", "-m", "coordinator_node.workers.predict_worker"]
     environment:
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
@@ -111,7 +111,7 @@ services:
       dockerfile: node/Dockerfile
     container_name: starter-challenge-score-worker
     restart: always
-    command: ["python", "-m", "coordinator.workers.score_worker"]
+    command: ["python", "-m", "coordinator_node.workers.score_worker"]
     environment:
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
@@ -140,7 +140,7 @@ services:
       dockerfile: node/Dockerfile
     container_name: starter-challenge-checkpoint-worker
     restart: always
-    command: ["python", "-m", "coordinator.workers.checkpoint_worker"]
+    command: ["python", "-m", "coordinator_node.workers.checkpoint_worker"]
     environment:
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
@@ -162,7 +162,7 @@ services:
       dockerfile: node/Dockerfile
     container_name: starter-challenge-report-worker
     restart: always
-    command: ["python", "-m", "coordinator.workers.report_worker"]
+    command: ["python", "-m", "coordinator_node.workers.report_worker"]
     ports:
       - "8000:8000"
     environment:

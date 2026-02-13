@@ -1,7 +1,7 @@
 import unittest
 
-from coordinator.entities.model import Model
-from coordinator.entities.prediction import (
+from coordinator_node.entities.model import Model
+from coordinator_node.entities.prediction import (
     InputRecord, InputStatus, PredictionRecord, PredictionStatus, ScoreRecord,
 )
 

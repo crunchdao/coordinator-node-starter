@@ -11,15 +11,15 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from coordinator.contracts import CrunchContract, FRAC_64_MULTIPLIER
-from coordinator.entities.model import Model
-from coordinator.entities.prediction import (
+from coordinator_node.contracts import CrunchContract, FRAC_64_MULTIPLIER
+from coordinator_node.entities.model import Model
+from coordinator_node.entities.prediction import (
     CheckpointRecord, CheckpointStatus, InputRecord, InputStatus,
     PredictionRecord, PredictionStatus, ScoreRecord,
 )
-from coordinator.services.realtime_predict import RealtimePredictService
-from coordinator.services.score import ScoreService
-from coordinator.workers.checkpoint_worker import CheckpointService
+from coordinator_node.services.realtime_predict import RealtimePredictService
+from coordinator_node.services.score import ScoreService
+from coordinator_node.workers.checkpoint_worker import CheckpointService
 
 
 # ── shared in-memory repositories ──
@@ -346,7 +346,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
 
     async def test_score_skips_when_no_pending(self) -> None:
         """Score service does nothing when there's nothing to score."""
-        with self.assertLogs("coordinator.services.score", level="INFO"):
+        with self.assertLogs("coordinator_node.services.score", level="INFO"):
             scored = self.score_service.run_once()
         self.assertFalse(scored)
         self.assertEqual(len(self.score_repo.scores), 0)
@@ -360,7 +360,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.score_repo.scores), 2)
 
         # second score run — nothing new to score
-        with self.assertLogs("coordinator.services.score", level="INFO"):
+        with self.assertLogs("coordinator_node.services.score", level="INFO"):
             scored = self.score_service.run_once()
         self.assertFalse(scored)
         self.assertEqual(len(self.score_repo.scores), 2)  # unchanged

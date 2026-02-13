@@ -1,27 +1,9 @@
-# Coordinator Node Starter
+# crunch-node
 
-Runtime for Crunch coordinator nodes. Ships as two packages:
-
-- `coordinator/` — runtime services, DB, feeds, workers, contracts
-- `coordinator_cli/` — scaffold CLI and templates
-
-## Quick Start
+Runtime engine for Crunch coordinator nodes. Published as `crunch-node` on PyPI, imported as `coordinator_node`.
 
 ```bash
-pip install -e .
-coordinator init my-challenge
-```
-
-This scaffolds a workspace with:
-- `crunch-node-my-challenge/` — node deployment (docker-compose, config, scripts)
-- `crunch-my-challenge/` — challenge package (tracker, scoring, examples)
-
-Then deploy locally:
-
-```bash
-cd my-challenge/crunch-node-my-challenge
-make deploy
-make verify-e2e
+pip install crunch-node
 ```
 
 ## Architecture
@@ -47,6 +29,8 @@ Feed → Input → Prediction → Score → Snapshot → Checkpoint → On-chain
 All type shapes and behavior are defined in a single `CrunchContract`:
 
 ```python
+from coordinator_node.contracts import CrunchContract
+
 class CrunchContract(BaseModel):
     raw_input_type: type[BaseModel] = RawInput
     output_type: type[BaseModel] = InferenceOutput
@@ -60,11 +44,7 @@ class CrunchContract(BaseModel):
     build_emission: Callable = default_build_emission
 ```
 
-Override any field in the scaffold's `runtime_definitions/contracts.py`.
-
 ### Feed Dimensions
-
-Four generic dimensions for any data source:
 
 | Dimension | Example | Env var |
 |---|---|---|
@@ -83,7 +63,7 @@ Checkpoint:  PENDING → SUBMITTED → CLAIMABLE → PAID
 
 ### Emission Checkpoints
 
-Checkpoints produce `EmissionCheckpoint` entries matching the on-chain protocol:
+Checkpoints produce `EmissionCheckpoint` matching the on-chain protocol:
 
 ```python
 {
@@ -94,9 +74,7 @@ Checkpoints produce `EmissionCheckpoint` entries matching the on-chain protocol:
 }
 ```
 
-`reward_pct` uses frac64 (1,000,000,000 = 100%). All cruncher rewards must sum to exactly this value.
-
-Default tier distribution: 1st=35%, 2nd-5th=10% each, 6th-10th=5% each.
+`reward_pct` uses frac64 (1,000,000,000 = 100%).
 
 ### Report API
 
@@ -109,22 +87,17 @@ Default tier distribution: 1st=35%, 2nd-5th=10% each, 6th-10th=5% each.
 | `GET /reports/snapshots` | Per-model period summaries |
 | `GET /reports/checkpoints` | Checkpoint history |
 | `GET /reports/checkpoints/{id}/emission` | Raw emission (frac64) |
-| `GET /reports/checkpoints/{id}/emission/cli-format` | Coordinator-CLI JSON format |
+| `GET /reports/checkpoints/{id}/emission/cli-format` | CLI JSON format |
 | `GET /reports/emissions/latest` | Latest emission |
-| `POST /reports/checkpoints/{id}/confirm` | Record tx_hash after signing |
-| `PATCH /reports/checkpoints/{id}/status` | Advance status lifecycle |
+| `POST /reports/checkpoints/{id}/confirm` | Record tx_hash |
+| `PATCH /reports/checkpoints/{id}/status` | Advance status |
+
+## Scaffolding
+
+Use `crunch-cli init-workspace <name>` to create a new competition workspace from the `base/` template.
 
 ## Development
 
 ```bash
-uv run python -m pytest tests/ -x -q
-```
-
-## Demo
-
-```bash
-coordinator demo
-cd btc-up/crunch-node-btc-up
-make deploy
-make verify-e2e
+uv run pytest tests/ -q
 ```

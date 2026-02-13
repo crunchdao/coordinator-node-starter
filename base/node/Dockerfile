@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir \
     uvicorn>=0.38.0
 
 # Runtime coordinator package (vendored or installed)
-COPY node/runtime/coordinator ./coordinator
+COPY node/runtime/coordinator_node ./coordinator_node
 
 # Challenge package
 COPY challenge ./challenge

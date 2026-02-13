@@ -34,7 +34,7 @@ services:
     environment:
       <<: *common-db-env
       SCHEDULED_PREDICTION_CONFIGS_PATH: ${SCHEDULED_PREDICTION_CONFIGS_PATH:-}
-    command: ["python", "-m", "coordinator.db.init_db"]
+    command: ["python", "-m", "coordinator_node.db.init_db"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,7 +53,7 @@ services:
       FEED_RECORD_TTL_DAYS: ${FEED_RECORD_TTL_DAYS:-90}
       FEED_RETENTION_CHECK_SECONDS: ${FEED_RETENTION_CHECK_SECONDS:-3600}
     restart: always
-    command: ["python", "-m", "coordinator.workers.feed_data_worker"]
+    command: ["python", "-m", "coordinator_node.workers.feed_data_worker"]
     depends_on:
       init-db:
         condition: service_completed_successfully
@@ -73,9 +73,9 @@ services:
       FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
       FEED_KIND: ${FEED_KIND:-tick}
       FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
-      SCORING_FUNCTION: ${SCORING_FUNCTION:-coordinator.extensions.default_callables:default_score_prediction}
+      SCORING_FUNCTION: ${SCORING_FUNCTION:-coordinator_node.extensions.default_callables:default_score_prediction}
     restart: always
-    command: ["python", "-m", "coordinator.workers.predict_worker"]
+    command: ["python", "-m", "coordinator_node.workers.predict_worker"]
     depends_on:
       init-db:
         condition: service_completed_successfully
@@ -92,9 +92,9 @@ services:
       FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
       FEED_KIND: ${FEED_KIND:-tick}
       FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
-      SCORING_FUNCTION: ${SCORING_FUNCTION:-coordinator.extensions.default_callables:default_score_prediction}
+      SCORING_FUNCTION: ${SCORING_FUNCTION:-coordinator_node.extensions.default_callables:default_score_prediction}
     restart: always
-    command: ["python", "-m", "coordinator.workers.score_worker"]
+    command: ["python", "-m", "coordinator_node.workers.score_worker"]
     depends_on:
       init-db:
         condition: service_completed_successfully
@@ -108,7 +108,7 @@ services:
       <<: *common-db-env
       CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-604800}
     restart: always
-    command: ["python", "-m", "coordinator.workers.checkpoint_worker"]
+    command: ["python", "-m", "coordinator_node.workers.checkpoint_worker"]
     depends_on:
       init-db:
         condition: service_completed_successfully
@@ -118,7 +118,7 @@ services:
     <<: *common-build
     environment: *common-db-env
     restart: always
-    command: ["python", "-m", "coordinator.workers.report_worker"]
+    command: ["python", "-m", "coordinator_node.workers.report_worker"]
     ports:
       - "8000:8000"
     depends_on:

@@ -5,13 +5,13 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from coordinator.contracts import (
+from coordinator_node.contracts import (
     CrunchContract, FRAC_64_MULTIPLIER, default_build_emission, pct_to_frac64,
 )
-from coordinator.entities.prediction import (
+from coordinator_node.entities.prediction import (
     CheckpointRecord, CheckpointStatus, SnapshotRecord,
 )
-from coordinator.workers.checkpoint_worker import CheckpointService
+from coordinator_node.workers.checkpoint_worker import CheckpointService
 
 
 now = datetime.now(timezone.utc)
@@ -255,7 +255,7 @@ class TestCheckpointService(unittest.TestCase):
 
 class TestSnapshotEndpoints(unittest.TestCase):
     def test_get_snapshots(self):
-        from coordinator.workers.report_worker import get_snapshots
+        from coordinator_node.workers.report_worker import get_snapshots
 
         snapshots = [_make_snapshot("m1", 0.8), _make_snapshot("m2", 0.6)]
         repo = MemSnapshotRepository(snapshots)
@@ -281,7 +281,7 @@ class TestCheckpointEndpoints(unittest.TestCase):
         )
 
     def test_get_checkpoints(self):
-        from coordinator.workers.report_worker import get_checkpoints
+        from coordinator_node.workers.report_worker import get_checkpoints
 
         repo = MemCheckpointRepository([self._make_checkpoint()])
         result = get_checkpoints(repo)
@@ -289,14 +289,14 @@ class TestCheckpointEndpoints(unittest.TestCase):
         self.assertEqual(result[0]["status"], CheckpointStatus.PENDING)
 
     def test_get_latest_checkpoint(self):
-        from coordinator.workers.report_worker import get_latest_checkpoint
+        from coordinator_node.workers.report_worker import get_latest_checkpoint
 
         repo = MemCheckpointRepository([self._make_checkpoint()])
         result = get_latest_checkpoint(repo)
         self.assertEqual(result["id"], "CKP_001")
 
     def test_get_checkpoint_payload(self):
-        from coordinator.workers.report_worker import get_checkpoint_payload
+        from coordinator_node.workers.report_worker import get_checkpoint_payload
 
         repo = MemCheckpointRepository([self._make_checkpoint()])
         result = get_checkpoint_payload("CKP_001", repo)
@@ -304,7 +304,7 @@ class TestCheckpointEndpoints(unittest.TestCase):
         self.assertEqual(result["entries"][0]["crunch"], "crunch_abc")
 
     def test_confirm_checkpoint_sets_submitted(self):
-        from coordinator.workers.report_worker import confirm_checkpoint
+        from coordinator_node.workers.report_worker import confirm_checkpoint
 
         repo = MemCheckpointRepository([self._make_checkpoint()])
         result = confirm_checkpoint("CKP_001", {"tx_hash": "0xabc"}, repo)
@@ -312,7 +312,7 @@ class TestCheckpointEndpoints(unittest.TestCase):
         self.assertEqual(result["tx_hash"], "0xabc")
 
     def test_confirm_rejects_non_pending(self):
-        from coordinator.workers.report_worker import confirm_checkpoint
+        from coordinator_node.workers.report_worker import confirm_checkpoint
         from fastapi import HTTPException
 
         repo = MemCheckpointRepository([self._make_checkpoint(status=CheckpointStatus.SUBMITTED)])
@@ -320,14 +320,14 @@ class TestCheckpointEndpoints(unittest.TestCase):
             confirm_checkpoint("CKP_001", {"tx_hash": "0xabc"}, repo)
 
     def test_status_transition_submitted_to_claimable(self):
-        from coordinator.workers.report_worker import update_checkpoint_status
+        from coordinator_node.workers.report_worker import update_checkpoint_status
 
         repo = MemCheckpointRepository([self._make_checkpoint(status=CheckpointStatus.SUBMITTED)])
         result = update_checkpoint_status("CKP_001", {"status": "CLAIMABLE"}, repo)
         self.assertEqual(result["status"], CheckpointStatus.CLAIMABLE)
 
     def test_invalid_status_transition_rejected(self):
-        from coordinator.workers.report_worker import update_checkpoint_status
+        from coordinator_node.workers.report_worker import update_checkpoint_status
         from fastapi import HTTPException
 
         repo = MemCheckpointRepository([self._make_checkpoint(status=CheckpointStatus.PENDING)])
@@ -361,7 +361,7 @@ class TestEmissionEndpoints(unittest.TestCase):
         )
 
     def test_get_emission_returns_protocol_format(self):
-        from coordinator.workers.report_worker import get_checkpoint_emission
+        from coordinator_node.workers.report_worker import get_checkpoint_emission
 
         repo = MemCheckpointRepository([self._make_checkpoint()])
         result = get_checkpoint_emission("CKP_001", repo)
@@ -372,7 +372,7 @@ class TestEmissionEndpoints(unittest.TestCase):
         self.assertEqual(total, FRAC_64_MULTIPLIER)
 
     def test_get_emission_cli_format(self):
-        from coordinator.workers.report_worker import get_checkpoint_emission_cli_format
+        from coordinator_node.workers.report_worker import get_checkpoint_emission_cli_format
 
         repo = MemCheckpointRepository([self._make_checkpoint()])
         result = get_checkpoint_emission_cli_format("CKP_001", repo)
@@ -387,7 +387,7 @@ class TestEmissionEndpoints(unittest.TestCase):
         self.assertEqual(len(result["dataProvider"]), 0)
 
     def test_get_latest_emission(self):
-        from coordinator.workers.report_worker import get_latest_emission
+        from coordinator_node.workers.report_worker import get_latest_emission
 
         repo = MemCheckpointRepository([self._make_checkpoint()])
         result = get_latest_emission(repo)

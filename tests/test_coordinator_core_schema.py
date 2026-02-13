@@ -1,6 +1,6 @@
 import unittest
 
-from coordinator.db.tables import (
+from coordinator_node.db.tables import (
     CheckpointRow,
     FeedIngestionStateRow,
     FeedRecordRow,

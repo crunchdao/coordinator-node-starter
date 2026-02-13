@@ -3,31 +3,33 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "coordinator-node-starter"
+name = "crunch-node"
 version = "0.1.0"
-description = "Starter template runtime for Crunch coordinator nodes"
+description = "Runtime engine for Crunch coordinator nodes"
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12"
+license = "MIT"
 dependencies = [
-    "fastapi>=0.121.3",
+    "fastapi>=0.100.0",
     "model-runner-client>=0.10.0",
-    "psycopg2-binary>=2.9.11",
-    "python-binance>=1.0.19",
-    "requests>=2.32.5",
-    "sqlmodel>=0.0.27",
-    "uvicorn>=0.38.0",
+    "psycopg2-binary>=2.9",
+    "python-binance>=1.0",
+    "requests>=2.28",
+    "sqlmodel>=0.0.14",
+    "uvicorn>=0.20",
 ]
 
-[project.scripts]
-coordinator = "coordinator_cli.commands.main:entrypoint"
+[project.urls]
+Homepage = "https://github.com/crunchdao/coordinator-node-starter"
+Repository = "https://github.com/crunchdao/coordinator-node-starter"
 
 [tool.hatch.build.targets.wheel]
-packages = ["coordinator", "coordinator_cli"]
+packages = ["coordinator_node"]
 
 [tool.uv]
 package = true
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.2",
+    "pytest>=9.0",
 ]

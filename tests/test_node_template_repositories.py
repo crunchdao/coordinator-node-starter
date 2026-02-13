@@ -1,6 +1,6 @@
 import unittest
 
-from coordinator.db.repositories import (
+from coordinator_node.db.repositories import (
     DBInputRepository,
     DBLeaderboardRepository,
     DBModelRepository,

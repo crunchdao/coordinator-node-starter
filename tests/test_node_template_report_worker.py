@@ -3,10 +3,10 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from coordinator.entities.feed_record import FeedRecord
-from coordinator.entities.model import Model
-from coordinator.contracts import CrunchContract
-from coordinator.workers.report_worker import (
+from coordinator_node.entities.feed_record import FeedRecord
+from coordinator_node.entities.model import Model
+from coordinator_node.contracts import CrunchContract
+from coordinator_node.workers.report_worker import (
     auto_report_schema,
     get_feeds,
     get_feeds_tail,

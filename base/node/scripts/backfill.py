@@ -21,10 +21,10 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from coordinator.db import create_session
-from coordinator.db.feed_records import DBFeedRecordRepository
-from coordinator.services.backfill import BackfillService, BackfillRequest
-from coordinator.feeds import create_default_registry
+from coordinator_node.db import create_session
+from coordinator_node.db.feed_records import DBFeedRecordRepository
+from coordinator_node.services.backfill import BackfillService, BackfillRequest
+from coordinator_node.feeds import create_default_registry
 
 
 def parse_datetime(value):
