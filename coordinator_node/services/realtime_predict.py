@@ -86,7 +86,19 @@ class RealtimePredictService(PredictService):
             # set resolvable_at on input (earliest horizon wins)
             if inp.resolvable_at is None or resolvable_at < inp.resolvable_at:
                 inp.resolvable_at = resolvable_at
-                inp.scope = {k: v for k, v in scope.items() if k != "scope_key"}
+                # Include feed dimensions so score worker can query matching records
+                feed_dims = {}
+                if self.feed_reader is not None:
+                    feed_dims = {
+                        "source": self.feed_reader.source,
+                        "subject": self.feed_reader.subject,
+                        "kind": self.feed_reader.kind,
+                        "granularity": self.feed_reader.granularity,
+                    }
+                inp.scope = {
+                    **feed_dims,
+                    **{k: v for k, v in scope.items() if k != "scope_key"},
+                }
                 if self.input_repository is not None:
                     self.input_repository.save(inp)
 

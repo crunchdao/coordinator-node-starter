@@ -217,6 +217,10 @@ class FakeFeedRecord:
 class FakeFeedReader:
     def __init__(self, data: dict[str, Any]) -> None:
         self._data = data
+        self.source = "pyth"
+        self.subject = "BTC"
+        self.kind = "tick"
+        self.granularity = "1s"
 
     def get_input(self, now: datetime) -> dict[str, Any]:
         return dict(self._data)

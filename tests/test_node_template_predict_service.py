@@ -39,6 +39,10 @@ class FakeRunner:
 class FakeFeedReader:
     def __init__(self, payload=None):
         self._payload = payload or {}
+        self.source = "pyth"
+        self.subject = "BTC"
+        self.kind = "tick"
+        self.granularity = "1s"
 
     def get_input(self, now):
         return self._payload

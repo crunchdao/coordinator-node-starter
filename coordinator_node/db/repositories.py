@@ -119,6 +119,8 @@ class DBInputRepository:
         else:
             existing.status = row.status
             existing.actuals_jsonb = row.actuals_jsonb
+            existing.scope_jsonb = row.scope_jsonb
+            existing.resolvable_at = row.resolvable_at
             existing.meta_jsonb = row.meta_jsonb
         self._session.commit()
 
