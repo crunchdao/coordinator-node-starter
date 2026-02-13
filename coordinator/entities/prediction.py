@@ -15,7 +15,7 @@ class InputRecord:
     scope: dict[str, Any] = field(default_factory=dict)          # contract.scope_type (PredictionScope)
     received_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     resolvable_at: datetime | None = None
-    meta: dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)           # contract.meta_type (Meta)
 
 
 @dataclass
@@ -30,7 +30,7 @@ class PredictionRecord:
     status: str  # PENDING, SCORED, FAILED, ABSENT
     exec_time_ms: float
     inference_output: dict[str, Any] = field(default_factory=dict)  # contract.output_type (InferenceOutput)
-    meta: dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)           # contract.meta_type (Meta)
     performed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     resolvable_at: datetime | None = None
 

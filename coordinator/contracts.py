@@ -3,6 +3,12 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class Meta(BaseModel):
+    """Untyped by default. Override to add structured metadata with defaults."""
+
+    model_config = ConfigDict(extra="allow")
+
+
 class RawInput(BaseModel):
     """What the feed produces. Shape is determined by feed config."""
 
@@ -72,6 +78,7 @@ class CrunchContract(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    meta_type: type[BaseModel] = Meta
     raw_input_type: type[BaseModel] = RawInput
     ground_truth_type: type[BaseModel] = GroundTruth
     input_type: type[BaseModel] = InferenceInput
