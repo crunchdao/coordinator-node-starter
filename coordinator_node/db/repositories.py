@@ -168,6 +168,7 @@ class DBPredictionRepository:
             existing.meta_jsonb = row.meta_jsonb
             existing.scope_key = row.scope_key
             existing.scope_jsonb = row.scope_jsonb
+            existing.resolvable_at = row.resolvable_at
         self._session.commit()
 
     def save_all(self, predictions: Iterable[PredictionRecord]) -> None:

@@ -62,7 +62,7 @@ services:
       FEED_BACKFILL_MINUTES: ${FEED_BACKFILL_MINUTES:-180}
       FEED_RECORD_TTL_DAYS: ${FEED_RECORD_TTL_DAYS:-90}
       FEED_RETENTION_CHECK_SECONDS: ${FEED_RETENTION_CHECK_SECONDS:-3600}
-      PYTHONPATH: /app/challenge
+      PYTHONPATH: /app:/app/challenge
     volumes:
       - ../challenge:/app/challenge
     depends_on:
@@ -93,7 +93,7 @@ services:
       FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
       FEED_KIND: ${FEED_KIND:-tick}
       FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
-      PYTHONPATH: /app/challenge
+      PYTHONPATH: /app:/app/challenge
     volumes:
       - ../challenge:/app/challenge
     depends_on:
@@ -124,7 +124,7 @@ services:
       FEED_KIND: ${FEED_KIND:-tick}
       FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
       SCORING_FUNCTION: ${SCORING_FUNCTION}
-      PYTHONPATH: /app/challenge
+      PYTHONPATH: /app:/app/challenge
     volumes:
       - ../challenge:/app/challenge
     depends_on:
@@ -148,7 +148,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
       POSTGRES_DB: ${POSTGRES_DB:-starter}
       CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-604800}
-      PYTHONPATH: /app/challenge
+      PYTHONPATH: /app:/app/challenge
     volumes:
       - ../challenge:/app/challenge
     depends_on:
@@ -171,7 +171,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-starter}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
       POSTGRES_DB: ${POSTGRES_DB:-starter}
-      PYTHONPATH: /app/challenge
+      PYTHONPATH: /app:/app/challenge
     volumes:
       - ../challenge:/app/challenge
     depends_on:
