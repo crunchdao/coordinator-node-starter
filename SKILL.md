@@ -165,6 +165,13 @@ Current operational defaults in this template:
 - Virtual models: `__ensemble_{name}__` stored as regular PredictionRecords, scored/tracked normally
 - Leaderboard: `include_ensembles=false` param on `/reports/leaderboard`, `/reports/models/global`, `/reports/models/params`
 
+### Custom API endpoints
+- `base/node/api/` — drop `.py` files with a `router = APIRouter()` to add endpoints
+- Auto-discovered at report-worker startup, no config needed
+- Use `API_ROUTES_DIR` env var for custom scan path, `API_ROUTES` for explicit imports
+- Full DB access via same `Depends(get_db_session)` pattern as built-in endpoints
+- Example: `base/node/api/example_endpoints.py.disabled` (rename to activate)
+
 ### Crunch-specific extension points
 Set callable paths in env/config:
 - `INFERENCE_INPUT_BUILDER`

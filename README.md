@@ -105,6 +105,51 @@ Key variables:
 
 ---
 
+## Custom API Endpoints
+
+Add endpoints to the report worker by dropping Python files in `node/api/`:
+
+```python
+# node/api/my_endpoints.py
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/custom", tags=["custom"])
+
+@router.get("/hello")
+def hello():
+    return {"message": "Hello from custom endpoint"}
+```
+
+After `make deploy`, available at `http://localhost:8000/custom/hello`.
+
+Any `.py` file in `api/` with a `router` attribute (a FastAPI `APIRouter`) is auto-mounted at startup. Files starting with `_` are skipped.
+
+Full database access is available via the same dependency injection pattern:
+
+```python
+from typing import Annotated
+from fastapi import APIRouter, Depends
+from sqlmodel import Session
+from coordinator_node.db import create_session, DBModelRepository
+
+router = APIRouter(prefix="/custom")
+
+def get_db_session():
+    with create_session() as session:
+        yield session
+
+@router.get("/models/count")
+def model_count(session: Annotated[Session, Depends(get_db_session)]):
+    return {"count": len(DBModelRepository(session).fetch_all())}
+```
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `API_ROUTES_DIR` | `api/` | Directory to scan for router files |
+| `API_ROUTES` | _(empty)_ | Comma-separated `module:attr` paths for explicit imports |
+
+---
+
 ## Extension Points
 
 Customize competition behavior by setting callable paths in your env:

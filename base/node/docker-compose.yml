@@ -196,9 +196,11 @@ services:
       CRUNCH_ID: ${CRUNCH_ID:-starter-challenge}
       CRUNCH_PUBKEY: ${CRUNCH_PUBKEY:-}
       NETWORK: ${NETWORK:-devnet}
+      API_ROUTES_DIR: /app/api
       PYTHONPATH: /app:/app/challenge
     volumes:
       - ../challenge:/app/challenge
+      - ./api:/app/api
     depends_on:
       postgres:
         condition: service_healthy

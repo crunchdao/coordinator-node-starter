@@ -267,6 +267,10 @@ def _normalize_project_ids(raw_ids: list[str]) -> list[str]:
 
 REPORT_SCHEMA = auto_report_schema(CONTRACT)
 
+# Auto-discover and mount custom API routers from node/api/ directory
+from coordinator_node.api_discovery import mount_api_routers
+mount_api_routers(app)
+
 
 def get_db_session() -> Generator[Session, Any, None]:
     with create_session() as session:
