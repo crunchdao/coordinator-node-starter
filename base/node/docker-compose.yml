@@ -196,6 +196,8 @@ services:
       CRUNCH_ID: ${CRUNCH_ID:-starter-challenge}
       CRUNCH_PUBKEY: ${CRUNCH_PUBKEY:-}
       NETWORK: ${NETWORK:-devnet}
+      API_KEY: ${API_KEY:-}
+      API_READ_AUTH: ${API_READ_AUTH:-false}
       API_ROUTES_DIR: /app/api
       PYTHONPATH: /app:/app/challenge
     volumes:

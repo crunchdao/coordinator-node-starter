@@ -39,6 +39,10 @@ make backfill SOURCE=pyth SUBJECT=BTC FROM=2026-01-01 TO=2026-02-01
 - Emission (protocol): `http://localhost:8000/reports/checkpoints/{id}/emission`
 - Emission (CLI format): `http://localhost:8000/reports/checkpoints/{id}/emission/cli-format`
 
+## API Security
+
+Set `API_KEY` in `.local.env` to enable. Admin endpoints (backfill, checkpoints, `/custom/*`) require the key. Public endpoints (leaderboard, schema, models) stay open. Set `API_READ_AUTH=true` to also gate read endpoints.
+
 ## Edit boundaries
 
 - Node-specific config: `.local.env`, `config/callables.env`,

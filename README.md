@@ -105,6 +105,65 @@ Key variables:
 
 ---
 
+## API Security
+
+Endpoints are protected by API key authentication when `API_KEY` is set. Off by default for backward compatibility.
+
+### Quick start
+
+```bash
+# In .local.env
+API_KEY=my-strong-secret
+```
+
+After `make deploy`, admin endpoints require the key:
+
+```bash
+# Rejected (401)
+curl -s http://localhost:8000/reports/backfill
+
+# Accepted
+curl -s -H "X-API-Key: my-strong-secret" http://localhost:8000/reports/backfill
+```
+
+### Endpoint tiers
+
+| Tier | Default prefixes | Auth required |
+|------|-----------------|---------------|
+| **Public** | `/healthz`, `/reports/leaderboard`, `/reports/schema`, `/reports/models`, `/reports/feeds`, `/info`, `/docs` | Never |
+| **Read** | `/reports/predictions`, `/reports/snapshots`, `/data/backfill/*` | Only if `API_READ_AUTH=true` |
+| **Admin** | `/reports/backfill` (POST), `/reports/checkpoints/`, `/custom/*` | Always (when API_KEY set) |
+
+### Sending the key
+
+Three methods (any one works):
+
+```bash
+# X-API-Key header (recommended)
+curl -H "X-API-Key: <key>" ...
+
+# Authorization: Bearer header
+curl -H "Authorization: Bearer <key>" ...
+
+# Query parameter (for quick testing only)
+curl "...?api_key=<key>"
+```
+
+### Configuration
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `API_KEY` | _(empty)_ | Shared secret. When unset, all endpoints are open. |
+| `API_READ_AUTH` | `false` | When `true`, read endpoints also require the API key. |
+| `API_PUBLIC_PREFIXES` | See above | Comma-separated prefixes that never require auth. |
+| `API_ADMIN_PREFIXES` | See above | Comma-separated prefixes that always require auth. |
+
+### Custom `api/` endpoints
+
+Custom endpoints under `/custom/` are **admin-tier by default** — they require the API key when set. To make a custom endpoint public, add its prefix to `API_PUBLIC_PREFIXES`.
+
+---
+
 ## Custom API Endpoints
 
 Add endpoints to the report worker by dropping Python files in `node/api/`:

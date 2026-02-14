@@ -165,6 +165,15 @@ Current operational defaults in this template:
 - Virtual models: `__ensemble_{name}__` stored as regular PredictionRecords, scored/tracked normally
 - Leaderboard: `include_ensembles=false` param on `/reports/leaderboard`, `/reports/models/global`, `/reports/models/params`
 
+### API security
+- `coordinator_node/middleware/auth.py` — API key middleware with three tiers (public/read/admin)
+- Activated by `API_KEY` env var. Off by default (backward compat).
+- Public: leaderboard, schema, models, feeds, healthz — always open
+- Admin: backfill, checkpoints, custom endpoints — always gated when API_KEY set
+- Read: predictions, snapshots, data — gated only if `API_READ_AUTH=true`
+- Key via: `X-API-Key` header, `Authorization: Bearer`, or `?api_key=` query param
+- Prefixes configurable via `API_PUBLIC_PREFIXES` and `API_ADMIN_PREFIXES` env vars
+
 ### Custom API endpoints
 - `base/node/api/` — drop `.py` files with a `router = APIRouter()` to add endpoints
 - Auto-discovered at report-worker startup, no config needed

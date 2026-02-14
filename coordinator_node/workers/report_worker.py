@@ -38,6 +38,10 @@ app.add_middleware(
 CONTRACT = load_config()
 SETTINGS = RuntimeSettings.from_env()
 
+# API key auth — active when API_KEY env var is set
+from coordinator_node.middleware.auth import configure_auth
+configure_auth(app)
+
 
 @app.get("/info")
 def get_node_info() -> dict[str, Any]:
