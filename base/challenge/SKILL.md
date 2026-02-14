@@ -19,13 +19,15 @@ The backtest module provides:
 
 - `BacktestClient` — fetches parquet data from coordinator, caches locally
 - `BacktestRunner` — replays historical data through models (tick → predict → score)
-- `BacktestResult` — notebook-friendly output (DataFrames, rolling window metrics)
+- `BacktestResult` — notebook-friendly output (DataFrames, rolling window metrics + multi-metric enrichment)
 
 Key design decisions:
 - Coordinator URL and feed dimensions are baked into `config.py` at package build time
 - Data auto-pulls on first backtest run (transparent caching)
 - Model code is identical between backtest and production
-- Scoring and metrics match production exactly
+- Scoring and rolling window metrics match production exactly
+- Multi-metric enrichment (IC, IC Sharpe, hit rate, Sortino, max drawdown, turnover, mean return) is computed using the same metrics registry as the coordinator
+- `result.metrics` returns both rolling windows and portfolio-level metrics in a single dict
 
 ## Runtime contract (node-private)
 

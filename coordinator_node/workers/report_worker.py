@@ -48,11 +48,40 @@ def get_node_info() -> dict[str, Any]:
     }
 
 
+_METRIC_DISPLAY_NAMES: dict[str, str] = {
+    "ic": "IC",
+    "ic_sharpe": "IC Sharpe",
+    "mean_return": "Mean Return",
+    "hit_rate": "Hit Rate",
+    "max_drawdown": "Max Drawdown",
+    "sortino_ratio": "Sortino",
+    "turnover": "Turnover",
+    "model_correlation": "Model Corr",
+    "fnc": "FNC",
+    "contribution": "Contribution",
+    "ensemble_correlation": "Ens. Corr",
+}
+
+_METRIC_TOOLTIPS: dict[str, str] = {
+    "ic": "Information Coefficient — Spearman rank correlation between predictions and realized returns",
+    "ic_sharpe": "IC Sharpe — mean(IC) / std(IC), rewards consistency",
+    "mean_return": "Mean return of a long-short portfolio formed from signals",
+    "hit_rate": "Percentage of predictions with correct directional sign",
+    "max_drawdown": "Worst peak-to-trough on cumulative score",
+    "sortino_ratio": "Like Sharpe but only penalizes downside volatility",
+    "turnover": "Mean absolute change in signal between consecutive predictions",
+    "model_correlation": "Mean pairwise Spearman correlation against other models",
+    "fnc": "Feature-Neutral Correlation — IC after orthogonalizing against known factors",
+    "contribution": "Leave-one-out contribution to the ensemble",
+    "ensemble_correlation": "Correlation to the ensemble output",
+}
+
+
 def auto_report_schema(contract: CrunchContract) -> dict[str, Any]:
-    """Auto-generate report schema from the CrunchContract aggregation config."""
+    """Auto-generate report schema from the CrunchContract aggregation + metrics config."""
     aggregation = contract.aggregation
 
-    # Leaderboard columns: Model column + one per aggregation window
+    # Leaderboard columns: Model column + one per aggregation window + one per active metric
     columns: list[dict[str, Any]] = [
         {
             "id": 1,
@@ -65,10 +94,11 @@ def auto_report_schema(contract: CrunchContract) -> dict[str, Any]:
             "order": 0,
         },
     ]
+    col_id = 2
     for i, (window_name, window) in enumerate(aggregation.windows.items()):
         display = window_name.replace("_", " ").title()
         columns.append({
-            "id": i + 2,
+            "id": col_id,
             "type": "VALUE",
             "property": window_name,
             "format": "decimal-2",
@@ -77,16 +107,40 @@ def auto_report_schema(contract: CrunchContract) -> dict[str, Any]:
             "nativeConfiguration": None,
             "order": (i + 1) * 10,
         })
+        col_id += 1
 
-    # Chart series from the same windows
+    # Add columns for active metrics
+    for j, metric_name in enumerate(contract.metrics):
+        display = _METRIC_DISPLAY_NAMES.get(metric_name, metric_name.replace("_", " ").title())
+        tooltip = _METRIC_TOOLTIPS.get(metric_name)
+        columns.append({
+            "id": col_id,
+            "type": "VALUE",
+            "property": metric_name,
+            "format": "decimal-4",
+            "displayName": display,
+            "tooltip": tooltip,
+            "nativeConfiguration": None,
+            "order": 100 + j * 10,
+        })
+        col_id += 1
+
+    # Chart series from aggregation windows
     series = [
         {"name": name, "label": name.replace("_", " ").title()}
         for name in aggregation.windows
     ]
 
+    # Metric series for the metrics chart
+    metric_series = [
+        {"name": m, "label": _METRIC_DISPLAY_NAMES.get(m, m.replace("_", " ").title())}
+        for m in contract.metrics
+    ]
+
+    widget_id = 1
     widgets: list[dict[str, Any]] = [
         {
-            "id": 1,
+            "id": widget_id,
             "type": "CHART",
             "displayName": "Score Metrics",
             "tooltip": None,
@@ -99,8 +153,30 @@ def auto_report_schema(contract: CrunchContract) -> dict[str, Any]:
                 "displayEvolution": False,
             },
         },
+    ]
+    widget_id += 1
+
+    # Add a metrics snapshot widget if metrics are active
+    if contract.metrics:
+        widgets.append({
+            "id": widget_id,
+            "type": "CHART",
+            "displayName": "Multi-Metric Overview",
+            "tooltip": "Portfolio-level metrics computed per model over scoring windows",
+            "order": 15,
+            "endpointUrl": "/reports/snapshots",
+            "nativeConfiguration": {
+                "type": "bar",
+                "xAxis": {"name": "model_id"},
+                "yAxis": {"series": metric_series, "format": "decimal-4"},
+                "displayEvolution": False,
+            },
+        })
+        widget_id += 1
+
+    widgets.extend([
         {
-            "id": 2,
+            "id": widget_id,
             "type": "CHART",
             "displayName": "Predictions",
             "tooltip": None,
@@ -126,7 +202,7 @@ def auto_report_schema(contract: CrunchContract) -> dict[str, Any]:
             },
         },
         {
-            "id": 3,
+            "id": widget_id + 1,
             "type": "CHART",
             "displayName": "Rolling score by parameters",
             "tooltip": None,
@@ -144,7 +220,7 @@ def auto_report_schema(contract: CrunchContract) -> dict[str, Any]:
                 "displayEvolution": False,
             },
         },
-    ]
+    ])
 
     schema = {"schema_version": "1", "leaderboard_columns": columns, "metrics_widgets": widgets}
 

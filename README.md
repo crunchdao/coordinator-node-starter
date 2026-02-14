@@ -124,38 +124,173 @@ Customize competition behavior by setting callable paths in your env:
 All type shapes and behavior are defined in a single `CrunchContract`:
 
 ```python
-from coordinator_node.contracts import CrunchContract
+from coordinator_node.contracts import CrunchContract, EnsembleConfig
 
-class CrunchContract(BaseModel):
-    raw_input_type: type[BaseModel]
-    output_type: type[BaseModel]
-    score_type: type[BaseModel]
-    scope: PredictionScope
-    aggregation: Aggregation
+contract = CrunchContract(
+    # Type shapes
+    raw_input_type=RawInput,
+    output_type=InferenceOutput,
+    score_type=ScoreResult,
+    scope=PredictionScope(),
+    aggregation=Aggregation(),
+
+    # Multi-metric scoring (default: 5 active metrics)
+    metrics=["ic", "ic_sharpe", "hit_rate", "max_drawdown", "model_correlation"],
+
+    # Ensemble (default: off)
+    ensembles=[],
 
     # Callables
-    resolve_ground_truth: Callable
-    aggregate_snapshot: Callable
-    build_emission: Callable
+    resolve_ground_truth=default_resolve_ground_truth,
+    aggregate_snapshot=default_aggregate_snapshot,
+    build_emission=default_build_emission,
+)
+```
+
+---
+
+## Multi-Metric Scoring
+
+Every score cycle computes portfolio-level metrics alongside the per-prediction scoring function. Metrics are stored in snapshot `result_summary` JSONB and surfaced on the leaderboard.
+
+### Active metrics
+
+Set in the contract — only listed metrics are computed:
+
+```python
+# Use all defaults (ic, ic_sharpe, hit_rate, max_drawdown, model_correlation)
+contract = CrunchContract()
+
+# Opt out entirely — per-prediction scoring only
+contract = CrunchContract(metrics=[])
+
+# Pick specific metrics
+contract = CrunchContract(metrics=["ic", "sortino_ratio", "turnover"])
+```
+
+### Built-in metrics
+
+| Tier | Name | Description |
+|------|------|-------------|
+| T1 | `ic` | Information Coefficient — Spearman rank correlation vs. actual returns |
+| T1 | `ic_sharpe` | mean(IC) / std(IC) — rewards consistency |
+| T1 | `mean_return` | Mean return of a long-short portfolio from signals |
+| T1 | `hit_rate` | % of predictions with correct directional sign |
+| T1 | `model_correlation` | Mean pairwise correlation against other models |
+| T2 | `max_drawdown` | Worst peak-to-trough on cumulative score |
+| T2 | `sortino_ratio` | Sharpe but only penalizes downside |
+| T2 | `turnover` | Signal change rate between consecutive predictions |
+| T3 | `fnc` | Feature-Neutral Correlation (ensemble-aware) |
+| T3 | `contribution` | Leave-one-out ensemble contribution |
+| T3 | `ensemble_correlation` | Correlation to ensemble output |
+
+T3 metrics require ensembling to be enabled.
+
+### Custom metrics
+
+Register your own metric function:
+
+```python
+from coordinator_node.metrics import get_default_registry
+
+def my_custom_metric(predictions, scores, context):
+    """Return a single float."""
+    return some_computation(predictions, scores)
+
+get_default_registry().register("my_custom", my_custom_metric)
+
+# Then add it to the contract
+contract = CrunchContract(metrics=["ic", "my_custom"])
+```
+
+### Ranking by any metric
+
+The leaderboard can rank by any active metric. Set `ranking_key` to a metric name:
+
+```python
+contract = CrunchContract(
+    metrics=["ic", "ic_sharpe", "hit_rate"],
+    aggregation=Aggregation(ranking_key="ic_sharpe"),
+)
+```
+
+---
+
+## Ensemble Framework
+
+Combine multiple model predictions into virtual meta-models. Off by default — opt in via the contract.
+
+### Quick start
+
+```python
+from coordinator_node.contracts import CrunchContract, EnsembleConfig
+from coordinator_node.services.ensemble import inverse_variance, equal_weight, top_n
+
+contract = CrunchContract(
+    ensembles=[
+        EnsembleConfig(name="main", strategy=inverse_variance),
+        EnsembleConfig(name="top5", strategy=inverse_variance, model_filter=top_n(5)),
+        EnsembleConfig(name="equal", strategy=equal_weight),
+    ],
+)
+```
+
+### How it works
+
+1. After scoring, the score worker computes ensembles for each enabled config
+2. Models are filtered (optional `model_filter`)
+3. Weights computed via `strategy(model_metrics, predictions) → {model_id: weight}`
+4. Weighted-average predictions stored as `PredictionRecord` with `model_id="__ensemble_{name}__"`
+5. Virtual models are scored, metrics computed, and appear in leaderboard data
+
+### Built-in strategies
+
+| Strategy | Description |
+|----------|-------------|
+| `inverse_variance` | Weight = 1/var(predictions), normalized. Default. |
+| `equal_weight` | 1/N for all included models. |
+
+### Model filters
+
+```python
+from coordinator_node.services.ensemble import top_n, min_metric
+
+# Keep only top 5 by score
+EnsembleConfig(name="top5", model_filter=top_n(5))
+
+# Keep models with IC > 0.03
+EnsembleConfig(name="quality", model_filter=min_metric("ic", 0.03))
+```
+
+### Leaderboard filtering
+
+Ensemble virtual models are hidden from the leaderboard by default. Toggle with:
+
+```
+GET /reports/leaderboard?include_ensembles=true
+GET /reports/models/global?include_ensembles=true
+GET /reports/models/params?include_ensembles=true
 ```
 
 ---
 
 ## Report API
 
-| Endpoint | Description |
-|---|---|
-| `GET /reports/leaderboard` | Current leaderboard |
-| `GET /reports/models` | Registered models |
-| `GET /reports/predictions` | Prediction history |
-| `GET /reports/feeds` | Active feed subscriptions |
-| `GET /reports/snapshots` | Per-model period summaries |
-| `GET /reports/checkpoints` | Checkpoint history |
-| `GET /reports/checkpoints/{id}/emission` | Raw emission (frac64) |
-| `GET /reports/checkpoints/{id}/emission/cli-format` | CLI JSON format |
-| `GET /reports/emissions/latest` | Latest emission |
-| `POST /reports/checkpoints/{id}/confirm` | Record tx_hash |
-| `PATCH /reports/checkpoints/{id}/status` | Advance status |
+| Endpoint | Params | Description |
+|---|---|---|
+| `GET /reports/leaderboard` | `include_ensembles` (bool, default false) | Current leaderboard |
+| `GET /reports/models` | | Registered models |
+| `GET /reports/models/global` | `projectIds`, `start`, `end`, `include_ensembles` | Global model scores |
+| `GET /reports/models/params` | `projectIds`, `start`, `end`, `include_ensembles` | Per-scope model scores |
+| `GET /reports/predictions` | `projectIds`, `start`, `end` | Prediction history |
+| `GET /reports/feeds` | | Active feed subscriptions |
+| `GET /reports/snapshots` | `model_id`, `since`, `until`, `limit` | Per-model period summaries (enriched with metrics) |
+| `GET /reports/checkpoints` | `status`, `limit` | Checkpoint history |
+| `GET /reports/checkpoints/{id}/emission` | | Raw emission (frac64) |
+| `GET /reports/checkpoints/{id}/emission/cli-format` | | CLI JSON format |
+| `GET /reports/emissions/latest` | | Latest emission |
+| `POST /reports/checkpoints/{id}/confirm` | `tx_hash` | Record tx_hash |
+| `PATCH /reports/checkpoints/{id}/status` | `status` | Advance status |
 
 ### Backfill & Data
 
@@ -194,14 +329,22 @@ result = BacktestRunner(model=MyTracker()).run(
     start="2026-01-01", end="2026-02-01"
 )
 result.predictions_df   # DataFrame in notebook
-result.metrics           # {'score_recent': 0.42, 'score_steady': 0.38, ...}
+result.metrics           # rolling windows + multi-metric enrichment
 result.summary()         # formatted output
+
+# result.metrics example:
+# {
+#   'score_recent': 0.42, 'score_steady': 0.38, 'score_anchor': 0.35,
+#   'ic': 0.035, 'ic_sharpe': 1.2, 'hit_rate': 0.58,
+#   'mean_return': 0.012, 'max_drawdown': -0.08, 'sortino_ratio': 1.5,
+#   'turnover': 0.23,
+# }
 ```
 
 - Data auto-fetched from coordinator and cached locally on first run
 - Coordinator URL and feed dimensions baked into challenge package
 - Same `tick()` → `predict()` loop as production
-- Same scoring function and rolling window metrics as leaderboard
+- Same scoring function, rolling window metrics, and multi-metric evaluation as leaderboard
 
 ---
 

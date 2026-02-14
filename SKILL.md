@@ -98,6 +98,24 @@ Output required:
 - `CHECKPOINT_INTERVAL_SECONDS` value for `crunch-node-<name>`
 - rationale for cadence vs cost/latency
 
+### 7. Configure multi-metric scoring (optional)
+Ask:
+> Which portfolio-level metrics should the leaderboard compute? (default: ic, ic_sharpe, hit_rate, max_drawdown, model_correlation — set `metrics=[]` to disable)
+
+Output required:
+- `CrunchContract.metrics` list in contract
+- Optional: custom metric registrations
+- Optional: `ranking_key` set to a metric name (e.g. `ic_sharpe`)
+
+### 8. Configure ensemble (optional)
+Ask:
+> Should this competition combine model predictions into ensemble meta-models? (default: off)
+
+Output required:
+- `CrunchContract.ensembles` list in contract (empty = off)
+- Strategy choice (`inverse_variance` or `equal_weight`)
+- Optional: model filter (`top_n`, `min_metric`)
+
 ---
 
 ## Where To Implement In This Structure
