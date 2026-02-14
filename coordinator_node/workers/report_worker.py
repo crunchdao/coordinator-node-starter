@@ -230,12 +230,17 @@ def auto_report_schema(contract: CrunchContract) -> dict[str, Any]:
 
 
 def _flatten_metrics(metrics: dict[str, Any]) -> dict[str, float | None]:
+    """Flatten metrics dict to top-level keys for the leaderboard response.
+
+    Keys are kept as-is (e.g. 'ic', 'score_recent') so they match the
+    schema column `property` values directly.
+    """
     flattened: dict[str, float | None] = {}
     for key, value in metrics.items():
         try:
-            flattened[f"score_{key}"] = float(value) if value is not None else None
+            flattened[key] = float(value) if value is not None else None
         except Exception:
-            flattened[f"score_{key}"] = None
+            flattened[key] = None
     return flattened
 
 
