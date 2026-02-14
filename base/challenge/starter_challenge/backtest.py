@@ -2,18 +2,18 @@
 
 Usage in a notebook or script:
 
-    from starter_challenge.backtest import BacktestClient, BacktestRunner
+    from starter_challenge.backtest import BacktestRunner
     from my_model import MyTracker
 
-    client = BacktestClient("http://coordinator:8000")
-    client.pull(subject="BTC", start="2026-01-01", end="2026-02-01")
-
     result = BacktestRunner(model=MyTracker()).run(
-        subject="BTC", start="2026-01-01", end="2026-02-01"
+        start="2026-01-01", end="2026-02-01"
     )
     result.predictions_df   # DataFrame in notebook
     result.metrics           # rolling window aggregates
     result.summary()         # formatted output
+
+The coordinator URL is baked into the challenge package. Data is
+automatically fetched and cached on first run.
 """
 from __future__ import annotations
 
@@ -98,31 +98,47 @@ class BacktestResult:
 
 
 class BacktestClient:
-    """Fetches backfill parquet files from a coordinator and caches locally."""
+    """Fetches backfill parquet files from a coordinator and caches locally.
+
+    The coordinator URL defaults to the value baked into the challenge package.
+    Override via constructor arg or COORDINATOR_URL env var.
+    """
 
     def __init__(
         self,
-        coordinator_url: str,
+        coordinator_url: str | None = None,
         cache_dir: str = ".cache/backtest",
     ):
+        if coordinator_url is None:
+            from starter_challenge.config import COORDINATOR_URL
+            coordinator_url = COORDINATOR_URL
         self.coordinator_url = coordinator_url.rstrip("/")
         self.cache_dir = Path(cache_dir)
 
     def pull(
         self,
-        source: str = "binance",
-        subject: str = "BTC",
-        kind: str = "candle",
-        granularity: str = "1m",
+        source: str | None = None,
+        subject: str | None = None,
+        kind: str | None = None,
+        granularity: str | None = None,
         start: str | datetime = "2026-01-01",
         end: str | datetime = "2026-02-01",
         refresh: bool = False,
     ) -> list[Path]:
         """Download matching parquet files from coordinator, cache locally.
 
-        Returns list of cached file paths.
+        Returns list of cached file paths. Feed dimensions default to the
+        challenge config if not specified.
         """
         import requests
+        from starter_challenge.config import (
+            DEFAULT_SOURCE, DEFAULT_SUBJECT, DEFAULT_KIND, DEFAULT_GRANULARITY,
+        )
+
+        source = source or DEFAULT_SOURCE
+        subject = subject or DEFAULT_SUBJECT
+        kind = kind or DEFAULT_KIND
+        granularity = granularity or DEFAULT_GRANULARITY
 
         start_dt = _parse_date(start)
         end_dt = _parse_date(end)
@@ -173,12 +189,19 @@ class BacktestClient:
 
     def list_cached(
         self,
-        source: str = "binance",
-        subject: str = "BTC",
-        kind: str = "candle",
-        granularity: str = "1m",
+        source: str | None = None,
+        subject: str | None = None,
+        kind: str | None = None,
+        granularity: str | None = None,
     ) -> list[Path]:
         """Return cached parquet file paths for given dimensions."""
+        from starter_challenge.config import (
+            DEFAULT_SOURCE, DEFAULT_SUBJECT, DEFAULT_KIND, DEFAULT_GRANULARITY,
+        )
+        source = source or DEFAULT_SOURCE
+        subject = subject or DEFAULT_SUBJECT
+        kind = kind or DEFAULT_KIND
+        granularity = granularity or DEFAULT_GRANULARITY
         target_dir = self.cache_dir / source / subject / kind / granularity
         if not target_dir.exists():
             return []
@@ -203,10 +226,10 @@ class BacktestRunner:
 
     def run(
         self,
-        source: str = "binance",
-        subject: str = "BTC",
-        kind: str = "candle",
-        granularity: str = "1m",
+        source: str | None = None,
+        subject: str | None = None,
+        kind: str | None = None,
+        granularity: str | None = None,
         start: str | datetime = "2026-01-01",
         end: str | datetime = "2026-02-01",
         window_size: int = 120,
@@ -215,19 +238,31 @@ class BacktestRunner:
     ) -> BacktestResult:
         """Replay cached data through the model, score predictions.
 
+        Data is automatically fetched from the coordinator and cached on first
+        run. Feed dimensions default to the challenge config if not specified.
+
         Returns a BacktestResult with predictions DataFrame and metrics.
         """
         import pandas as pd
+        from starter_challenge.config import (
+            DEFAULT_SOURCE, DEFAULT_SUBJECT, DEFAULT_KIND, DEFAULT_GRANULARITY,
+        )
+
+        source = source or DEFAULT_SOURCE
+        subject = subject or DEFAULT_SUBJECT
+        kind = kind or DEFAULT_KIND
+        granularity = granularity or DEFAULT_GRANULARITY
 
         start_dt = _parse_date(start)
         end_dt = _parse_date(end)
 
-        # Load cached parquet data
+        # Load cached parquet data — auto-pull if not cached
         data_dir = self.cache_dir / source / subject / kind / granularity
-        if not data_dir.exists():
-            raise FileNotFoundError(
-                f"No cached data at {data_dir}. Run BacktestClient.pull() first."
-            )
+        if not data_dir.exists() or not list(data_dir.glob("*.parquet")):
+            logger.info("No cached data found, pulling from coordinator...")
+            client = BacktestClient(cache_dir=str(self.cache_dir))
+            client.pull(source=source, subject=subject, kind=kind,
+                        granularity=granularity, start=start, end=end)
 
         # Read and concat all matching parquet files
         frames = []
@@ -242,7 +277,8 @@ class BacktestRunner:
 
         if not frames:
             raise FileNotFoundError(
-                f"No data files found for {start} to {end} in {data_dir}"
+                f"No data available for {subject} from {start} to {end}. "
+                f"The coordinator may not have backfill data for this range yet."
             )
 
         df = pd.concat(frames, ignore_index=True).sort_values("ts_event").reset_index(drop=True)

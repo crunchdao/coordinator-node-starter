@@ -217,7 +217,15 @@ class TestBacktestRunner(unittest.TestCase):
         self.assertIn("score_steady", result.metrics)
         self.assertIn("score_anchor", result.metrics)
 
-    def test_run_raises_on_missing_data(self):
+    @patch("requests.get")
+    def test_run_raises_on_missing_data(self, mock_get):
+        """Raises FileNotFoundError when no data available (even after auto-pull attempt)."""
+        # Mock index returns empty — no data on coordinator
+        index_resp = MagicMock()
+        index_resp.json.return_value = []
+        index_resp.raise_for_status = MagicMock()
+        mock_get.return_value = index_resp
+
         model = DummyTracker()
         runner = BacktestRunner(model=model, cache_dir=self.cache_dir)
         with self.assertRaises(FileNotFoundError):
