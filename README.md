@@ -471,6 +471,9 @@ result.diversity  # fetches live diversity feedback from coordinator
 | `GET /reports/predictions` | `projectIds`, `start`, `end` | Prediction history |
 | `GET /reports/feeds` | | Active feed subscriptions |
 | `GET /reports/models/{id}/diversity` | | Diversity feedback: correlation, contribution, guidance |
+| `GET /reports/diversity` | `limit` | All models' diversity scores for dashboard chart |
+| `GET /reports/ensemble/history` | `ensemble_name`, `since`, `until`, `limit` | Ensemble metrics over time |
+| `GET /reports/checkpoints/rewards` | `model_id`, `limit` | Reward distribution per checkpoint |
 | `GET /reports/snapshots` | `model_id`, `since`, `until`, `limit` | Per-model period summaries (enriched with metrics) |
 | `GET /reports/checkpoints` | `status`, `limit` | Checkpoint history |
 | `GET /reports/checkpoints/{id}/emission` | | Raw emission (frac64) |

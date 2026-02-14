@@ -227,6 +227,73 @@ def auto_report_schema(contract: CrunchConfig) -> dict[str, Any]:
         },
     ])
 
+    # Diversity radar chart — shows model uniqueness
+    diversity_metrics = [m for m in contract.metrics if m in (
+        "model_correlation", "ensemble_correlation", "contribution", "fnc",
+    )]
+    if diversity_metrics:
+        diversity_series = [
+            {"name": m, "label": _METRIC_DISPLAY_NAMES.get(m, m.replace("_", " ").title())}
+            for m in diversity_metrics
+        ]
+        # Also add diversity_score (computed)
+        diversity_series.append({"name": "diversity_score", "label": "Diversity Score"})
+        widgets.append({
+            "id": widget_id + 2,
+            "type": "CHART",
+            "displayName": "Model Diversity",
+            "tooltip": "How unique each model is relative to the ensemble",
+            "order": 25,
+            "endpointUrl": "/reports/diversity",
+            "nativeConfiguration": {
+                "type": "bar",
+                "xAxis": {"name": "model_id"},
+                "yAxis": {"series": diversity_series, "format": "decimal-4"},
+                "displayEvolution": False,
+            },
+        })
+
+    # Ensemble performance over time — only if ensembles are configured
+    if contract.ensembles:
+        ensemble_series = [
+            {"name": m, "label": _METRIC_DISPLAY_NAMES.get(m, m.replace("_", " ").title())}
+            for m in contract.metrics[:5]  # top 5 metrics for the chart
+        ]
+        widgets.append({
+            "id": widget_id + 3,
+            "type": "CHART",
+            "displayName": "Ensemble Performance",
+            "tooltip": "Ensemble metrics over time — is the collective getting smarter?",
+            "order": 16,
+            "endpointUrl": "/reports/ensemble/history",
+            "nativeConfiguration": {
+                "type": "line",
+                "xAxis": {"name": "period_end"},
+                "yAxis": {"series": ensemble_series, "format": "decimal-4"},
+                "filterConfig": [
+                    {"type": "select", "label": "Ensemble", "property": "ensemble_name", "autoSelectFirst": True},
+                ],
+                "displayEvolution": False,
+            },
+        })
+
+    # Checkpoint reward history
+    widgets.append({
+        "id": widget_id + 4,
+        "type": "CHART",
+        "displayName": "Reward History",
+        "tooltip": "Reward distribution per checkpoint period",
+        "order": 40,
+        "endpointUrl": "/reports/checkpoints/rewards",
+        "nativeConfiguration": {
+            "type": "bar",
+            "xAxis": {"name": "period_end"},
+            "yAxis": {"series": [{"name": "reward_pct", "label": "Reward %"}], "format": "decimal-2"},
+            "groupByProperty": "model_name",
+            "displayEvolution": False,
+        },
+    })
+
     schema = {"schema_version": "1", "leaderboard_columns": columns, "metrics_widgets": widgets}
 
     # Validate against typed contracts
@@ -715,6 +782,135 @@ def get_snapshots(
         }
         for s in snapshots
     ]
+
+
+# ── Diversity overview ──
+
+
+@app.get("/reports/diversity")
+def get_diversity_overview(
+    snapshot_repo: Annotated[DBSnapshotRepository, Depends(get_snapshot_repository)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[dict[str, Any]]:
+    """Diversity overview for all models — powers the Model Diversity chart.
+
+    Returns one row per model with their latest diversity-related metrics.
+    """
+    snapshots = snapshot_repo.find(limit=500)
+
+    # Latest snapshot per non-ensemble model
+    latest: dict[str, Any] = {}
+    for snap in snapshots:
+        if _is_ensemble_model(snap.model_id):
+            continue
+        if snap.model_id not in latest or snap.period_end > latest[snap.model_id]["period_end"]:
+            summary = snap.result_summary
+            corr = summary.get("model_correlation")
+            latest[snap.model_id] = {
+                "model_id": snap.model_id,
+                "period_end": snap.period_end,
+                "model_correlation": corr,
+                "ensemble_correlation": summary.get("ensemble_correlation"),
+                "contribution": summary.get("contribution"),
+                "fnc": summary.get("fnc"),
+                "diversity_score": round(max(0.0, 1.0 - abs(corr)), 4) if corr is not None else None,
+                "ic": summary.get("ic"),
+            }
+
+    rows = sorted(latest.values(), key=lambda r: r.get("diversity_score") or 0, reverse=True)
+    return rows[:limit]
+
+
+# ── Ensemble history ──
+
+
+@app.get("/reports/ensemble/history")
+def get_ensemble_history(
+    snapshot_repo: Annotated[DBSnapshotRepository, Depends(get_snapshot_repository)],
+    ensemble_name: Annotated[str | None, Query()] = None,
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> list[dict[str, Any]]:
+    """Ensemble performance over time — powers the Ensemble Performance chart.
+
+    Returns snapshots for ensemble virtual models, with metrics flattened.
+    Shows whether the collective is getting smarter over time.
+    """
+    snapshots = snapshot_repo.find(since=since, until=until, limit=500)
+
+    rows = []
+    for snap in snapshots:
+        if not _is_ensemble_model(snap.model_id):
+            continue
+        name = snap.model_id.lstrip("_").replace("ensemble_", "", 1).rstrip("_")
+        if ensemble_name and name != ensemble_name:
+            continue
+        row = {
+            "ensemble_name": name,
+            "model_id": snap.model_id,
+            "period_start": snap.period_start,
+            "period_end": snap.period_end,
+            "prediction_count": snap.prediction_count,
+            **{k: v for k, v in snap.result_summary.items() if isinstance(v, (int, float))},
+        }
+        rows.append(row)
+
+    rows.sort(key=lambda r: r["period_end"])
+    return rows[:limit]
+
+
+# ── Checkpoint reward history ──
+
+
+@app.get("/reports/checkpoints/rewards")
+def get_checkpoint_rewards(
+    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+    model_id: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> list[dict[str, Any]]:
+    """Reward distribution history across checkpoints — powers the Reward History chart.
+
+    Returns one row per model per checkpoint with their rank and reward percentage.
+    """
+    checkpoints = checkpoint_repo.find(limit=limit)
+
+    rows = []
+    for cp in checkpoints:
+        ranking = cp.meta.get("ranking", []) if cp.meta else []
+        for entry in ranking:
+            mid = entry.get("model_id", "")
+            if model_id and mid != model_id:
+                continue
+            if _is_ensemble_model(mid):
+                continue
+
+            # Compute reward percentage from emission
+            reward_pct = None
+            if cp.entries:
+                emission = cp.entries[0]
+                cruncher_rewards = emission.get("cruncher_rewards", [])
+                idx = entry.get("rank", 0) - 1
+                if 0 <= idx < len(cruncher_rewards):
+                    from coordinator_node.crunch_config import FRAC_64_MULTIPLIER
+                    raw = cruncher_rewards[idx].get("reward_pct", 0)
+                    reward_pct = round(raw / FRAC_64_MULTIPLIER * 100, 4)
+
+            rows.append({
+                "checkpoint_id": cp.id,
+                "period_start": cp.period_start,
+                "period_end": cp.period_end,
+                "model_id": mid,
+                "model_name": entry.get("model_name"),
+                "rank": entry.get("rank"),
+                "reward_pct": reward_pct,
+                "prediction_count": entry.get("prediction_count"),
+                **{k: v for k, v in entry.get("result_summary", {}).items()
+                   if isinstance(v, (int, float))},
+            })
+
+    rows.sort(key=lambda r: (r["period_end"], r["rank"] or 999))
+    return rows
 
 
 # ── Checkpoints ──
