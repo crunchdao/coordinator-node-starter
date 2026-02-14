@@ -165,10 +165,18 @@ class FeedDataService:
 class _RepositorySink:
     def __init__(self, repository):
         self._repository = repository
+        self._ingest_count = 0
+        self._logger = logging.getLogger(__name__)
 
     async def on_record(self, record: FeedDataRecord) -> None:
         domain = _feed_to_domain(record.source, record)
         self._repository.append_records([domain])
+        self._ingest_count += 1
+        if self._ingest_count % 10 == 0:
+            self._logger.info(
+                "feed ingested %d records (latest: subject=%s kind=%s)",
+                self._ingest_count, record.subject, record.kind,
+            )
         self._repository.set_watermark(
             FeedIngestionState(
                 source=record.source,

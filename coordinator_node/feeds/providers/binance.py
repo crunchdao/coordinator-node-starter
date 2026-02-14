@@ -111,6 +111,11 @@ class _PollingFeedHandle:
             pass
 
 
+import logging as _logging
+
+_logger = _logging.getLogger(__name__)
+
+
 class BinanceFeed(DataFeed):
     def __init__(self, settings: FeedSettings, client: BinanceRestClient | None = None):
         self.settings = settings
@@ -194,8 +199,20 @@ class BinanceFeed(DataFeed):
 
     async def fetch(self, req: FeedFetchRequest) -> Sequence[FeedDataRecord]:
         if req.kind == "candle":
-            return await self._fetch_candles(req)
-        return await self._fetch_ticks(req)
+            records = await self._fetch_candles(req)
+        else:
+            records = await self._fetch_ticks(req)
+
+        for subject in req.subjects:
+            subject_count = sum(1 for r in records if r.subject == subject)
+            if subject_count == 0:
+                _logger.warning(
+                    "Binance returned 0 records for subject=%r kind=%r granularity=%r. "
+                    "Binance requires full pair symbols (e.g. BTCUSDT, not BTC).",
+                    subject, req.kind, req.granularity,
+                )
+
+        return records
 
     async def _fetch_candles(self, req: FeedFetchRequest) -> list[FeedDataRecord]:
         records: list[FeedDataRecord] = []

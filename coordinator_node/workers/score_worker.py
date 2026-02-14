@@ -43,6 +43,7 @@ def build_service() -> ScoreService:
 
     return ScoreService(
         checkpoint_interval_seconds=runtime_settings.checkpoint_interval_seconds,
+        score_interval_seconds=runtime_settings.score_interval_seconds,
         scoring_function=scoring_function,
         feed_reader=FeedReader.from_env(),
         input_repository=DBInputRepository(session),

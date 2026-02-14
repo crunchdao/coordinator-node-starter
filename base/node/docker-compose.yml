@@ -84,9 +84,11 @@ services:
       FEED_BACKFILL_MINUTES: ${FEED_BACKFILL_MINUTES:-180}
       FEED_RECORD_TTL_DAYS: ${FEED_RECORD_TTL_DAYS:-90}
       FEED_RETENTION_CHECK_SECONDS: ${FEED_RETENTION_CHECK_SECONDS:-3600}
+      SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
       PYTHONPATH: /app:/app/challenge
     volumes:
       - ../challenge:/app/challenge
+      - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -115,9 +117,11 @@ services:
       FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
       FEED_KIND: ${FEED_KIND:-tick}
       FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
+      SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
       PYTHONPATH: /app:/app/challenge
     volumes:
       - ../challenge:/app/challenge
+      - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -141,14 +145,17 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
       POSTGRES_DB: ${POSTGRES_DB:-starter}
       CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-60}
+      SCORE_INTERVAL_SECONDS: ${SCORE_INTERVAL_SECONDS:-60}
       FEED_SOURCE: ${FEED_SOURCE:-pyth}
       FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
       FEED_KIND: ${FEED_KIND:-tick}
       FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
       SCORING_FUNCTION: ${SCORING_FUNCTION}
+      SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
       PYTHONPATH: /app:/app/challenge
     volumes:
       - ../challenge:/app/challenge
+      - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -170,9 +177,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
       POSTGRES_DB: ${POSTGRES_DB:-starter}
       CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-604800}
+      SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
       PYTHONPATH: /app:/app/challenge
     volumes:
       - ../challenge:/app/challenge
+      - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -199,10 +208,12 @@ services:
       API_KEY: ${API_KEY:-}
       API_READ_AUTH: ${API_READ_AUTH:-false}
       API_ROUTES_DIR: /app/api
+      SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
       PYTHONPATH: /app:/app/challenge
     volumes:
       - ../challenge:/app/challenge
       - ./api:/app/api
+      - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
     depends_on:
       postgres:
         condition: service_healthy
