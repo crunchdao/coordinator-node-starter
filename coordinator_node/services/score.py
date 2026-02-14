@@ -14,7 +14,7 @@ from coordinator_node.db.repositories import (
     DBInputRepository, DBLeaderboardRepository, DBModelRepository,
     DBPredictionRepository, DBScoreRepository, DBSnapshotRepository,
 )
-from coordinator_node.contracts import CrunchContract
+from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.services.feed_reader import FeedReader
 
 
@@ -30,7 +30,7 @@ class ScoreService:
         snapshot_repository: DBSnapshotRepository | None = None,
         model_repository: DBModelRepository | None = None,
         leaderboard_repository: DBLeaderboardRepository | None = None,
-        contract: CrunchContract | None = None,
+        contract: CrunchConfig | None = None,
         **kwargs: Any,
     ):
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
@@ -42,7 +42,7 @@ class ScoreService:
         self.snapshot_repository = snapshot_repository
         self.model_repository = model_repository
         self.leaderboard_repository = leaderboard_repository
-        self.contract = contract or CrunchContract()
+        self.contract = contract or CrunchConfig()
 
         self.logger = logging.getLogger(__name__)
         self.stop_event = asyncio.Event()

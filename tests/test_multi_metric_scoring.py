@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import MagicMock
 
-from coordinator_node.contracts import CrunchContract
+from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.entities.prediction import (
     InputRecord, InputStatus, PredictionRecord, PredictionStatus,
     ScoreRecord, SnapshotRecord,
@@ -54,7 +54,7 @@ class TestMultiMetricSnapshots(unittest.TestCase):
     """Test that _write_snapshots produces enriched result_summary with metrics."""
 
     def _make_service(self, metrics=None):
-        contract = CrunchContract(
+        contract = CrunchConfig(
             metrics=metrics if metrics is not None else ["ic", "hit_rate", "max_drawdown"],
         )
 
@@ -191,10 +191,10 @@ class TestEnsembleInScorePipeline(unittest.TestCase):
     """Test that ensemble virtual models are created and scored in the pipeline."""
 
     def test_ensemble_creates_virtual_model_snapshot(self):
-        from coordinator_node.contracts import EnsembleConfig
+        from coordinator_node.crunch_config import EnsembleConfig
         from coordinator_node.services.ensemble import equal_weight
 
-        contract = CrunchContract(
+        contract = CrunchConfig(
             metrics=["ic", "hit_rate"],
             ensembles=[EnsembleConfig(name="main", strategy=equal_weight)],
         )
@@ -272,7 +272,7 @@ class TestEnsembleInScorePipeline(unittest.TestCase):
         self.assertIn("value", ens_snap.result_summary)
 
     def test_no_ensemble_when_empty_config(self):
-        contract = CrunchContract(metrics=["ic"], ensembles=[])
+        contract = CrunchConfig(metrics=["ic"], ensembles=[])
 
         now = datetime.now(timezone.utc)
         predictions = [PredictionRecord(

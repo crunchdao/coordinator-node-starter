@@ -7,8 +7,8 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from coordinator_node.contract_loader import load_contract
-from coordinator_node.contracts import CrunchContract
+from coordinator_node.config_loader import load_config
+from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.db import (
     DBCheckpointRepository,
     DBModelRepository,
@@ -32,13 +32,13 @@ class CheckpointService:
         snapshot_repository: DBSnapshotRepository,
         checkpoint_repository: DBCheckpointRepository,
         model_repository: DBModelRepository,
-        contract: CrunchContract | None = None,
+        contract: CrunchConfig | None = None,
         interval_seconds: int = 7 * 24 * 3600,  # weekly
     ):
         self.snapshot_repository = snapshot_repository
         self.checkpoint_repository = checkpoint_repository
         self.model_repository = model_repository
-        self.contract = contract or CrunchContract()
+        self.contract = contract or CrunchConfig()
         self.interval_seconds = interval_seconds
         self.logger = logging.getLogger(__name__)
         self.stop_event = asyncio.Event()
@@ -150,7 +150,7 @@ def build_service() -> CheckpointService:
     session = create_session()
     interval = int(os.getenv("CHECKPOINT_INTERVAL_SECONDS", str(7 * 24 * 3600)))
 
-    contract = load_contract()
+    contract = load_config()
 
     # Env var overrides for on-chain identifiers (backward compat)
     crunch_pubkey = os.getenv("CRUNCH_PUBKEY", "")

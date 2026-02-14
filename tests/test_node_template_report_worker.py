@@ -9,7 +9,7 @@ from coordinator_node.entities.prediction import (
     CheckpointRecord, CheckpointStatus, PredictionStatus,
     ScoreRecord, ScoredPrediction, SnapshotRecord,
 )
-from coordinator_node.contracts import CrunchContract
+from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.workers.report_worker import (
     auto_report_schema,
     get_checkpoints,
@@ -260,7 +260,7 @@ class TestReportSchema(unittest.TestCase):
             self.assertIn("endpointUrl", w)
 
     def test_auto_report_schema_from_contract(self):
-        schema = auto_report_schema(CrunchContract())
+        schema = auto_report_schema(CrunchConfig())
         self.assertTrue(len(schema.get("leaderboard_columns", [])) > 0)
 
 

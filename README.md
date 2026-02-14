@@ -164,14 +164,14 @@ Customize competition behavior by setting callable paths in your env:
 
 ---
 
-## Contract
+## CrunchConfig
 
-All type shapes and behavior are defined in a single `CrunchContract`. Workers auto-discover the operator's contract at startup:
+All type shapes and behavior are defined in a single `CrunchConfig`. Workers auto-discover the operator's config at startup:
 
 ```python
-from coordinator_node.contracts import CrunchContract, EnsembleConfig
+from coordinator_node.crunch_config import CrunchConfig, EnsembleConfig
 
-contract = CrunchContract(
+contract = CrunchConfig(
     # Type shapes
     raw_input_type=RawInput,
     output_type=InferenceOutput,
@@ -192,15 +192,16 @@ contract = CrunchContract(
 )
 ```
 
-### Contract resolution order
+### Config resolution order
 
-All workers use `load_contract()` which tries, in order:
+All workers use `load_config()` which tries, in order:
 
-1. `CONTRACT_MODULE` env var (e.g. `my_package.contracts:MyContract`)
-2. `runtime_definitions.contracts:CrunchContract` — the standard operator override in `node/runtime_definitions/contracts.py`
-3. `coordinator_node.contracts:CrunchContract` — engine default
+1. `CRUNCH_CONFIG_MODULE` env var (e.g. `my_package.crunch_config:MyCrunchConfig`)
+2. `runtime_definitions.crunch_config:CrunchConfig` — the standard operator override
+3. `runtime_definitions.contracts:CrunchConfig` — backward compat
+4. `coordinator_node.crunch_config:CrunchConfig` — engine default
 
-The operator's contract is imported automatically — no env var needed if `runtime_definitions/contracts.py` exists on `PYTHONPATH` (it does in the Docker setup).
+The operator's config is imported automatically — no env var needed if `runtime_definitions/crunch_config.py` exists on `PYTHONPATH` (it does in the Docker setup).
 
 ---
 
@@ -214,13 +215,13 @@ Set in the contract — only listed metrics are computed:
 
 ```python
 # Use all defaults (ic, ic_sharpe, hit_rate, max_drawdown, model_correlation)
-contract = CrunchContract()
+contract = CrunchConfig()
 
 # Opt out entirely — per-prediction scoring only
-contract = CrunchContract(metrics=[])
+contract = CrunchConfig(metrics=[])
 
 # Pick specific metrics
-contract = CrunchContract(metrics=["ic", "sortino_ratio", "turnover"])
+contract = CrunchConfig(metrics=["ic", "sortino_ratio", "turnover"])
 ```
 
 ### Built-in metrics
@@ -255,7 +256,7 @@ def my_custom_metric(predictions, scores, context):
 get_default_registry().register("my_custom", my_custom_metric)
 
 # Then add it to the contract
-contract = CrunchContract(metrics=["ic", "my_custom"])
+contract = CrunchConfig(metrics=["ic", "my_custom"])
 ```
 
 ### Ranking by any metric
@@ -263,7 +264,7 @@ contract = CrunchContract(metrics=["ic", "my_custom"])
 The leaderboard can rank by any active metric. Set `ranking_key` to a metric name:
 
 ```python
-contract = CrunchContract(
+contract = CrunchConfig(
     metrics=["ic", "ic_sharpe", "hit_rate"],
     aggregation=Aggregation(ranking_key="ic_sharpe"),
 )
@@ -278,10 +279,10 @@ Combine multiple model predictions into virtual meta-models. Off by default — 
 ### Quick start
 
 ```python
-from coordinator_node.contracts import CrunchContract, EnsembleConfig
+from coordinator_node.crunch_config import CrunchConfig, EnsembleConfig
 from coordinator_node.services.ensemble import inverse_variance, equal_weight, top_n
 
-contract = CrunchContract(
+contract = CrunchConfig(
     ensembles=[
         EnsembleConfig(name="main", strategy=inverse_variance),
         EnsembleConfig(name="top5", strategy=inverse_variance, model_filter=top_n(5)),

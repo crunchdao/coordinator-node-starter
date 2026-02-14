@@ -11,7 +11,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from coordinator_node.contracts import CrunchContract, FRAC_64_MULTIPLIER
+from coordinator_node.crunch_config import CrunchConfig, FRAC_64_MULTIPLIER
 from coordinator_node.entities.model import Model
 from coordinator_node.entities.prediction import (
     CheckpointRecord, CheckpointStatus, InputRecord, InputStatus,
@@ -248,7 +248,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         self.checkpoint_repo = MemCheckpointRepository()
         self.model_repo = MemModelRepository()
         self.lb_repo = MemLeaderboardRepository()
-        self.contract = CrunchContract(crunch_pubkey="test_crunch_pubkey")
+        self.contract = CrunchConfig(crunch_pubkey="test_crunch_pubkey")
 
         self.predict_service = RealtimePredictService(
             checkpoint_interval_seconds=60,

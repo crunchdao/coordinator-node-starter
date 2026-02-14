@@ -103,7 +103,7 @@ Ask:
 > Which portfolio-level metrics should the leaderboard compute? (default: ic, ic_sharpe, hit_rate, max_drawdown, model_correlation — set `metrics=[]` to disable)
 
 Output required:
-- `CrunchContract.metrics` list in contract
+- `CrunchConfig.metrics` list in contract
 - Optional: custom metric registrations
 - Optional: `ranking_key` set to a metric name (e.g. `ic_sharpe`)
 
@@ -112,7 +112,7 @@ Ask:
 > Should this competition combine model predictions into ensemble meta-models? (default: off)
 
 Output required:
-- `CrunchContract.ensembles` list in contract (empty = off)
+- `CrunchConfig.ensembles` list in contract (empty = off)
 - Strategy choice (`inverse_variance` or `equal_weight`)
 - Optional: model filter (`top_n`, `min_metric`)
 
@@ -155,13 +155,13 @@ Current operational defaults in this template:
 - `coordinator_node/metrics/builtins.py` — 8 built-in metrics (ic, ic_sharpe, hit_rate, mean_return, max_drawdown, sortino_ratio, turnover, model_correlation)
 - `coordinator_node/metrics/ensemble_metrics.py` — 3 ensemble-aware metrics (fnc, contribution, ensemble_correlation)
 - `coordinator_node/metrics/context.py` — MetricsContext dataclass for cross-model state
-- Declared in contract: `CrunchContract.metrics: list[str]` (active metric names)
+- Declared in contract: `CrunchConfig.metrics: list[str]` (active metric names)
 - Stored in: `SnapshotRecord.result_summary` JSONB (enriched alongside baseline aggregation)
 
 ### Ensemble framework
 - `coordinator_node/services/ensemble.py` — weight strategies (inverse_variance, equal_weight), model filters (top_n, min_metric), prediction builder
-- `coordinator_node/contracts.py` — `EnsembleConfig(name, strategy, model_filter, enabled)`
-- Declared in contract: `CrunchContract.ensembles: list[EnsembleConfig]` (empty = opt-out)
+- `coordinator_node/crunch_config.py` — `EnsembleConfig(name, strategy, model_filter, enabled)`
+- Declared in contract: `CrunchConfig.ensembles: list[EnsembleConfig]` (empty = opt-out)
 - Virtual models: `__ensemble_{name}__` stored as regular PredictionRecords, scored/tracked normally
 - Leaderboard: `include_ensembles=false` param on `/reports/leaderboard`, `/reports/models/global`, `/reports/models/params`
 
@@ -173,9 +173,9 @@ Current operational defaults in this template:
 - Example: `base/node/api/example_endpoints.py.disabled` (rename to activate)
 
 ### Contract discovery
-- Workers use `coordinator_node.contract_loader.load_contract()` instead of `CrunchContract()`
-- Resolution: `CONTRACT_MODULE` env → `runtime_definitions.contracts:CrunchContract` → engine default
-- Operator's contract in `node/runtime_definitions/contracts.py` is auto-loaded (on PYTHONPATH in Docker)
+- Workers use `coordinator_node.config_loader.load_config()` instead of `CrunchConfig()`
+- Resolution: `CRUNCH_CONFIG_MODULE` env → `runtime_definitions.contracts:CrunchConfig` → engine default
+- Operator's config in `node/runtime_definitions/crunch_config.py` is auto-loaded (on PYTHONPATH in Docker)
 - Supports both class import (instantiated) and instance import
 
 ### Crunch-specific extension points

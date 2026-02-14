@@ -5,8 +5,8 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from coordinator_node.contracts import (
-    CrunchContract, FRAC_64_MULTIPLIER, default_build_emission, pct_to_frac64,
+from coordinator_node.crunch_config import (
+    CrunchConfig, FRAC_64_MULTIPLIER, default_build_emission, pct_to_frac64,
 )
 from coordinator_node.entities.prediction import (
     CheckpointRecord, CheckpointStatus, SnapshotRecord,
@@ -194,7 +194,7 @@ class TestCheckpointService(unittest.TestCase):
             snapshot_repository=snap_repo,
             checkpoint_repository=ckpt_repo,
             model_repository=model_repo,
-            contract=CrunchContract(crunch_pubkey="crunch_abc"),
+            contract=CrunchConfig(crunch_pubkey="crunch_abc"),
         )
         checkpoint = service.create_checkpoint()
 

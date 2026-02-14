@@ -31,14 +31,14 @@ Key design decisions:
 
 ## Runtime contract (node-private)
 
-- `../node/runtime_definitions/contracts.py` — CrunchContract defining types, scoring, emission
+- `../node/runtime_definitions/crunch_config.py` — CrunchConfig defining types, scoring, emission
 
 ## Development guidance
 
 - Keep participant-facing challenge logic in this package.
 - Keep runtime contracts and deployment config in `../node/`.
 - The scoring function in `scoring.py` is used for both local self-eval and backtest.
-  The runtime scoring callable is configured in `contracts.py`.
+  The runtime scoring callable is configured in `crunch_config.py`.
 - When publishing, set `COORDINATOR_URL` in `config.py` to the actual coordinator address.
 
 ## Validate from node workspace

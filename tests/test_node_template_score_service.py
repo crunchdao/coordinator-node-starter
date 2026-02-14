@@ -7,7 +7,7 @@ from typing import Any
 from coordinator_node.entities.feed_record import FeedRecord
 from coordinator_node.entities.model import Model
 from coordinator_node.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
-from coordinator_node.contracts import Aggregation, AggregationWindow, CrunchContract
+from coordinator_node.crunch_config import Aggregation, AggregationWindow, CrunchConfig
 from coordinator_node.services.score import ScoreService
 
 
@@ -211,7 +211,7 @@ class TestScoreService(unittest.TestCase):
         self.assertEqual(len(service.score_repository.scores), 1)
 
     def test_rank_ascending(self):
-        contract = CrunchContract(
+        contract = CrunchConfig(
             aggregation=Aggregation(
                 windows={"loss": AggregationWindow(hours=24)},
                 ranking_key="loss", ranking_direction="asc",

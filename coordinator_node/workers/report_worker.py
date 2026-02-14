@@ -10,8 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
 from coordinator_node.config.runtime import RuntimeSettings
-from coordinator_node.contract_loader import load_contract
-from coordinator_node.contracts import CrunchContract
+from coordinator_node.config_loader import load_config
+from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.entities.prediction import CheckpointStatus
 from coordinator_node.schemas import ReportSchemaEnvelope
 from coordinator_node.db import (
@@ -35,7 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-CONTRACT = load_contract()
+CONTRACT = load_config()
 SETTINGS = RuntimeSettings.from_env()
 
 
@@ -78,8 +78,8 @@ _METRIC_TOOLTIPS: dict[str, str] = {
 }
 
 
-def auto_report_schema(contract: CrunchContract) -> dict[str, Any]:
-    """Auto-generate report schema from the CrunchContract aggregation + metrics config."""
+def auto_report_schema(contract: CrunchConfig) -> dict[str, Any]:
+    """Auto-generate report schema from the CrunchConfig aggregation + metrics config."""
     aggregation = contract.aggregation
 
     # Leaderboard columns: Model column + one per aggregation window + one per active metric
@@ -245,7 +245,7 @@ def _flatten_metrics(metrics: dict[str, Any]) -> dict[str, float | None]:
     return flattened
 
 
-def _compute_window_metrics(scores: list[tuple[datetime, float]], contract: CrunchContract) -> dict[str, float]:
+def _compute_window_metrics(scores: list[tuple[datetime, float]], contract: CrunchConfig) -> dict[str, float]:
     """Compute windowed metrics from timestamped scores using contract aggregation."""
     now = datetime.now(timezone.utc)
     metrics: dict[str, float] = {}

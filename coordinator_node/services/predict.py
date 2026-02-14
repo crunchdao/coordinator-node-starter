@@ -10,7 +10,7 @@ from typing import Any, Callable
 from coordinator_node.entities.model import Model
 from coordinator_node.entities.prediction import InputRecord, PredictionRecord, PredictionStatus
 from coordinator_node.db.repositories import DBInputRepository, DBModelRepository, DBPredictionRepository
-from coordinator_node.contracts import CrunchContract
+from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.services.feed_reader import FeedReader
 
 try:
@@ -33,7 +33,7 @@ class PredictService:
     def __init__(
         self,
         feed_reader: FeedReader,
-        contract: CrunchContract | None = None,
+        contract: CrunchConfig | None = None,
         transform: Callable | None = None,
         input_repository: DBInputRepository | None = None,
         model_repository: DBModelRepository | None = None,
@@ -47,7 +47,7 @@ class PredictService:
         **kwargs,
     ):
         self.feed_reader = feed_reader
-        self.contract = contract or CrunchContract()
+        self.contract = contract or CrunchConfig()
         self.transform = transform
         self.input_repository = input_repository
         self.model_repository = model_repository

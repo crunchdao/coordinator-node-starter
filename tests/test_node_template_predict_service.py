@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from coordinator_node.entities.model import Model
 from coordinator_node.entities.prediction import InputRecord, PredictionRecord
-from coordinator_node.contracts import CrunchContract
+from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.services.realtime_predict import RealtimePredictService
 
 
@@ -136,7 +136,7 @@ def _make_service(feed_reader=None, prediction_repo=None, input_repo=None,
     return RealtimePredictService(
         checkpoint_interval_seconds=60,
         feed_reader=feed_reader or FakeFeedReader(),
-        contract=contract or CrunchContract(),
+        contract=contract or CrunchConfig(),
         input_repository=input_repo,
         model_repository=InMemoryModelRepository(),
         prediction_repository=prediction_repo or InMemoryPredictionRepository(),
@@ -195,7 +195,7 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
         service = _make_service(
             prediction_repo=repo,
             runner=BadRunner(),
-            contract=CrunchContract(output_type=StrictOutput),
+            contract=CrunchConfig(output_type=StrictOutput),
         )
 
         with self.assertLogs("RealtimePredictService", level="ERROR") as logs:

@@ -42,4 +42,4 @@ metrics registry as the coordinator, giving competitors identical feedback local
 
 ## Node-private runtime
 
-- `../node/runtime_definitions/` — CrunchContract, runtime callables
+- `../node/runtime_definitions/` — CrunchConfig, runtime callables

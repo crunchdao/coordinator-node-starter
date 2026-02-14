@@ -2,8 +2,8 @@
 
 Use this folder for **node-specific callable overrides**.
 
-Most customization should go in `runtime_definitions/contracts.py`
-by overriding fields on the `CrunchContract`.
+Most customization should go in `runtime_definitions/crunch_config.py`
+by overriding fields on the `CrunchConfig`.
 
 This folder is for edge cases where you need additional Python
 modules available to the runtime (e.g., custom feed providers,

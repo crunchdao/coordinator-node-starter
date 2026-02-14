@@ -43,7 +43,8 @@ make backfill SOURCE=pyth SUBJECT=BTC FROM=2026-01-01 TO=2026-02-01
 
 - Node-specific config: `.local.env`, `config/callables.env`,
   `config/scheduled_prediction_configs.json`, `deployment/`.
-- Runtime contract: `runtime_definitions/contracts.py` (CrunchContract, types, callables).
+- Competition config: `runtime_definitions/crunch_config.py` (CrunchConfig, types, callables).
+  Backward compat: `runtime_definitions/contracts.py` still works.
 - Challenge implementation is mounted from `../challenge`.
 
 ## Logs and artifacts
