@@ -181,7 +181,7 @@ class _RepositorySink:
         )
         try:
             from coordinator_node.db.pg_notify import notify
-            notify()
+            notify("new_feed_data")
         except Exception:
             pass
 

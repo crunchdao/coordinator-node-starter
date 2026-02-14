@@ -154,7 +154,7 @@ class RealtimePredictService(PredictService):
         timeout = float(self.checkpoint_interval_seconds)
         try:
             from coordinator_node.db.pg_notify import wait_for_notify
-            await self._race_stop(wait_for_notify(timeout=timeout))
+            await self._race_stop(wait_for_notify("new_feed_data", timeout=timeout))
         except Exception:
             await self._race_stop(asyncio.sleep(timeout))
 
