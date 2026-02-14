@@ -266,9 +266,15 @@ def get_models(
     ]
 
 
+def _is_ensemble_model(model_id: str | None) -> bool:
+    """Check if a model ID belongs to an ensemble virtual model."""
+    return bool(model_id and model_id.startswith("__ensemble_"))
+
+
 @app.get("/reports/leaderboard")
 def get_leaderboard(
-    leaderboard_repo: Annotated[DBLeaderboardRepository, Depends(get_leaderboard_repository)]
+    leaderboard_repo: Annotated[DBLeaderboardRepository, Depends(get_leaderboard_repository)],
+    include_ensembles: Annotated[bool, Query()] = False,
 ) -> list[dict]:
     leaderboard = leaderboard_repo.get_latest()
     if leaderboard is None:
@@ -279,13 +285,19 @@ def get_leaderboard(
 
     normalized_entries = []
     for entry in entries:
+        model_id = entry.get("model_id")
+
+        # Filter out ensemble models unless explicitly requested
+        if not include_ensembles and _is_ensemble_model(model_id):
+            continue
+
         score = entry.get("score", {})
         metrics = score.get("metrics", {})
 
         normalized_entries.append(
             {
                 "created_at": created_at,
-                "model_id": entry.get("model_id"),
+                "model_id": model_id,
                 "score_metrics": metrics,
                 "score_ranking": score.get("ranking", {}),
                 **_flatten_metrics(metrics),
@@ -305,11 +317,14 @@ def get_models_global(
     model_ids: Annotated[list[str] | None, Query(alias="projectIds")] = None,
     start: Annotated[datetime | None, Query()] = None,
     end: Annotated[datetime | None, Query()] = None,
+    include_ensembles: Annotated[bool, Query()] = False,
 ) -> list[dict]:
     if not model_ids:
         model_ids = list(model_repo.fetch_all().keys())
     else:
         model_ids = _normalize_project_ids(model_ids)
+    if not include_ensembles:
+        model_ids = [m for m in model_ids if not _is_ensemble_model(m)]
     if not model_ids:
         return []
     if end is None:
@@ -355,11 +370,14 @@ def get_models_params(
     model_ids: Annotated[list[str] | None, Query(alias="projectIds")] = None,
     start: Annotated[datetime | None, Query()] = None,
     end: Annotated[datetime | None, Query()] = None,
+    include_ensembles: Annotated[bool, Query()] = False,
 ) -> list[dict]:
     if not model_ids:
         model_ids = list(model_repo.fetch_all().keys())
     else:
         model_ids = _normalize_project_ids(model_ids)
+    if not include_ensembles:
+        model_ids = [m for m in model_ids if not _is_ensemble_model(m)]
     if not model_ids:
         return []
     if end is None:

@@ -333,6 +333,29 @@ class TestGetLeaderboard(unittest.TestCase):
         result = get_leaderboard(InMemoryLeaderboardRepository())
         self.assertEqual(result, [])
 
+    def test_excludes_ensemble_models_by_default(self):
+        entries = [
+            {"model_id": "m1", "rank": 1, "model_name": "alpha", "cruncher_name": "alice",
+             "score": {"metrics": {"score_recent": 0.8}, "ranking": {}}},
+            {"model_id": "__ensemble_main__", "rank": 2, "model_name": "ensemble", "cruncher_name": "",
+             "score": {"metrics": {"score_recent": 0.9}, "ranking": {}}},
+        ]
+        result = get_leaderboard(InMemoryLeaderboardRepository(entries=entries))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["model_id"], "m1")
+
+    def test_includes_ensemble_models_when_requested(self):
+        entries = [
+            {"model_id": "m1", "rank": 1, "model_name": "alpha", "cruncher_name": "alice",
+             "score": {"metrics": {"score_recent": 0.8}, "ranking": {}}},
+            {"model_id": "__ensemble_main__", "rank": 2, "model_name": "ensemble", "cruncher_name": "",
+             "score": {"metrics": {"score_recent": 0.9}, "ranking": {}}},
+        ]
+        result = get_leaderboard(InMemoryLeaderboardRepository(entries=entries), include_ensembles=True)
+        self.assertEqual(len(result), 2)
+        model_ids = {r["model_id"] for r in result}
+        self.assertIn("__ensemble_main__", model_ids)
+
 
 # ── /reports/models/global ───────────────────────────────────────────────
 

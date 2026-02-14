@@ -425,7 +425,11 @@ def _df_to_tick_data(window_df, subject: str) -> dict[str, Any]:
 
 
 def _compute_metrics(predictions: list[dict[str, Any]]) -> dict[str, float]:
-    """Compute rolling window metrics matching production aggregation windows."""
+    """Compute rolling window metrics + multi-metric enrichment.
+
+    Rolling windows match production aggregation (score_recent, score_steady, score_anchor).
+    Multi-metrics (IC, hit rate, etc.) computed using the same registry as the coordinator.
+    """
     scored = [
         p for p in predictions
         if p.get("score") is not None and p.get("score_success", True)
@@ -455,6 +459,28 @@ def _compute_metrics(predictions: list[dict[str, Any]]) -> dict[str, float]:
             if _ts_ge(p["ts"], cutoff)
         ]
         metrics[name] = sum(window_scores) / len(window_scores) if window_scores else 0.0
+
+    # Multi-metric enrichment (best-effort — coordinator_node may not be installed)
+    try:
+        from coordinator_node.metrics.registry import get_default_registry
+        from coordinator_node.metrics.context import MetricsContext
+
+        registry = get_default_registry()
+        active_metrics = ["ic", "ic_sharpe", "hit_rate", "mean_return",
+                          "max_drawdown", "sortino_ratio", "turnover"]
+
+        # Convert backtest predictions to the format the registry expects
+        pred_dicts = [{"inference_output": p.get("output", {"value": 0.0})} for p in scored]
+        score_dicts = [
+            {"result": {"value": p["score"], "actual_return": (p.get("actual") or {}).get("return", 0.0)}}
+            for p in scored
+        ]
+        ctx = MetricsContext(model_id="backtest")
+
+        multi = registry.compute(active_metrics, pred_dicts, score_dicts, ctx)
+        metrics.update(multi)
+    except ImportError:
+        pass  # coordinator_node not installed, skip multi-metrics
 
     return metrics
 

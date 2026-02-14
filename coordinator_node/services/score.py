@@ -74,10 +74,13 @@ class ScoreService:
             self.logger.info("No predictions scored this cycle")
             return False
 
-        # 3. write snapshots (per-model period summary)
+        # 3. write snapshots (per-model period summary + multi-metric enrichment)
         self._write_snapshots(scored, now)
 
-        # 4. rebuild leaderboard from snapshots
+        # 4. compute ensembles (if configured)
+        self._compute_ensembles(scored, now)
+
+        # 5. rebuild leaderboard from snapshots
         self._rebuild_leaderboard()
         return True
 
@@ -164,26 +167,72 @@ class ScoreService:
             self.logger.info("Scored %d predictions", len(scored))
         return scored
 
-    # ── 3. snapshots ──
+    # ── 3. snapshots (with multi-metric enrichment) ──
 
     def _write_snapshots(self, scored: list[ScoreRecord], now: datetime) -> None:
         if self.snapshot_repository is None:
             return
 
-        # Group scores by model (need prediction to get model_id)
+        # Group scores and predictions by model
         pred_map: dict[str, str] = {}  # prediction_id → model_id
+        pred_by_id: dict[str, Any] = {}  # prediction_id → prediction
         predictions = self.prediction_repository.find(status=PredictionStatus.SCORED)
         for p in predictions:
             pred_map[p.id] = p.model_id
+            pred_by_id[p.id] = p
 
-        by_model: dict[str, list[dict[str, Any]]] = {}
+        by_model_scores: dict[str, list[dict[str, Any]]] = {}
+        by_model_preds: dict[str, list[dict[str, Any]]] = {}
+        by_model_score_dicts: dict[str, list[dict[str, Any]]] = {}
+
         for score in scored:
             model_id = pred_map.get(score.prediction_id)
-            if model_id:
-                by_model.setdefault(model_id, []).append(score.result)
+            if not model_id:
+                continue
+            by_model_scores.setdefault(model_id, []).append(score.result)
 
-        for model_id, results in by_model.items():
+            pred = pred_by_id.get(score.prediction_id)
+            if pred:
+                by_model_preds.setdefault(model_id, []).append({
+                    "inference_output": pred.inference_output,
+                    "performed_at": pred.performed_at,
+                    "scope": pred.scope,
+                })
+            by_model_score_dicts.setdefault(model_id, []).append({
+                "result": score.result,
+                "scored_at": score.scored_at,
+            })
+
+        # Build MetricsContext (shared across all model evaluations)
+        from coordinator_node.metrics.context import MetricsContext
+        metrics_context_base = MetricsContext(
+            model_id="",  # set per-model below
+            window_start=min((s.scored_at for s in scored), default=now),
+            window_end=now,
+            all_model_predictions=by_model_preds,
+        )
+
+        for model_id, results in by_model_scores.items():
+            # Baseline aggregation
             summary = self.contract.aggregate_snapshot(results)
+
+            # Multi-metric enrichment
+            if self.contract.metrics:
+                ctx = MetricsContext(
+                    model_id=model_id,
+                    window_start=metrics_context_base.window_start,
+                    window_end=metrics_context_base.window_end,
+                    all_model_predictions=metrics_context_base.all_model_predictions,
+                    ensemble_predictions=metrics_context_base.ensemble_predictions,
+                )
+                metric_results = self.contract.compute_metrics(
+                    self.contract.metrics,
+                    by_model_preds.get(model_id, []),
+                    by_model_score_dicts.get(model_id, []),
+                    ctx,
+                )
+                summary.update(metric_results)
+
             snapshot = SnapshotRecord(
                 id=f"SNAP_{model_id}_{now.strftime('%Y%m%d_%H%M%S')}",
                 model_id=model_id,
@@ -195,9 +244,153 @@ class ScoreService:
             )
             self.snapshot_repository.save(snapshot)
 
-        self.logger.info("Wrote %d snapshots", len(by_model))
+        self.logger.info("Wrote %d snapshots", len(by_model_scores))
 
-    # ── 4. leaderboard ──
+    # ── 4. ensemble computation ──
+
+    def _compute_ensembles(self, scored: list[ScoreRecord], now: datetime) -> None:
+        """Compute ensemble predictions for all enabled ensemble configs."""
+        if not self.contract.ensembles:
+            return
+
+        from coordinator_node.services.ensemble import (
+            apply_model_filter,
+            build_ensemble_predictions,
+            ensemble_model_id,
+            is_ensemble_model,
+        )
+        from coordinator_node.metrics.context import MetricsContext
+
+        # Gather current model predictions and metrics from latest snapshots
+        predictions = self.prediction_repository.find(status=PredictionStatus.SCORED)
+        pred_map: dict[str, str] = {}
+        for p in predictions:
+            pred_map[p.id] = p.model_id
+
+        by_model_preds: dict[str, list[dict[str, Any]]] = {}
+        for p in predictions:
+            if is_ensemble_model(p.model_id):
+                continue
+            by_model_preds.setdefault(p.model_id, []).append({
+                "inference_output": p.inference_output,
+                "performed_at": p.performed_at,
+                "scope": p.scope,
+                "input_id": p.input_id,
+                "scope_key": p.scope_key,
+            })
+
+        # Get metrics from latest snapshots
+        all_snapshots = self.snapshot_repository.find() if self.snapshot_repository else []
+        model_metrics: dict[str, dict[str, float]] = {}
+        for snap in all_snapshots:
+            if not is_ensemble_model(snap.model_id):
+                model_metrics[snap.model_id] = {
+                    k: float(v) for k, v in snap.result_summary.items()
+                    if isinstance(v, (int, float))
+                }
+
+        ensemble_predictions_map: dict[str, list[dict[str, Any]]] = {}
+
+        for ens_config in self.contract.ensembles:
+            if not ens_config.enabled:
+                continue
+
+            # Filter models
+            filtered_preds = apply_model_filter(
+                ens_config.model_filter, model_metrics, by_model_preds,
+            )
+
+            if not filtered_preds:
+                self.logger.info("Ensemble %r: no models after filtering", ens_config.name)
+                continue
+
+            # Compute weights
+            strategy = ens_config.strategy
+            if strategy is None:
+                from coordinator_node.services.ensemble import inverse_variance
+                strategy = inverse_variance
+
+            weights = strategy(model_metrics, filtered_preds)
+
+            # Build ensemble predictions
+            ens_preds = build_ensemble_predictions(
+                ens_config.name, weights, filtered_preds, now,
+            )
+
+            if not ens_preds:
+                continue
+
+            # Save ensemble predictions
+            for ep in ens_preds:
+                self.prediction_repository.save(ep)
+
+            # Score ensemble predictions against actuals
+            ens_scored: list[ScoreRecord] = []
+            if self.input_repository is not None:
+                for ep in ens_preds:
+                    inputs = self.input_repository.find(status=InputStatus.RESOLVED)
+                    inp = next((i for i in inputs if i.id == ep.input_id), None)
+                    if inp and inp.actuals:
+                        result = self.scoring_function(ep.inference_output, inp.actuals)
+                        validated = self.contract.score_type(**result)
+                        score = ScoreRecord(
+                            id=f"SCR_{ep.id}",
+                            prediction_id=ep.id,
+                            result=validated.model_dump(),
+                            success=True,
+                            scored_at=now,
+                        )
+                        if self.score_repository is not None:
+                            self.score_repository.save(score)
+                        ens_scored.append(score)
+
+            # Store ensemble prediction dicts for metrics context
+            ens_pred_dicts = [
+                {"inference_output": ep.inference_output, "performed_at": ep.performed_at,
+                 "scope": ep.scope, "input_id": ep.input_id, "scope_key": ep.scope_key}
+                for ep in ens_preds
+            ]
+            ensemble_predictions_map[ens_config.name] = ens_pred_dicts
+
+            # Write ensemble snapshots
+            if ens_scored and self.snapshot_repository:
+                ens_model_id = ensemble_model_id(ens_config.name)
+                results = [s.result for s in ens_scored]
+                summary = self.contract.aggregate_snapshot(results)
+
+                # Compute metrics for the ensemble too
+                if self.contract.metrics:
+                    ctx = MetricsContext(
+                        model_id=ens_model_id,
+                        window_start=min((s.scored_at for s in ens_scored), default=now),
+                        window_end=now,
+                        all_model_predictions=by_model_preds,
+                        ensemble_predictions=ensemble_predictions_map,
+                    )
+                    ens_score_dicts = [{"result": s.result, "scored_at": s.scored_at} for s in ens_scored]
+                    metric_results = self.contract.compute_metrics(
+                        self.contract.metrics, ens_pred_dicts, ens_score_dicts, ctx,
+                    )
+                    summary.update(metric_results)
+
+                snapshot = SnapshotRecord(
+                    id=f"SNAP_{ens_model_id}_{now.strftime('%Y%m%d_%H%M%S')}",
+                    model_id=ens_model_id,
+                    period_start=min(s.scored_at for s in ens_scored),
+                    period_end=now,
+                    prediction_count=len(ens_scored),
+                    result_summary=summary,
+                    created_at=now,
+                )
+                self.snapshot_repository.save(snapshot)
+
+            self.logger.info(
+                "Ensemble %r: %d models, %d predictions, weights=%s",
+                ens_config.name, len(weights), len(ens_preds),
+                {m: round(w, 3) for m, w in weights.items()},
+            )
+
+    # ── 5. leaderboard ──
 
     def _rebuild_leaderboard(self) -> None:
         models = self.model_repository.fetch_all()

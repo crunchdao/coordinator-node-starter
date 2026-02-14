@@ -74,6 +74,17 @@ class Aggregation(BaseModel):
     ranking_direction: str = "desc"
 
 
+class EnsembleConfig(BaseModel):
+    """Configuration for a named ensemble (virtual meta-model)."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    name: str
+    strategy: Callable = Field(default=None)  # weight function, set below
+    model_filter: Callable | None = Field(default=None)
+    enabled: bool = True
+
+
 def default_resolve_ground_truth(feed_records: list[FeedRecord]) -> dict[str, Any] | None:
     """Default resolver: compare first and last record's close/price in the window.
 
@@ -207,6 +218,17 @@ def default_aggregate_snapshot(score_results: list[dict[str, Any]]) -> dict[str,
     return {key: totals[key] / counts[key] for key in totals}
 
 
+def default_compute_metrics(
+    metrics: list[str],
+    predictions: list[dict[str, Any]],
+    scores: list[dict[str, Any]],
+    context: Any,
+) -> dict[str, float]:
+    """Default metrics computation using the global metrics registry."""
+    from coordinator_node.metrics.registry import get_default_registry
+    return get_default_registry().compute(metrics, predictions, scores, context)
+
+
 class CrunchContract(BaseModel):
     """Single source of truth for challenge data shapes and aggregation."""
 
@@ -220,6 +242,15 @@ class CrunchContract(BaseModel):
     score_type: type[BaseModel] = ScoreResult
     scope: PredictionScope = Field(default_factory=PredictionScope)
     aggregation: Aggregation = Field(default_factory=Aggregation)
+
+    # Multi-metric scoring
+    metrics: list[str] = Field(default_factory=lambda: [
+        "ic", "ic_sharpe", "hit_rate", "max_drawdown", "model_correlation",
+    ])
+    compute_metrics: Callable = default_compute_metrics
+
+    # Ensembles
+    ensembles: list[EnsembleConfig] = Field(default_factory=list)
 
     # On-chain identifiers
     crunch_pubkey: str = Field(default="", description="Crunch account pubkey for emission checkpoints")
