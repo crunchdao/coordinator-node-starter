@@ -157,6 +157,52 @@ class CrunchContract(BaseModel):
 | `POST /reports/checkpoints/{id}/confirm` | Record tx_hash |
 | `PATCH /reports/checkpoints/{id}/status` | Advance status |
 
+### Backfill & Data
+
+| Endpoint | Description |
+|---|---|
+| `GET /reports/backfill/feeds` | Configured feeds eligible for backfill |
+| `POST /reports/backfill` | Start a backfill job (409 if one running) |
+| `GET /reports/backfill/jobs` | List all backfill jobs |
+| `GET /reports/backfill/jobs/{id}` | Job detail with progress percentage |
+| `GET /data/backfill/index` | Manifest of available parquet files |
+| `GET /data/backfill/{source}/{subject}/{kind}/{granularity}/{file}` | Download parquet file |
+
+---
+
+## Backfill & Backtest
+
+### Coordinator-side backfill
+
+Backfill historical data from the UI or API:
+
+1. Admin triggers backfill via `POST /reports/backfill` (or the UI)
+2. Data is fetched from the configured feed provider (Binance, Pyth, etc.)
+3. Written to Hive-partitioned parquet files: `data/backfill/{source}/{subject}/{kind}/{granularity}/YYYY-MM-DD.parquet`
+4. Progress tracked in `backfill_jobs` table (resumable on restart)
+5. Parquet files served via `/data/backfill/` endpoints for model consumption
+
+### Competitor-side backtest
+
+The challenge package includes a backtest harness. Competitors run backtests locally — model code is identical to production:
+
+```python
+from starter_challenge.backtest import BacktestRunner
+from my_model import MyTracker
+
+result = BacktestRunner(model=MyTracker()).run(
+    start="2026-01-01", end="2026-02-01"
+)
+result.predictions_df   # DataFrame in notebook
+result.metrics           # {'score_recent': 0.42, 'score_steady': 0.38, ...}
+result.summary()         # formatted output
+```
+
+- Data auto-fetched from coordinator and cached locally on first run
+- Coordinator URL and feed dimensions baked into challenge package
+- Same `tick()` → `predict()` loop as production
+- Same scoring function and rolling window metrics as leaderboard
+
 ---
 
 ## Emission Checkpoints
@@ -184,6 +230,14 @@ Checkpoints produce `EmissionCheckpoint` matching the on-chain protocol:
 |---|---|
 | `feed_records` | Raw data points from external sources. Keyed by `(source, subject, kind, granularity, ts_event)`. Values and metadata stored as JSONB. |
 | `feed_ingestion_state` | Tracks the last ingested timestamp per feed scope to enable incremental polling and backfill. |
+
+### Backfill layer
+
+| Table | Purpose |
+|---|---|
+| `backfill_jobs` | Tracks backfill runs. Status: `pending → running → completed / failed`. Stores cursor for resume, records written, pages fetched. |
+
+Historical backfill data is stored as Hive-partitioned parquet files at `data/backfill/{source}/{subject}/{kind}/{granularity}/YYYY-MM-DD.parquet` (not in Postgres).
 
 ### Pipeline layer
 
@@ -239,7 +293,7 @@ coordinator-node-starter/
 │   └── contracts.py        ← competition shape: types, scope, and callable hooks
 ├── base/                   ← template used by crunch-cli init-workspace
 │   ├── node/               ← node template (Dockerfile, docker-compose, config)
-│   └── challenge/          ← challenge template (tracker, scoring, examples)
+│   └── challenge/          ← challenge template (tracker, scoring, backtest, examples)
 ├── tests/                  ← test suite
 ├── docker-compose.yml      ← local dev compose (uses local coordinator_node/)
 ├── Dockerfile              ← local dev Dockerfile (COPYs coordinator_node/)

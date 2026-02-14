@@ -108,16 +108,29 @@ Output required:
 - `coordinator_core/services/interfaces/*`
 
 ### Default runtime template
-- `node_template/workers/*`
-- `node_template/services/*`
-- `node_template/infrastructure/db/*`
-- `node_template/config/extensions.py`
-- `node_template/config/runtime.py`
-- `node_template/extensions/default_callables.py`
+- `coordinator_node/workers/*`
+- `coordinator_node/services/*`
+- `coordinator_node/db/*`
+- `coordinator_node/config/extensions.py`
+- `coordinator_node/config/runtime.py`
+- `coordinator_node/extensions/default_callables.py`
 
 Current operational defaults in this template:
 - `predict-worker` and `score-worker` configure INFO logging and emit lifecycle/idle logs.
 - `ScoreService` attempts repository rollbacks on loop exceptions (where `rollback()` is available).
+
+### Backfill & backtest
+- `coordinator_node/services/parquet_sink.py` — Hive-partitioned parquet writer for backfill data
+- `coordinator_node/services/backfill.py` — paginated backfill with job tracking and resume
+- `coordinator_node/db/backfill_jobs.py` — backfill job persistence (pending → running → completed/failed)
+- `coordinator_node/db/tables/backfill.py` — backfill_jobs table definition
+- Report worker endpoints: `/reports/backfill/*` (management) + `/data/backfill/*` (parquet serving)
+
+### Challenge package backtest
+- `base/challenge/starter_challenge/backtest.py` — BacktestClient, BacktestRunner, BacktestResult
+- `base/challenge/starter_challenge/config.py` — baked-in coordinator URL and feed defaults
+- Auto-pulls data from coordinator on first run, caches locally
+- Same tick/predict/score loop as production
 
 ### Crunch-specific extension points
 Set callable paths in env/config:
