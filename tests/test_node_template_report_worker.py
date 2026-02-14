@@ -420,6 +420,21 @@ class TestGetModelsGlobal(unittest.TestCase):
         self.assertIn("score_ranking", result[0])
         self.assertIn("key", result[0]["score_ranking"])
 
+    def test_handles_naive_datetime_timestamps(self):
+        """Regression: performed_at from PostgreSQL may be timezone-naive.
+        _compute_window_metrics must not raise TypeError when comparing
+        naive timestamps against an aware cutoff."""
+        naive_ts = datetime(2026, 2, 13, 12, 0, 0)  # no tzinfo
+        preds = {"m1": [_make_scored_prediction("m1", 0.8, performed_at=naive_ts)]}
+        # Should not raise TypeError
+        result = self._call(
+            pred_repo=InMemoryPredictionRepository(preds),
+            model_ids=["m1"],
+            start=naive_ts - timedelta(days=1),
+            end=naive_ts + timedelta(days=1),
+        )
+        self.assertEqual(len(result), 1)
+
 
 # ── /reports/models/params ───────────────────────────────────────────────
 
@@ -463,6 +478,20 @@ class TestGetModelsParams(unittest.TestCase):
         )
         self.assertIn("scope", result[0])
         self.assertIn("score_ranking", result[0])
+
+    def test_handles_naive_datetime_timestamps(self):
+        """Regression: performed_at from PostgreSQL may be timezone-naive.
+        _compute_window_metrics must not raise TypeError when comparing
+        naive timestamps against an aware cutoff."""
+        naive_ts = datetime(2026, 2, 13, 12, 0, 0)  # no tzinfo
+        preds = {"m1": [_make_scored_prediction("m1", 0.8, performed_at=naive_ts)]}
+        result = self._call(
+            pred_repo=InMemoryPredictionRepository(preds),
+            model_ids=["m1"],
+            start=naive_ts - timedelta(days=1),
+            end=naive_ts + timedelta(days=1),
+        )
+        self.assertEqual(len(result), 1)
 
 
 # ── /reports/predictions ─────────────────────────────────────────────────
