@@ -132,6 +132,21 @@ Current operational defaults in this template:
 - Auto-pulls data from coordinator on first run, caches locally
 - Same tick/predict/score loop as production
 
+### Multi-metric scoring
+- `coordinator_node/metrics/registry.py` — MetricsRegistry with register/compute/available API
+- `coordinator_node/metrics/builtins.py` — 8 built-in metrics (ic, ic_sharpe, hit_rate, mean_return, max_drawdown, sortino_ratio, turnover, model_correlation)
+- `coordinator_node/metrics/ensemble_metrics.py` — 3 ensemble-aware metrics (fnc, contribution, ensemble_correlation)
+- `coordinator_node/metrics/context.py` — MetricsContext dataclass for cross-model state
+- Declared in contract: `CrunchContract.metrics: list[str]` (active metric names)
+- Stored in: `SnapshotRecord.result_summary` JSONB (enriched alongside baseline aggregation)
+
+### Ensemble framework
+- `coordinator_node/services/ensemble.py` — weight strategies (inverse_variance, equal_weight), model filters (top_n, min_metric), prediction builder
+- `coordinator_node/contracts.py` — `EnsembleConfig(name, strategy, model_filter, enabled)`
+- Declared in contract: `CrunchContract.ensembles: list[EnsembleConfig]` (empty = opt-out)
+- Virtual models: `__ensemble_{name}__` stored as regular PredictionRecords, scored/tracked normally
+- Leaderboard: `include_ensembles=false` param on `/reports/leaderboard`, `/reports/models/global`, `/reports/models/params`
+
 ### Crunch-specific extension points
 Set callable paths in env/config:
 - `INFERENCE_INPUT_BUILDER`
