@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 dependencies = [
+    "alembic>=1.13",
     "fastapi>=0.100.0",
     "model-runner-client>=0.10.0",
     "psycopg2-binary>=2.9",

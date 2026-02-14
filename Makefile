@@ -13,3 +13,14 @@ logs:
 
 test:
 	uv run python -m pytest tests/ -x -q
+
+# Database migrations (Alembic)
+migrate:
+	$(COMPOSE) exec coordinator-node alembic upgrade head
+
+db-reset:
+	$(COMPOSE) exec coordinator-node python -m coordinator_node.db.init_db --reset
+
+migration:
+	@read -p "Migration message: " msg; \
+	$(COMPOSE) exec coordinator-node alembic revision --autogenerate -m "$$msg"

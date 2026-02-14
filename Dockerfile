@@ -14,3 +14,5 @@ ENV VIRTUAL_ENV=/app/.venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 COPY coordinator_node ./coordinator_node
+COPY alembic ./alembic
+COPY alembic.ini ./

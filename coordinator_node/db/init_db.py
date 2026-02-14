@@ -17,6 +17,8 @@ MINUTE = 60
 
 def tables_to_reset() -> list[str]:
     return [
+        "merkle_nodes",
+        "merkle_cycles",
         "backfill_jobs",
         "checkpoints",
         "snapshots",
@@ -28,6 +30,7 @@ def tables_to_reset() -> list[str]:
         "feed_ingestion_state",
         "scheduled_prediction_configs",
         "models",
+        "alembic_version",
     ]
 
 
@@ -58,11 +61,26 @@ def load_scheduled_prediction_configs() -> list[dict[str, Any]]:
     return payload
 
 
+def _run_alembic_upgrade() -> None:
+    """Run Alembic migrations programmatically."""
+    from alembic.config import Config
+    from alembic import command
+
+    alembic_cfg = Config()
+    alembic_cfg.set_main_option("script_location", str(Path(__file__).resolve().parent.parent.parent / "alembic"))
+    alembic_cfg.set_main_option("sqlalchemy.url", str(engine.url))
+    command.upgrade(alembic_cfg, "head")
+
+
 def migrate() -> None:
-    """Create tables if they don't exist and upsert prediction configs.
+    """Run Alembic migrations and upsert prediction configs.
     Safe to run on every boot — never drops data."""
-    print("➡️  Creating tables (if not exist)...")
-    SQLModel.metadata.create_all(engine)
+    print("➡️  Running Alembic migrations...")
+    try:
+        _run_alembic_upgrade()
+    except Exception as exc:
+        print(f"⚠️  Alembic migration failed ({exc}), falling back to create_all...")
+        SQLModel.metadata.create_all(engine)
 
     print("➡️  Upserting scheduled prediction configs...")
     with create_session() as session:
@@ -107,6 +125,12 @@ def auto_migrate() -> None:
         inspector = sa_inspect(engine)
         if not inspector.has_table("models"):
             migrate()
+        else:
+            # Tables exist — run Alembic to apply any pending migrations
+            try:
+                _run_alembic_upgrade()
+            except Exception:
+                pass  # Non-critical on boot if already up to date
     except Exception:
         # First boot or connection issue — try migrate anyway
         try:
