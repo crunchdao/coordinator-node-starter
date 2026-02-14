@@ -116,11 +116,15 @@ services:
 
   report-worker:
     <<: *common-build
-    environment: *common-db-env
+    environment:
+      <<: *common-db-env
+      BACKFILL_DATA_DIR: ${BACKFILL_DATA_DIR:-/app/data/backfill}
     restart: always
     command: ["python", "-m", "coordinator_node.workers.report_worker"]
     ports:
       - "8000:8000"
+    volumes:
+      - ./data/backfill:/app/data/backfill
     depends_on:
       init-db:
         condition: service_completed_successfully

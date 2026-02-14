@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.100.0",
     "model-runner-client>=0.10.0",
     "psycopg2-binary>=2.9",
+    "pyarrow>=15.0",
     "python-binance>=1.0",
     "requests>=2.28",
     "sqlmodel>=0.0.14",

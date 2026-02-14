@@ -14,6 +14,7 @@ from coordinator_node.contracts import CrunchContract
 from coordinator_node.entities.prediction import CheckpointStatus
 from coordinator_node.schemas import ReportSchemaEnvelope
 from coordinator_node.db import (
+    DBBackfillJobRepository,
     DBCheckpointRepository,
     DBLeaderboardRepository,
     DBFeedRecordRepository,
@@ -807,6 +808,202 @@ def _checkpoint_to_dict(c) -> dict[str, Any]:
         "tx_hash": c.tx_hash,
         "submitted_at": c.submitted_at,
     }
+
+
+# ── Backfill ──
+
+import asyncio
+import os
+from pathlib import Path
+
+from fastapi import BackgroundTasks
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+from coordinator_node.db.backfill_jobs import BackfillJobStatus
+from coordinator_node.services.parquet_sink import ParquetBackfillSink
+
+BACKFILL_DATA_DIR = os.getenv("BACKFILL_DATA_DIR", "data/backfill")
+_parquet_sink = ParquetBackfillSink(base_dir=BACKFILL_DATA_DIR)
+
+
+class BackfillRequestBody(BaseModel):
+    source: str
+    subject: str
+    kind: str
+    granularity: str
+    start: datetime
+    end: datetime
+
+
+def get_backfill_job_repository(
+    session_db: Annotated[Session, Depends(get_db_session)]
+) -> DBBackfillJobRepository:
+    return DBBackfillJobRepository(session_db)
+
+
+@app.get("/reports/backfill/feeds")
+def get_backfill_feeds(
+    feed_repo: Annotated[DBFeedRecordRepository, Depends(get_feed_record_repository)],
+) -> list[dict[str, Any]]:
+    """Return configured feeds eligible for backfill."""
+    return feed_repo.list_indexed_feeds()
+
+
+@app.post("/reports/backfill", status_code=201)
+def start_backfill(
+    body: BackfillRequestBody,
+    background_tasks: BackgroundTasks,
+    backfill_repo: Annotated[DBBackfillJobRepository, Depends(get_backfill_job_repository)],
+    feed_repo: Annotated[DBFeedRecordRepository, Depends(get_feed_record_repository)],
+) -> dict[str, Any]:
+    """Start a backfill job. Returns 409 if one is already running."""
+    # Check no running job
+    running = backfill_repo.get_running()
+    if running is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Backfill job {running.id} is already {running.status}",
+        )
+
+    # Create job
+    job = backfill_repo.create(
+        source=body.source,
+        subject=body.subject,
+        kind=body.kind,
+        granularity=body.granularity,
+        start_ts=body.start,
+        end_ts=body.end,
+    )
+
+    # Start async backfill
+    background_tasks.add_task(_run_backfill_async, job.id, body)
+
+    return _backfill_job_to_dict(job)
+
+
+@app.get("/reports/backfill/jobs")
+def list_backfill_jobs(
+    backfill_repo: Annotated[DBBackfillJobRepository, Depends(get_backfill_job_repository)],
+    job_status: Annotated[str | None, Query(alias="status")] = None,
+) -> list[dict[str, Any]]:
+    """List all backfill jobs."""
+    jobs = backfill_repo.find(status=job_status)
+    return [_backfill_job_to_dict(j) for j in jobs]
+
+
+@app.get("/reports/backfill/jobs/{job_id}")
+def get_backfill_job(
+    job_id: str,
+    backfill_repo: Annotated[DBBackfillJobRepository, Depends(get_backfill_job_repository)],
+) -> dict[str, Any]:
+    """Get a single backfill job with progress."""
+    job = backfill_repo.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Backfill job not found")
+
+    result = _backfill_job_to_dict(job)
+
+    # Add progress percentage estimate
+    if job.start_ts and job.end_ts and job.cursor_ts:
+        total = (job.end_ts - job.start_ts).total_seconds()
+        elapsed = (job.cursor_ts - job.start_ts).total_seconds()
+        result["progress_pct"] = min(100.0, max(0.0, (elapsed / total * 100.0) if total > 0 else 0.0))
+    else:
+        result["progress_pct"] = 0.0
+
+    return result
+
+
+# ── Data Serving ──
+
+
+@app.get("/data/backfill/index")
+def get_backfill_index() -> list[dict[str, object]]:
+    """Return manifest of available parquet files."""
+    return _parquet_sink.list_files()
+
+
+@app.get("/data/backfill/{source}/{subject}/{kind}/{granularity}/{filename}")
+def get_backfill_file(
+    source: str,
+    subject: str,
+    kind: str,
+    granularity: str,
+    filename: str,
+) -> FileResponse:
+    """Serve a parquet file for download."""
+    rel_path = f"{source}/{subject}/{kind}/{granularity}/{filename}"
+    file_path = _parquet_sink.read_file(rel_path)
+    if file_path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    return FileResponse(
+        path=str(file_path),
+        media_type="application/octet-stream",
+        filename=filename,
+    )
+
+
+def _backfill_job_to_dict(job) -> dict[str, Any]:
+    return {
+        "id": job.id,
+        "source": job.source,
+        "subject": job.subject,
+        "kind": job.kind,
+        "granularity": job.granularity,
+        "start_ts": job.start_ts,
+        "end_ts": job.end_ts,
+        "cursor_ts": job.cursor_ts,
+        "records_written": job.records_written,
+        "pages_fetched": job.pages_fetched,
+        "status": job.status,
+        "error": job.error,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+    }
+
+
+async def _run_backfill_async(job_id: str, body: BackfillRequestBody) -> None:
+    """Run backfill in background. Uses its own DB session."""
+    from coordinator_node.feeds import create_default_registry
+    from coordinator_node.services.backfill import BackfillService, BackfillRequest
+
+    logger = logging.getLogger("backfill_worker")
+
+    try:
+        with create_session() as session:
+            job_repo = DBBackfillJobRepository(session)
+
+            # Check if we should resume
+            job = job_repo.get(job_id)
+            cursor_ts = None
+            if job and job.cursor_ts and job.cursor_ts > body.start:
+                cursor_ts = job.cursor_ts
+
+            registry = create_default_registry()
+            feed = registry.create_from_env(default_provider=body.source)
+
+            request = BackfillRequest(
+                source=body.source,
+                subjects=(body.subject,),
+                kind=body.kind,
+                granularity=body.granularity,
+                start=body.start,
+                end=body.end,
+                cursor_ts=cursor_ts,
+                job_id=job_id,
+            )
+
+            sink = ParquetBackfillSink(base_dir=BACKFILL_DATA_DIR)
+            service = BackfillService(feed=feed, repository=sink, job_repository=job_repo)
+            result = await service.run(request)
+
+            logger.info(
+                "backfill job=%s completed records=%d pages=%d",
+                job_id, result.records_written, result.pages_fetched,
+            )
+    except Exception as exc:
+        logger.exception("backfill job=%s failed: %s", job_id, exc)
 
 
 if __name__ == "__main__":

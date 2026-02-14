@@ -1,0 +1,472 @@
+"""Backtest harness for challenge models.
+
+Usage in a notebook or script:
+
+    from starter_challenge.backtest import BacktestClient, BacktestRunner
+    from my_model import MyTracker
+
+    client = BacktestClient("http://coordinator:8000")
+    client.pull(subject="BTC", start="2026-01-01", end="2026-02-01")
+
+    result = BacktestRunner(model=MyTracker()).run(
+        subject="BTC", start="2026-01-01", end="2026-02-01"
+    )
+    result.predictions_df   # DataFrame in notebook
+    result.metrics           # rolling window aggregates
+    result.summary()         # formatted output
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
+
+
+# ── BacktestResult ──
+
+
+class BacktestResult:
+    """Container for backtest output. Notebook-friendly."""
+
+    def __init__(
+        self,
+        predictions: list[dict[str, Any]],
+        metrics: dict[str, float],
+        config: dict[str, Any],
+    ):
+        self._predictions = predictions
+        self.metrics = metrics
+        self.config = config
+
+    @property
+    def predictions_df(self):
+        """Return predictions as a pandas DataFrame."""
+        import pandas as pd
+        return pd.DataFrame(self._predictions)
+
+    def summary(self) -> str:
+        """Return a formatted summary string."""
+        lines = [
+            "═" * 60,
+            "  BACKTEST SUMMARY",
+            "═" * 60,
+            f"  Subject:     {self.config.get('subject', 'N/A')}",
+            f"  Period:      {self.config.get('start', '?')} → {self.config.get('end', '?')}",
+            f"  Predictions: {len(self._predictions)}",
+            "─" * 60,
+            "  METRICS (rolling windows):",
+        ]
+        for key, value in self.metrics.items():
+            lines.append(f"    {key:20s} {value:+.6f}")
+        lines.append("═" * 60)
+        text = "\n".join(lines)
+        print(text)
+        return text
+
+    def _repr_html_(self) -> str:
+        """Rich HTML display for Jupyter notebooks."""
+        rows = ""
+        for key, value in self.metrics.items():
+            rows += f"<tr><td><b>{key}</b></td><td>{value:+.6f}</td></tr>"
+
+        pred_count = len(self._predictions)
+        scored = sum(1 for p in self._predictions if p.get("score") is not None)
+
+        return f"""
+        <div style="font-family: monospace; padding: 10px;">
+            <h3>Backtest Result</h3>
+            <p>Subject: <b>{self.config.get('subject', 'N/A')}</b> |
+               Period: {self.config.get('start', '?')} → {self.config.get('end', '?')} |
+               Predictions: {pred_count} | Scored: {scored}</p>
+            <table border="1" cellpadding="5" style="border-collapse: collapse;">
+                <tr><th>Metric</th><th>Value</th></tr>
+                {rows}
+            </table>
+        </div>
+        """
+
+    def __repr__(self) -> str:
+        return f"BacktestResult(predictions={len(self._predictions)}, metrics={self.metrics})"
+
+
+# ── BacktestClient ──
+
+
+class BacktestClient:
+    """Fetches backfill parquet files from a coordinator and caches locally."""
+
+    def __init__(
+        self,
+        coordinator_url: str,
+        cache_dir: str = ".cache/backtest",
+    ):
+        self.coordinator_url = coordinator_url.rstrip("/")
+        self.cache_dir = Path(cache_dir)
+
+    def pull(
+        self,
+        source: str = "binance",
+        subject: str = "BTC",
+        kind: str = "candle",
+        granularity: str = "1m",
+        start: str | datetime = "2026-01-01",
+        end: str | datetime = "2026-02-01",
+        refresh: bool = False,
+    ) -> list[Path]:
+        """Download matching parquet files from coordinator, cache locally.
+
+        Returns list of cached file paths.
+        """
+        import requests
+
+        start_dt = _parse_date(start)
+        end_dt = _parse_date(end)
+
+        # Get index
+        resp = requests.get(f"{self.coordinator_url}/data/backfill/index", timeout=30)
+        resp.raise_for_status()
+        manifest = resp.json()
+
+        # Filter to matching files
+        prefix = f"{source}/{subject}/{kind}/{granularity}/"
+        matching = []
+        for entry in manifest:
+            path = entry["path"]
+            if not path.startswith(prefix):
+                continue
+            date_str = entry.get("date", "")
+            try:
+                file_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            if start_dt <= file_date <= end_dt:
+                matching.append(entry)
+
+        # Download files
+        downloaded: list[Path] = []
+        for entry in matching:
+            rel_path = entry["path"]
+            local_path = self.cache_dir / rel_path
+
+            if local_path.exists() and not refresh:
+                logger.debug("cached: %s", local_path)
+                downloaded.append(local_path)
+                continue
+
+            url = f"{self.coordinator_url}/data/backfill/{rel_path}"
+            logger.info("downloading: %s", url)
+            file_resp = requests.get(url, timeout=120)
+            file_resp.raise_for_status()
+
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            local_path.write_bytes(file_resp.content)
+            downloaded.append(local_path)
+
+        logger.info("pulled %d files (%d from cache)", len(downloaded),
+                     sum(1 for p in downloaded if p.exists()))
+        return downloaded
+
+    def list_cached(
+        self,
+        source: str = "binance",
+        subject: str = "BTC",
+        kind: str = "candle",
+        granularity: str = "1m",
+    ) -> list[Path]:
+        """Return cached parquet file paths for given dimensions."""
+        target_dir = self.cache_dir / source / subject / kind / granularity
+        if not target_dir.exists():
+            return []
+        return sorted(target_dir.glob("*.parquet"))
+
+
+# ── BacktestRunner ──
+
+
+class BacktestRunner:
+    """Replays historical data through a TrackerBase model, scores predictions."""
+
+    def __init__(
+        self,
+        model,
+        scoring_fn: Callable[[dict, dict], dict] | None = None,
+        cache_dir: str = ".cache/backtest",
+    ):
+        self.model = model
+        self.scoring_fn = scoring_fn or _default_scoring_fn()
+        self.cache_dir = Path(cache_dir)
+
+    def run(
+        self,
+        source: str = "binance",
+        subject: str = "BTC",
+        kind: str = "candle",
+        granularity: str = "1m",
+        start: str | datetime = "2026-01-01",
+        end: str | datetime = "2026-02-01",
+        window_size: int = 120,
+        prediction_interval_seconds: int = 60,
+        horizon_seconds: int = 60,
+    ) -> BacktestResult:
+        """Replay cached data through the model, score predictions.
+
+        Returns a BacktestResult with predictions DataFrame and metrics.
+        """
+        import pandas as pd
+
+        start_dt = _parse_date(start)
+        end_dt = _parse_date(end)
+
+        # Load cached parquet data
+        data_dir = self.cache_dir / source / subject / kind / granularity
+        if not data_dir.exists():
+            raise FileNotFoundError(
+                f"No cached data at {data_dir}. Run BacktestClient.pull() first."
+            )
+
+        # Read and concat all matching parquet files
+        frames = []
+        for parquet_file in sorted(data_dir.glob("*.parquet")):
+            date_str = parquet_file.stem
+            try:
+                file_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            if start_dt <= file_date <= end_dt:
+                frames.append(pd.read_parquet(parquet_file))
+
+        if not frames:
+            raise FileNotFoundError(
+                f"No data files found for {start} to {end} in {data_dir}"
+            )
+
+        df = pd.concat(frames, ignore_index=True).sort_values("ts_event").reset_index(drop=True)
+
+        # Convert ts_event to datetime if needed
+        if not pd.api.types.is_datetime64_any_dtype(df["ts_event"]):
+            df["ts_event"] = pd.to_datetime(df["ts_event"], utc=True)
+
+        # Replay loop
+        predictions: list[dict[str, Any]] = []
+        last_predict_ts: datetime | None = None
+        interval = timedelta(seconds=prediction_interval_seconds)
+        horizon = timedelta(seconds=horizon_seconds)
+
+        for i in range(window_size, len(df)):
+            current_ts = df.iloc[i]["ts_event"]
+            if hasattr(current_ts, "to_pydatetime"):
+                current_ts = current_ts.to_pydatetime()
+            if current_ts.tzinfo is None:
+                current_ts = current_ts.replace(tzinfo=timezone.utc)
+
+            # Build window for tick()
+            window_df = df.iloc[max(0, i - window_size + 1):i + 1]
+            tick_data = _df_to_tick_data(window_df, subject)
+            self.model.tick(tick_data)
+
+            # Predict at intervals
+            if last_predict_ts is None or (current_ts - last_predict_ts) >= interval:
+                try:
+                    output = self.model.predict(
+                        subject=subject,
+                        horizon_seconds=horizon_seconds,
+                        step_seconds=prediction_interval_seconds,
+                    )
+                    if not isinstance(output, dict):
+                        output = {"value": output}
+                except Exception as exc:
+                    output = {"value": 0.0, "_error": str(exc)}
+
+                # Find actual outcome at horizon
+                resolve_ts = current_ts + horizon
+                actual = self._find_actual(df, i, current_ts, resolve_ts)
+
+                # Score
+                score_result = None
+                if actual is not None:
+                    try:
+                        score_result = self.scoring_fn(output, actual)
+                    except Exception as exc:
+                        score_result = {"value": 0.0, "success": False, "failed_reason": str(exc)}
+
+                predictions.append({
+                    "ts": current_ts,
+                    "output": output,
+                    "actual": actual,
+                    "score": score_result.get("value") if score_result else None,
+                    "score_success": score_result.get("success", True) if score_result else None,
+                })
+
+                last_predict_ts = current_ts
+
+        # Compute rolling window metrics
+        metrics = _compute_metrics(predictions)
+
+        config = {
+            "source": source,
+            "subject": subject,
+            "kind": kind,
+            "granularity": granularity,
+            "start": str(start),
+            "end": str(end),
+            "window_size": window_size,
+            "prediction_interval_seconds": prediction_interval_seconds,
+            "horizon_seconds": horizon_seconds,
+        }
+
+        return BacktestResult(predictions=predictions, metrics=metrics, config=config)
+
+    def _find_actual(
+        self,
+        df,
+        current_idx: int,
+        current_ts: datetime,
+        resolve_ts: datetime,
+    ) -> dict[str, Any] | None:
+        """Find the actual outcome at the horizon timestamp."""
+        import pandas as pd
+
+        # Find the closest record at or after resolve_ts
+        future_df = df.iloc[current_idx:]
+        future_ts = future_df["ts_event"]
+
+        # Convert resolve_ts for comparison
+        if hasattr(resolve_ts, "timestamp"):
+            resolve_pd = pd.Timestamp(resolve_ts)
+        else:
+            resolve_pd = resolve_ts
+
+        mask = future_ts >= resolve_pd
+        if not mask.any():
+            return None
+
+        resolve_row = future_df.loc[mask.idxmax()]
+
+        entry_price = _safe_float(df.iloc[current_idx].get("close"))
+        resolved_price = _safe_float(resolve_row.get("close"))
+
+        if entry_price is None or resolved_price is None:
+            return None
+
+        return {
+            "entry_price": entry_price,
+            "resolved_price": resolved_price,
+            "return": (resolved_price - entry_price) / max(abs(entry_price), 1e-9),
+            "direction_up": resolved_price > entry_price,
+        }
+
+
+def _df_to_tick_data(window_df, subject: str) -> dict[str, Any]:
+    """Convert a DataFrame window to the tick data format models expect."""
+    candles = []
+    for _, row in window_df.iterrows():
+        ts = row["ts_event"]
+        if hasattr(ts, "timestamp"):
+            ts_int = int(ts.timestamp())
+        else:
+            ts_int = int(ts)
+
+        candles.append({
+            "ts": ts_int,
+            "open": _safe_float(row.get("open")) or 0.0,
+            "high": _safe_float(row.get("high")) or 0.0,
+            "low": _safe_float(row.get("low")) or 0.0,
+            "close": _safe_float(row.get("close")) or 0.0,
+            "volume": _safe_float(row.get("volume")) or 0.0,
+        })
+
+    asof_ts = candles[-1]["ts"] if candles else 0
+    return {
+        "symbol": subject,
+        "asof_ts": asof_ts,
+        "candles_1m": candles,
+    }
+
+
+def _compute_metrics(predictions: list[dict[str, Any]]) -> dict[str, float]:
+    """Compute rolling window metrics matching production aggregation windows."""
+    scored = [
+        p for p in predictions
+        if p.get("score") is not None and p.get("score_success", True)
+    ]
+
+    if not scored:
+        return {"score_recent": 0.0, "score_steady": 0.0, "score_anchor": 0.0}
+
+    # Use the last prediction's timestamp as "now"
+    now = scored[-1]["ts"]
+    if hasattr(now, "timestamp"):
+        pass  # already datetime
+    else:
+        now = datetime.fromtimestamp(now, tz=timezone.utc)
+
+    windows = {
+        "score_recent": timedelta(hours=24),
+        "score_steady": timedelta(hours=72),
+        "score_anchor": timedelta(hours=168),
+    }
+
+    metrics: dict[str, float] = {}
+    for name, window in windows.items():
+        cutoff = now - window
+        window_scores = [
+            p["score"] for p in scored
+            if _ts_ge(p["ts"], cutoff)
+        ]
+        metrics[name] = sum(window_scores) / len(window_scores) if window_scores else 0.0
+
+    return metrics
+
+
+def _ts_ge(ts, cutoff: datetime) -> bool:
+    """Check if timestamp >= cutoff, handling mixed types."""
+    if hasattr(ts, "timestamp"):
+        return ts >= cutoff
+    return datetime.fromtimestamp(ts, tz=timezone.utc) >= cutoff
+
+
+def _default_scoring_fn() -> Callable[[dict, dict], dict]:
+    """Try to import the challenge's scoring function, fall back to basic."""
+    try:
+        from starter_challenge.scoring import score_prediction
+        return score_prediction
+    except ImportError:
+        pass
+
+    def _basic_score(prediction: dict, ground_truth: dict) -> dict:
+        pred_val = float(prediction.get("value", 0.0))
+        actual_return = float(ground_truth.get("return", 0.0))
+        # Simple directional score: +1 if prediction direction matches, -1 otherwise
+        correct = (pred_val > 0 and actual_return > 0) or (pred_val < 0 and actual_return < 0) or (pred_val == 0)
+        return {"value": 1.0 if correct else -1.0, "success": True}
+
+    return _basic_score
+
+
+def _parse_date(value) -> datetime:
+    """Parse a date string or pass through datetime."""
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            dt = datetime.strptime(value, fmt)
+            return dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    raise ValueError(f"Cannot parse date: {value!r}")
+
+
+def _safe_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None

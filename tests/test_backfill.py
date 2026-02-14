@@ -2,11 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-import py_compile
-import tempfile
 import unittest
 from datetime import datetime, timezone
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 from coordinator_node.feeds.contracts import FeedDataRecord, FeedFetchRequest
@@ -103,3 +100,128 @@ class TestBackfillService(unittest.TestCase):
         second_call = feed.fetch.call_args_list[1]
         req: FeedFetchRequest = second_call[0][0]
         self.assertGreater(req.start_ts, 1000)
+
+    def test_backfill_with_job_tracking(self):
+        """BackfillService updates job status and progress when job_repository is provided."""
+        from coordinator_node.services.backfill import BackfillService, BackfillRequest
+
+        repo = MagicMock()
+        repo.append_records = MagicMock(return_value=5)
+        repo.set_watermark = MagicMock()
+
+        job_repo = MagicMock()
+
+        # Records must be in the requested time range for cursor to advance
+        start_ts = int(datetime(2026, 2, 1, tzinfo=timezone.utc).timestamp())
+        feed = AsyncMock()
+        feed.fetch = AsyncMock(side_effect=[self._make_records("BTC", start_ts, 5), []])
+
+        request = BackfillRequest(
+            source="binance",
+            subjects=("BTC",),
+            kind="candle",
+            granularity="1m",
+            start=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            end=datetime(2026, 2, 1, 0, 10, tzinfo=timezone.utc),
+            job_id="test-job-123",
+        )
+
+        service = BackfillService(feed=feed, repository=repo, job_repository=job_repo)
+        result = asyncio.run(service.run(request))
+
+        self.assertEqual(result.records_written, 5)
+
+        # Should have set status to running, then completed
+        job_repo.set_status.assert_any_call("test-job-123", "running")
+        job_repo.set_status.assert_any_call("test-job-123", "completed")
+
+        # Should have updated progress at least once
+        job_repo.update_progress.assert_called()
+
+    def test_backfill_job_marked_failed_on_error(self):
+        """BackfillService marks job as failed when an exception occurs."""
+        from coordinator_node.services.backfill import BackfillService, BackfillRequest
+
+        repo = MagicMock()
+        repo.append_records = MagicMock(side_effect=RuntimeError("DB exploded"))
+        repo.set_watermark = MagicMock()
+
+        job_repo = MagicMock()
+
+        feed = AsyncMock()
+        feed.fetch = AsyncMock(return_value=self._make_records("BTC", 1707700000, 5))
+
+        request = BackfillRequest(
+            source="binance",
+            subjects=("BTC",),
+            kind="candle",
+            granularity="1m",
+            start=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            end=datetime(2026, 2, 1, 0, 5, tzinfo=timezone.utc),
+            job_id="test-job-456",
+        )
+
+        service = BackfillService(feed=feed, repository=repo, job_repository=job_repo)
+        with self.assertRaises(RuntimeError):
+            asyncio.run(service.run(request))
+
+        job_repo.set_status.assert_any_call("test-job-456", "failed", error="DB exploded")
+
+    def test_backfill_resumes_from_cursor(self):
+        """BackfillService starts from cursor_ts when provided."""
+        from coordinator_node.services.backfill import BackfillService, BackfillRequest
+
+        repo = MagicMock()
+        repo.append_records = MagicMock(return_value=0)
+        repo.set_watermark = MagicMock()
+
+        feed = AsyncMock()
+        feed.fetch = AsyncMock(return_value=[])
+
+        # cursor_ts is halfway through the range
+        cursor = datetime(2026, 2, 1, 0, 3, tzinfo=timezone.utc)
+        request = BackfillRequest(
+            source="binance",
+            subjects=("BTC",),
+            kind="candle",
+            granularity="1m",
+            start=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            end=datetime(2026, 2, 1, 0, 5, tzinfo=timezone.utc),
+            cursor_ts=cursor,
+        )
+
+        service = BackfillService(feed=feed, repository=repo)
+        asyncio.run(service.run(request))
+
+        # The fetch should start from cursor_ts, not start
+        call_args = feed.fetch.call_args_list[0]
+        req: FeedFetchRequest = call_args[0][0]
+        self.assertEqual(req.start_ts, int(cursor.timestamp()))
+
+    def test_backfill_without_job_tracking(self):
+        """BackfillService works normally without job_repository (backward compat)."""
+        from coordinator_node.services.backfill import BackfillService, BackfillRequest
+
+        repo = MagicMock()
+        repo.append_records = MagicMock(return_value=3)
+        repo.set_watermark = MagicMock()
+
+        feed = AsyncMock()
+        feed.fetch = AsyncMock(side_effect=[self._make_records("BTC", 1707700000, 3), []])
+
+        request = BackfillRequest(
+            source="binance",
+            subjects=("BTC",),
+            kind="candle",
+            granularity="1m",
+            start=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            end=datetime(2026, 2, 1, 0, 5, tzinfo=timezone.utc),
+        )
+
+        service = BackfillService(feed=feed, repository=repo)
+        result = asyncio.run(service.run(request))
+        self.assertEqual(result.records_written, 3)
+
+
+if __name__ == "__main__":
+    unittest.main()
