@@ -325,7 +325,7 @@ def _compute_window_metrics(scores: list[tuple[datetime, float]], contract: Crun
     metrics: dict[str, float] = {}
     for window_name, window in contract.aggregation.windows.items():
         cutoff = now - timedelta(hours=window.hours)
-        window_values = [v for ts, v in scores if ts >= cutoff]
+        window_values = [v for ts, v in scores if (ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts) >= cutoff]
         metrics[window_name] = sum(window_values) / len(window_values) if window_values else 0.0
     return metrics
 
