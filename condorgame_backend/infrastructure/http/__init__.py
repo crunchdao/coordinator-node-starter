@@ -1,2 +1,0 @@
-from .crunchdao_prices_http_repository import CrunchdaoPricesHttpRepository
-from .pyth_prices_http_repository import PythPriceHttpRepository
