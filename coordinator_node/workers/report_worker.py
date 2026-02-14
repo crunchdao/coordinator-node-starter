@@ -19,11 +19,14 @@ from coordinator_node.db import (
     DBCheckpointRepository,
     DBLeaderboardRepository,
     DBFeedRecordRepository,
+    DBMerkleCycleRepository,
+    DBMerkleNodeRepository,
     DBModelRepository,
     DBPredictionRepository,
     DBSnapshotRepository,
     create_session,
 )
+from coordinator_node.merkle.service import MerkleService
 
 app = FastAPI(title="Node Template Report Worker")
 
@@ -383,6 +386,21 @@ def get_checkpoint_repository(
     session_db: Annotated[Session, Depends(get_db_session)]
 ) -> DBCheckpointRepository:
     return DBCheckpointRepository(session_db)
+
+
+def get_merkle_service(
+    session_db: Annotated[Session, Depends(get_db_session)]
+) -> MerkleService:
+    return MerkleService(
+        merkle_cycle_repository=DBMerkleCycleRepository(session_db),
+        merkle_node_repository=DBMerkleNodeRepository(session_db),
+    )
+
+
+def get_merkle_cycle_repository(
+    session_db: Annotated[Session, Depends(get_db_session)]
+) -> DBMerkleCycleRepository:
+    return DBMerkleCycleRepository(session_db)
 
 
 @app.get("/healthz")
@@ -1204,6 +1222,75 @@ def _checkpoint_to_dict(c) -> dict[str, Any]:
         "created_at": c.created_at,
         "tx_hash": c.tx_hash,
         "submitted_at": c.submitted_at,
+    }
+
+
+# ── Merkle tamper evidence ──
+
+
+@app.get("/reports/merkle/cycles")
+def get_merkle_cycles(
+    cycle_repo: Annotated[DBMerkleCycleRepository, Depends(get_merkle_cycle_repository)],
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+) -> list[dict[str, Any]]:
+    """List recent Merkle cycles. Public endpoint for external verification."""
+    cycles = cycle_repo.find(since=since, until=until, limit=limit)
+    return [
+        {
+            "id": c.id,
+            "previous_cycle_id": c.previous_cycle_id,
+            "previous_cycle_root": c.previous_cycle_root,
+            "snapshots_root": c.snapshots_root,
+            "chained_root": c.chained_root,
+            "snapshot_count": c.snapshot_count,
+            "created_at": c.created_at,
+        }
+        for c in cycles
+    ]
+
+
+@app.get("/reports/merkle/cycles/{cycle_id}")
+def get_merkle_cycle(
+    cycle_id: str,
+    cycle_repo: Annotated[DBMerkleCycleRepository, Depends(get_merkle_cycle_repository)],
+) -> dict[str, Any]:
+    """Get a single Merkle cycle with its chained root."""
+    cycle = cycle_repo.get(cycle_id)
+    if cycle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merkle cycle not found")
+    return {
+        "id": cycle.id,
+        "previous_cycle_id": cycle.previous_cycle_id,
+        "previous_cycle_root": cycle.previous_cycle_root,
+        "snapshots_root": cycle.snapshots_root,
+        "chained_root": cycle.chained_root,
+        "snapshot_count": cycle.snapshot_count,
+        "created_at": cycle.created_at,
+    }
+
+
+@app.get("/reports/merkle/proof")
+def get_merkle_proof(
+    snapshot_id: Annotated[str, Query()],
+    merkle_svc: Annotated[MerkleService, Depends(get_merkle_service)],
+) -> dict[str, Any]:
+    """Generate an inclusion proof for a snapshot. Public endpoint."""
+    proof = merkle_svc.get_proof(snapshot_id)
+    if proof is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No Merkle proof found for snapshot '{snapshot_id}'",
+        )
+    return {
+        "snapshot_id": proof.snapshot_id,
+        "snapshot_content_hash": proof.snapshot_content_hash,
+        "cycle_id": proof.cycle_id,
+        "cycle_root": proof.cycle_root,
+        "checkpoint_id": proof.checkpoint_id,
+        "merkle_root": proof.merkle_root,
+        "path": [{"hash": s.hash, "position": s.position} for s in proof.path],
     }
 
 

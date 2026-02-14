@@ -14,6 +14,8 @@ from coordinator_node.db.tables import (
     CheckpointRow,
     InputRow,
     LeaderboardRow,
+    MerkleCycleRow,
+    MerkleNodeRow,
     ModelRow,
     PredictionConfigRow,
     PredictionRow,
@@ -502,3 +504,91 @@ class DBCheckpointRepository:
             created_at=row.created_at,
             tx_hash=row.tx_hash, submitted_at=row.submitted_at,
         )
+
+    def update_merkle_root(self, checkpoint_id: str, merkle_root: str) -> None:
+        row = self._session.get(CheckpointRow, checkpoint_id)
+        if row is not None:
+            row.merkle_root = merkle_root
+            self._session.commit()
+
+
+class DBMerkleCycleRepository:
+    def __init__(self, session: Session):
+        self._session = session
+
+    def save(self, cycle: MerkleCycleRow) -> None:
+        existing = self._session.get(MerkleCycleRow, cycle.id)
+        if existing is None:
+            self._session.add(cycle)
+        else:
+            existing.previous_cycle_id = cycle.previous_cycle_id
+            existing.previous_cycle_root = cycle.previous_cycle_root
+            existing.snapshots_root = cycle.snapshots_root
+            existing.chained_root = cycle.chained_root
+            existing.snapshot_count = cycle.snapshot_count
+        self._session.commit()
+
+    def get(self, cycle_id: str) -> MerkleCycleRow | None:
+        return self._session.get(MerkleCycleRow, cycle_id)
+
+    def get_latest(self) -> MerkleCycleRow | None:
+        return self._session.exec(
+            select(MerkleCycleRow).order_by(MerkleCycleRow.created_at.desc())
+        ).first()
+
+    def find(
+        self, *, since: datetime | None = None, until: datetime | None = None,
+        limit: int | None = None,
+    ) -> list[MerkleCycleRow]:
+        stmt = select(MerkleCycleRow)
+        if since is not None:
+            stmt = stmt.where(MerkleCycleRow.created_at >= since)
+        if until is not None:
+            stmt = stmt.where(MerkleCycleRow.created_at <= until)
+        if limit is not None:
+            stmt = stmt.limit(max(1, int(limit)))
+        stmt = stmt.order_by(MerkleCycleRow.created_at.asc())
+        return list(self._session.exec(stmt).all())
+
+
+class DBMerkleNodeRepository:
+    def __init__(self, session: Session):
+        self._session = session
+
+    def save(self, node: MerkleNodeRow) -> None:
+        existing = self._session.get(MerkleNodeRow, node.id)
+        if existing is None:
+            self._session.add(node)
+        else:
+            existing.hash = node.hash
+            existing.left_child_id = node.left_child_id
+            existing.right_child_id = node.right_child_id
+            existing.snapshot_id = node.snapshot_id
+            existing.snapshot_content_hash = node.snapshot_content_hash
+        self._session.commit()
+
+    def find_by_cycle_id(self, cycle_id: str) -> list[MerkleNodeRow]:
+        stmt = select(MerkleNodeRow).where(
+            MerkleNodeRow.cycle_id == cycle_id,
+        ).order_by(MerkleNodeRow.level.asc(), MerkleNodeRow.position.asc())
+        return list(self._session.exec(stmt).all())
+
+    def find_by_checkpoint_id(self, checkpoint_id: str) -> list[MerkleNodeRow]:
+        stmt = select(MerkleNodeRow).where(
+            MerkleNodeRow.checkpoint_id == checkpoint_id,
+        ).order_by(MerkleNodeRow.level.asc(), MerkleNodeRow.position.asc())
+        return list(self._session.exec(stmt).all())
+
+    def find_by_snapshot_id(self, snapshot_id: str) -> MerkleNodeRow | None:
+        return self._session.exec(
+            select(MerkleNodeRow).where(MerkleNodeRow.snapshot_id == snapshot_id)
+        ).first()
+
+    def find_by_hash_in_checkpoint(self, hash_value: str) -> list[MerkleNodeRow]:
+        """Find checkpoint-level nodes matching a hash (used to link cycle → checkpoint)."""
+        stmt = select(MerkleNodeRow).where(
+            MerkleNodeRow.checkpoint_id.isnot(None),
+            MerkleNodeRow.hash == hash_value,
+            MerkleNodeRow.level == 0,
+        )
+        return list(self._session.exec(stmt).all())

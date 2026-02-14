@@ -99,6 +99,7 @@ class SnapshotRow(SQLModel, table=True):
     meta_jsonb: dict[str, Any] = Field(
         default_factory=dict, sa_column=Column(JSONB),
     )
+    content_hash: Optional[str] = Field(default=None, index=True)
 
     created_at: datetime = Field(default_factory=utc_now, index=True)
 
@@ -118,6 +119,8 @@ class CheckpointRow(SQLModel, table=True):
     meta_jsonb: dict[str, Any] = Field(
         default_factory=dict, sa_column=Column(JSONB),
     )
+
+    merkle_root: Optional[str] = Field(default=None)
 
     created_at: datetime = Field(default_factory=utc_now, index=True)
     tx_hash: Optional[str] = Field(default=None)

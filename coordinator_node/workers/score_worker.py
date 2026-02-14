@@ -10,6 +10,8 @@ from coordinator_node.extensions.callable_resolver import resolve_callable
 from coordinator_node.db import (
     DBInputRepository,
     DBLeaderboardRepository,
+    DBMerkleCycleRepository,
+    DBMerkleNodeRepository,
     DBModelRepository,
     DBPredictionRepository,
     DBScoreRepository,
@@ -49,6 +51,8 @@ def build_service() -> ScoreService:
         snapshot_repository=DBSnapshotRepository(session),
         model_repository=DBModelRepository(session),
         leaderboard_repository=DBLeaderboardRepository(session),
+        merkle_cycle_repository=DBMerkleCycleRepository(session),
+        merkle_node_repository=DBMerkleNodeRepository(session),
         contract=load_config(),
     )
 

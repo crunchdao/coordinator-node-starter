@@ -11,9 +11,11 @@ from coordinator_node.entities.prediction import (
 )
 
 from coordinator_node.db.repositories import (
-    DBInputRepository, DBLeaderboardRepository, DBModelRepository,
+    DBInputRepository, DBLeaderboardRepository, DBMerkleCycleRepository,
+    DBMerkleNodeRepository, DBModelRepository,
     DBPredictionRepository, DBScoreRepository, DBSnapshotRepository,
 )
+from coordinator_node.merkle.service import MerkleService
 from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.services.feed_reader import FeedReader
 
@@ -30,6 +32,8 @@ class ScoreService:
         snapshot_repository: DBSnapshotRepository | None = None,
         model_repository: DBModelRepository | None = None,
         leaderboard_repository: DBLeaderboardRepository | None = None,
+        merkle_cycle_repository: DBMerkleCycleRepository | None = None,
+        merkle_node_repository: DBMerkleNodeRepository | None = None,
         contract: CrunchConfig | None = None,
         **kwargs: Any,
     ):
@@ -43,6 +47,15 @@ class ScoreService:
         self.model_repository = model_repository
         self.leaderboard_repository = leaderboard_repository
         self.contract = contract or CrunchConfig()
+
+        # Merkle tamper evidence
+        if merkle_cycle_repository and merkle_node_repository:
+            self.merkle_service: MerkleService | None = MerkleService(
+                merkle_cycle_repository=merkle_cycle_repository,
+                merkle_node_repository=merkle_node_repository,
+            )
+        else:
+            self.merkle_service = None
 
         self.logger = logging.getLogger(__name__)
         self.stop_event = asyncio.Event()
@@ -75,7 +88,7 @@ class ScoreService:
             return False
 
         # 3. write snapshots (per-model period summary + multi-metric enrichment)
-        self._write_snapshots(scored, now)
+        cycle_snapshots = self._write_snapshots(scored, now)
 
         # 4. compute ensembles (if configured)
         self._compute_ensembles(scored, now)
@@ -169,9 +182,9 @@ class ScoreService:
 
     # ── 3. snapshots (with multi-metric enrichment) ──
 
-    def _write_snapshots(self, scored: list[ScoreRecord], now: datetime) -> None:
+    def _write_snapshots(self, scored: list[ScoreRecord], now: datetime) -> list[SnapshotRecord]:
         if self.snapshot_repository is None:
-            return
+            return []
 
         # Group scores and predictions by model
         pred_map: dict[str, str] = {}  # prediction_id → model_id
@@ -212,6 +225,8 @@ class ScoreService:
             all_model_predictions=by_model_preds,
         )
 
+        written_snapshots: list[SnapshotRecord] = []
+
         for model_id, results in by_model_scores.items():
             # Baseline aggregation
             summary = self.contract.aggregate_snapshot(results)
@@ -243,8 +258,18 @@ class ScoreService:
                 created_at=now,
             )
             self.snapshot_repository.save(snapshot)
+            written_snapshots.append(snapshot)
 
         self.logger.info("Wrote %d snapshots", len(by_model_scores))
+
+        # Merkle tamper evidence: commit cycle
+        if self.merkle_service and written_snapshots:
+            try:
+                self.merkle_service.commit_cycle(written_snapshots, now)
+            except Exception as exc:
+                self.logger.warning("Merkle cycle commit failed: %s", exc)
+
+        return written_snapshots
 
     # ── 4. ensemble computation ──
 

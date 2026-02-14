@@ -11,10 +11,13 @@ from coordinator_node.config_loader import load_config
 from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.db import (
     DBCheckpointRepository,
+    DBMerkleCycleRepository,
+    DBMerkleNodeRepository,
     DBModelRepository,
     DBSnapshotRepository,
     create_session,
 )
+from coordinator_node.merkle.service import MerkleService
 from coordinator_node.entities.prediction import CheckpointRecord, CheckpointStatus
 
 
@@ -34,12 +37,14 @@ class CheckpointService:
         model_repository: DBModelRepository,
         contract: CrunchConfig | None = None,
         interval_seconds: int = 7 * 24 * 3600,  # weekly
+        merkle_service: MerkleService | None = None,
     ):
         self.snapshot_repository = snapshot_repository
         self.checkpoint_repository = checkpoint_repository
         self.model_repository = model_repository
         self.contract = contract or CrunchConfig()
         self.interval_seconds = interval_seconds
+        self.merkle_service = merkle_service
         self.logger = logging.getLogger(__name__)
         self.stop_event = asyncio.Event()
 
@@ -135,6 +140,22 @@ class CheckpointService:
         )
 
         self.checkpoint_repository.save(checkpoint)
+
+        # Merkle tamper evidence: build tree over cycle roots
+        if self.merkle_service:
+            try:
+                merkle_root = self.merkle_service.commit_checkpoint(
+                    checkpoint_id=checkpoint.id,
+                    period_start=period_start,
+                    period_end=now,
+                    now=now,
+                )
+                if merkle_root:
+                    self.checkpoint_repository.update_merkle_root(checkpoint.id, merkle_root)
+                    self.logger.info("Checkpoint %s merkle_root=%s", checkpoint.id, merkle_root[:16])
+            except Exception as exc:
+                self.logger.warning("Merkle checkpoint commit failed: %s", exc)
+
         self.logger.info(
             "Created checkpoint %s: %d models, %d snapshots, period %s → %s",
             checkpoint.id, len(ranked_entries), len(snapshots),
@@ -164,12 +185,18 @@ def build_service() -> CheckpointService:
     if data_provider:
         contract.data_provider = data_provider
 
+    merkle_service = MerkleService(
+        merkle_cycle_repository=DBMerkleCycleRepository(session),
+        merkle_node_repository=DBMerkleNodeRepository(session),
+    )
+
     return CheckpointService(
         snapshot_repository=DBSnapshotRepository(session),
         checkpoint_repository=DBCheckpointRepository(session),
         model_repository=DBModelRepository(session),
         contract=contract,
         interval_seconds=interval,
+        merkle_service=merkle_service,
     )
 
 
