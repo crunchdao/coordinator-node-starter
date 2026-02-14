@@ -172,6 +172,12 @@ Current operational defaults in this template:
 - Full DB access via same `Depends(get_db_session)` pattern as built-in endpoints
 - Example: `base/node/api/example_endpoints.py.disabled` (rename to activate)
 
+### Contract discovery
+- Workers use `coordinator_node.contract_loader.load_contract()` instead of `CrunchContract()`
+- Resolution: `CONTRACT_MODULE` env → `runtime_definitions.contracts:CrunchContract` → engine default
+- Operator's contract in `node/runtime_definitions/contracts.py` is auto-loaded (on PYTHONPATH in Docker)
+- Supports both class import (instantiated) and instance import
+
 ### Crunch-specific extension points
 Set callable paths in env/config:
 - `INFERENCE_INPUT_BUILDER`

@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
 from coordinator_node.config.runtime import RuntimeSettings
+from coordinator_node.contract_loader import load_contract
 from coordinator_node.contracts import CrunchContract
 from coordinator_node.entities.prediction import CheckpointStatus
 from coordinator_node.schemas import ReportSchemaEnvelope
@@ -34,7 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-CONTRACT = CrunchContract()
+CONTRACT = load_contract()
 SETTINGS = RuntimeSettings.from_env()
 
 

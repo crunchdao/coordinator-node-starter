@@ -166,7 +166,7 @@ Customize competition behavior by setting callable paths in your env:
 
 ## Contract
 
-All type shapes and behavior are defined in a single `CrunchContract`:
+All type shapes and behavior are defined in a single `CrunchContract`. Workers auto-discover the operator's contract at startup:
 
 ```python
 from coordinator_node.contracts import CrunchContract, EnsembleConfig
@@ -191,6 +191,16 @@ contract = CrunchContract(
     build_emission=default_build_emission,
 )
 ```
+
+### Contract resolution order
+
+All workers use `load_contract()` which tries, in order:
+
+1. `CONTRACT_MODULE` env var (e.g. `my_package.contracts:MyContract`)
+2. `runtime_definitions.contracts:CrunchContract` — the standard operator override in `node/runtime_definitions/contracts.py`
+3. `coordinator_node.contracts:CrunchContract` — engine default
+
+The operator's contract is imported automatically — no env var needed if `runtime_definitions/contracts.py` exists on `PYTHONPATH` (it does in the Docker setup).
 
 ---
 

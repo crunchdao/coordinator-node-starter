@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 from coordinator_node.config.runtime import RuntimeSettings
-from coordinator_node.contracts import CrunchContract
+from coordinator_node.contract_loader import load_contract
 from coordinator_node.db import DBInputRepository, DBModelRepository, DBPredictionRepository, create_session
 from coordinator_node.services.feed_reader import FeedReader
 from coordinator_node.services.realtime_predict import RealtimePredictService
@@ -25,7 +25,7 @@ def build_service() -> RealtimePredictService:
     return RealtimePredictService(
         checkpoint_interval_seconds=runtime_settings.checkpoint_interval_seconds,
         feed_reader=FeedReader.from_env(),
-        contract=CrunchContract(),
+        contract=load_contract(),
         input_repository=DBInputRepository(session),
         model_repository=DBModelRepository(session),
         prediction_repository=DBPredictionRepository(session),

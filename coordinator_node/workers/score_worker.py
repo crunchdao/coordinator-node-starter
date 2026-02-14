@@ -5,7 +5,7 @@ import logging
 
 from coordinator_node.config.extensions import ExtensionSettings
 from coordinator_node.config.runtime import RuntimeSettings
-from coordinator_node.contracts import CrunchContract
+from coordinator_node.contract_loader import load_contract
 from coordinator_node.extensions.callable_resolver import resolve_callable
 from coordinator_node.db import (
     DBInputRepository,
@@ -49,7 +49,7 @@ def build_service() -> ScoreService:
         snapshot_repository=DBSnapshotRepository(session),
         model_repository=DBModelRepository(session),
         leaderboard_repository=DBLeaderboardRepository(session),
-        contract=CrunchContract(),
+        contract=load_contract(),
     )
 
 

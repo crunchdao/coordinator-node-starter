@@ -7,6 +7,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from coordinator_node.contract_loader import load_contract
 from coordinator_node.contracts import CrunchContract
 from coordinator_node.db import (
     DBCheckpointRepository,
@@ -148,15 +149,26 @@ class CheckpointService:
 def build_service() -> CheckpointService:
     session = create_session()
     interval = int(os.getenv("CHECKPOINT_INTERVAL_SECONDS", str(7 * 24 * 3600)))
+
+    contract = load_contract()
+
+    # Env var overrides for on-chain identifiers (backward compat)
+    crunch_pubkey = os.getenv("CRUNCH_PUBKEY", "")
+    compute_provider = os.getenv("COMPUTE_PROVIDER_PUBKEY")
+    data_provider = os.getenv("DATA_PROVIDER_PUBKEY")
+
+    if crunch_pubkey:
+        contract.crunch_pubkey = crunch_pubkey
+    if compute_provider:
+        contract.compute_provider = compute_provider
+    if data_provider:
+        contract.data_provider = data_provider
+
     return CheckpointService(
         snapshot_repository=DBSnapshotRepository(session),
         checkpoint_repository=DBCheckpointRepository(session),
         model_repository=DBModelRepository(session),
-        contract=CrunchContract(
-            crunch_pubkey=os.getenv("CRUNCH_PUBKEY", ""),
-            compute_provider=os.getenv("COMPUTE_PROVIDER_PUBKEY") or None,
-            data_provider=os.getenv("DATA_PROVIDER_PUBKEY") or None,
-        ),
+        contract=contract,
         interval_seconds=interval,
     )
 
