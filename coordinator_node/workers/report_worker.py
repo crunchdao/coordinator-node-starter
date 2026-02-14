@@ -738,12 +738,7 @@ def get_predictions(
 def get_feeds(
     feed_repo: Annotated[DBFeedRecordRepository, Depends(get_feed_record_repository)],
 ) -> list[dict[str, Any]]:
-    feeds = feed_repo.list_indexed_feeds()
-    # Include legacy aliases (provider/asset) for backward compat with webapp
-    for feed in feeds:
-        feed.setdefault("provider", feed.get("source", ""))
-        feed.setdefault("asset", feed.get("subject", ""))
-    return feeds
+    return feed_repo.list_indexed_feeds()
 
 
 @app.get("/reports/feeds/tail")
@@ -754,13 +749,10 @@ def get_feeds_tail(
     kind: Annotated[str | None, Query()] = None,
     granularity: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 20,
-    # Legacy query param aliases used by the webapp
-    provider: Annotated[str | None, Query()] = None,
-    asset: Annotated[str | None, Query()] = None,
 ) -> list[dict[str, Any]]:
     records = feed_repo.tail_records(
-        source=source or provider,
-        subject=subject or asset,
+        source=source,
+        subject=subject,
         kind=kind,
         granularity=granularity,
         limit=limit,
@@ -772,9 +764,6 @@ def get_feeds_tail(
             {
                 "source": record.source,
                 "subject": record.subject,
-                # Legacy aliases for webapp compatibility
-                "provider": record.source,
-                "asset": record.subject,
                 "kind": record.kind,
                 "granularity": record.granularity,
                 "ts_event": record.ts_event,
