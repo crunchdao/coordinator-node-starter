@@ -158,6 +158,23 @@ Current operational defaults in this template:
 - Declared in contract: `CrunchConfig.metrics: list[str]` (active metric names)
 - Stored in: `SnapshotRecord.result_summary` JSONB (enriched alongside baseline aggregation)
 
+### Diversity feedback
+- `/reports/models/{model_id}/diversity` endpoint — returns correlation, contribution, diversity score, actionable guidance
+- Public endpoint (no auth required) — competitors see their own feedback
+- BacktestResult.diversity property fetches live feedback from coordinator
+- BacktestResult.summary() shows diversity section when metrics available
+
+### Emission strategies
+- `coordinator_node/extensions/emission_strategies.py` — `contribution_weighted_emission` (rank + contribution + diversity)
+- Configurable weights: `rank_weight`, `contribution_weight`, `diversity_weight`
+- `min_pct` floor ensures every model gets minimum reward
+- Drop-in replacement for `build_emission` in CrunchConfig
+
+### Ensemble signal endpoint (example)
+- `base/node/api/ensemble_signals.py.disabled` — rename to activate
+- `/signals/ensemble` — list ensembles, `/signals/ensemble/{name}` — latest prediction
+- The "product" of the collective intelligence system for downstream consumers
+
 ### Ensemble framework
 - `coordinator_node/services/ensemble.py` — weight strategies (inverse_variance, equal_weight), model filters (top_n, min_metric), prediction builder
 - `coordinator_node/crunch_config.py` — `EnsembleConfig(name, strategy, model_filter, enabled)`

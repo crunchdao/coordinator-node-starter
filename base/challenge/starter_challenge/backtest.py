@@ -49,25 +49,6 @@ class BacktestResult:
         import pandas as pd
         return pd.DataFrame(self._predictions)
 
-    def summary(self) -> str:
-        """Return a formatted summary string."""
-        lines = [
-            "═" * 60,
-            "  BACKTEST SUMMARY",
-            "═" * 60,
-            f"  Subject:     {self.config.get('subject', 'N/A')}",
-            f"  Period:      {self.config.get('start', '?')} → {self.config.get('end', '?')}",
-            f"  Predictions: {len(self._predictions)}",
-            "─" * 60,
-            "  METRICS (rolling windows):",
-        ]
-        for key, value in self.metrics.items():
-            lines.append(f"    {key:20s} {value:+.6f}")
-        lines.append("═" * 60)
-        text = "\n".join(lines)
-        print(text)
-        return text
-
     def _repr_html_(self) -> str:
         """Rich HTML display for Jupyter notebooks."""
         rows = ""
@@ -89,6 +70,81 @@ class BacktestResult:
             </table>
         </div>
         """
+
+    @property
+    def diversity(self) -> dict[str, Any] | None:
+        """Fetch diversity feedback from the coordinator for this model.
+
+        Returns None if the coordinator is unreachable or the model has no
+        production predictions yet. Only works after the model has been
+        submitted and scored in production.
+        """
+        model_id = self.config.get("model_id")
+        if not model_id:
+            return None
+        try:
+            import requests
+            from starter_challenge.config import COORDINATOR_URL
+            url = f"{COORDINATOR_URL.rstrip('/')}/reports/models/{model_id}/diversity"
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception:
+            pass
+        return None
+
+    def summary(self, show_diversity: bool = True) -> str:
+        """Return a formatted summary string.
+
+        If show_diversity=True and a model_id is configured, attempts to
+        fetch diversity feedback from the coordinator.
+        """
+        lines = [
+            "═" * 60,
+            "  BACKTEST SUMMARY",
+            "═" * 60,
+            f"  Subject:     {self.config.get('subject', 'N/A')}",
+            f"  Period:      {self.config.get('start', '?')} → {self.config.get('end', '?')}",
+            f"  Predictions: {len(self._predictions)}",
+            "─" * 60,
+            "  METRICS:",
+        ]
+
+        # Group metrics
+        window_keys = {"score_recent", "score_steady", "score_anchor"}
+        diversity_keys = {"model_correlation", "ensemble_correlation", "contribution", "fnc"}
+
+        for key, value in self.metrics.items():
+            if key not in diversity_keys:
+                lines.append(f"    {key:20s} {value:+.6f}")
+
+        # Show diversity-related metrics separately if present
+        diversity_metrics = {k: v for k, v in self.metrics.items() if k in diversity_keys}
+        if diversity_metrics:
+            lines.append("─" * 60)
+            lines.append("  DIVERSITY (vs. production ensemble):")
+            for key, value in diversity_metrics.items():
+                lines.append(f"    {key:20s} {value:+.6f}")
+
+        # Try to fetch live diversity feedback
+        if show_diversity:
+            div = self.diversity
+            if div:
+                lines.append("─" * 60)
+                lines.append("  DIVERSITY FEEDBACK:")
+                ds = div.get("diversity_score")
+                if ds is not None:
+                    lines.append(f"    {'diversity_score':20s} {ds:.4f}")
+                rank = div.get("rank")
+                if rank is not None:
+                    lines.append(f"    {'rank':20s} #{rank}")
+                for g in div.get("guidance", []):
+                    lines.append(f"    → {g}")
+
+        lines.append("═" * 60)
+        text = "\n".join(lines)
+        print(text)
+        return text
 
     def __repr__(self) -> str:
         return f"BacktestResult(predictions={len(self._predictions)}, metrics={self.metrics})"

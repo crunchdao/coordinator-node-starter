@@ -44,6 +44,8 @@ _DEFAULT_PUBLIC_PREFIXES = (
     "/redoc",
     "/openapi.json",
 )
+# Note: /reports/models includes /reports/models/{id}/diversity — competitors
+# can always see their own diversity feedback.
 
 _DEFAULT_ADMIN_PREFIXES = (
     "/reports/backfill",

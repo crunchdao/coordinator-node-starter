@@ -387,6 +387,77 @@ GET /reports/models/global?include_ensembles=true
 GET /reports/models/params?include_ensembles=true
 ```
 
+### Contribution-aware rewards
+
+The default `build_emission` uses tier-based ranking. For competitions that want to incentivize diversity, switch to `contribution_weighted_emission`:
+
+```python
+from coordinator_node.extensions.emission_strategies import contribution_weighted_emission
+
+config = CrunchConfig(
+    build_emission=contribution_weighted_emission,
+    metrics=["ic", "ic_sharpe", "hit_rate", "model_correlation", "contribution"],
+    ensembles=[EnsembleConfig(name="main")],
+)
+```
+
+This blends three factors into reward allocation:
+- **Rank** (50%): inverse rank — higher-ranked models get more
+- **Contribution** (30%): ensemble contribution — models that improve the ensemble get more
+- **Diversity** (20%): 1 - model_correlation — unique signals get more
+
+Weights are configurable: `contribution_weighted_emission(..., rank_weight=0.3, contribution_weight=0.5, diversity_weight=0.2)`.
+
+### Ensemble signal endpoint
+
+Activate the built-in ensemble signal API by renaming:
+
+```bash
+mv node/api/ensemble_signals.py.disabled node/api/ensemble_signals.py
+make deploy
+```
+
+Endpoints:
+```
+GET /signals/ensemble              → list available ensembles
+GET /signals/ensemble/{name}       → latest ensemble prediction (the product)
+GET /signals/ensemble/{name}/history → recent prediction history
+```
+
+### Diversity feedback for competitors
+
+Competitors can see how their model relates to the collective:
+
+```
+GET /reports/models/{model_id}/diversity
+```
+
+Returns:
+```json
+{
+  "model_id": "my_model",
+  "rank": 3,
+  "diversity_score": 0.75,
+  "metrics": {
+    "ic": 0.035,
+    "model_correlation": 0.25,
+    "ensemble_correlation": 0.60,
+    "contribution": 0.02,
+    "fnc": 0.03
+  },
+  "guidance": [
+    "Low correlation + positive IC — your model provides unique alpha."
+  ]
+}
+```
+
+The backtest harness also surfaces diversity metrics:
+```python
+result = BacktestRunner(model=MyTracker()).run(...)
+result.summary()  # includes diversity section when model_id is set
+result.diversity  # fetches live diversity feedback from coordinator
+```
+
 ---
 
 ## Report API
@@ -399,6 +470,7 @@ GET /reports/models/params?include_ensembles=true
 | `GET /reports/models/params` | `projectIds`, `start`, `end`, `include_ensembles` | Per-scope model scores |
 | `GET /reports/predictions` | `projectIds`, `start`, `end` | Prediction history |
 | `GET /reports/feeds` | | Active feed subscriptions |
+| `GET /reports/models/{id}/diversity` | | Diversity feedback: correlation, contribution, guidance |
 | `GET /reports/snapshots` | `model_id`, `since`, `until`, `limit` | Per-model period summaries (enriched with metrics) |
 | `GET /reports/checkpoints` | `status`, `limit` | Checkpoint history |
 | `GET /reports/checkpoints/{id}/emission` | | Raw emission (frac64) |

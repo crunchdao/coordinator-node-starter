@@ -356,6 +356,99 @@ def get_models(
     ]
 
 
+@app.get("/reports/models/{model_id}/diversity")
+def get_model_diversity(
+    model_id: str,
+    snapshot_repo: Annotated[DBSnapshotRepository, Depends(get_snapshot_repository)],
+    leaderboard_repo: Annotated[DBLeaderboardRepository, Depends(get_leaderboard_repository)],
+) -> dict[str, Any]:
+    """Diversity and contribution feedback for a specific model.
+
+    Returns metrics that tell a competitor how their model relates to the
+    collective: correlation to other models, correlation to ensemble,
+    contribution to ensemble, and actionable guidance.
+    """
+    # Get latest snapshot for this model
+    snapshots = snapshot_repo.find(model_id=model_id, limit=1)
+    if not snapshots:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No snapshots found for model '{model_id}'",
+        )
+
+    latest = snapshots[0]
+    summary = latest.result_summary
+
+    # Extract diversity-related metrics
+    model_correlation = summary.get("model_correlation")
+    ensemble_correlation = summary.get("ensemble_correlation")
+    contribution = summary.get("contribution")
+    fnc = summary.get("fnc")
+    ic = summary.get("ic")
+
+    # Compute diversity score (0 = redundant clone, 1 = fully unique)
+    diversity_score = None
+    if model_correlation is not None:
+        diversity_score = round(max(0.0, 1.0 - abs(model_correlation)), 4)
+
+    # Generate actionable guidance
+    guidance = []
+    if model_correlation is not None and model_correlation > 0.7:
+        guidance.append(
+            f"High correlation ({model_correlation:.2f}) with other models. "
+            "Your signal overlaps significantly with existing models. "
+            "Consider a different approach or features to increase uniqueness."
+        )
+    if ensemble_correlation is not None and ensemble_correlation > 0.9:
+        guidance.append(
+            f"Very high ensemble correlation ({ensemble_correlation:.2f}). "
+            "Your model closely tracks the ensemble — it adds little new information."
+        )
+    if contribution is not None and contribution < 0:
+        guidance.append(
+            f"Negative contribution ({contribution:.4f}). "
+            "The ensemble performs better without your model. "
+            "This may reduce rewards in contribution-weighted competitions."
+        )
+    if contribution is not None and contribution > 0.01:
+        guidance.append(
+            f"Positive contribution ({contribution:.4f}). "
+            "Your model improves the ensemble — this is valuable."
+        )
+    if model_correlation is not None and model_correlation < 0.3 and ic is not None and ic > 0:
+        guidance.append(
+            "Low correlation + positive IC — your model provides unique alpha. "
+            "This is the ideal profile for ensemble contribution."
+        )
+
+    if not guidance:
+        guidance.append("Not enough data yet for diversity guidance. Keep submitting predictions.")
+
+    # Get rank from leaderboard
+    rank = None
+    leaderboard = leaderboard_repo.get_latest()
+    if leaderboard:
+        for entry in leaderboard.get("entries", []):
+            if entry.get("model_id") == model_id:
+                rank = entry.get("rank")
+                break
+
+    return {
+        "model_id": model_id,
+        "rank": rank,
+        "diversity_score": diversity_score,
+        "metrics": {
+            "ic": ic,
+            "model_correlation": model_correlation,
+            "ensemble_correlation": ensemble_correlation,
+            "contribution": contribution,
+            "fnc": fnc,
+        },
+        "guidance": guidance,
+        "snapshot_period_end": latest.period_end,
+    }
+
+
 def _is_ensemble_model(model_id: str | None) -> bool:
     """Check if a model ID belongs to an ensemble virtual model."""
     return bool(model_id and model_id.startswith("__ensemble_"))
