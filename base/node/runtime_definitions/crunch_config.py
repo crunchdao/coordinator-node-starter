@@ -19,13 +19,24 @@ class Meta(BaseModel):
 
 
 class RawInput(BaseModel):
-    """What the feed produces. Shape is determined by feed config."""
+    """What the feed produces. Multi-timeframe OHLCV + microstructure data."""
 
     model_config = ConfigDict(extra="allow")
 
     symbol: str = "BTC"
     asof_ts: int = 0
+
+    # Multi-timeframe OHLCV candles (aggregated from 1m)
     candles_1m: list[dict] = Field(default_factory=list)
+    candles_5m: list[dict] = Field(default_factory=list)
+    candles_15m: list[dict] = Field(default_factory=list)
+    candles_1h: list[dict] = Field(default_factory=list)
+
+    # Order book microstructure (latest snapshot, or None if unavailable)
+    orderbook: dict | None = Field(default=None)
+
+    # Funding rate / basis (latest, or None if unavailable)
+    funding: dict | None = Field(default=None)
 
 
 class GroundTruth(RawInput):

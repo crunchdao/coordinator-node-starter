@@ -42,30 +42,52 @@ class FeedReader:
             window_size=int(os.getenv("FEED_CANDLES_WINDOW", "120")),
         )
 
+    # Multi-timeframe settings: (target_minutes, window_count)
+    MULTI_TF = [
+        (5, 60),    # 5m candles, last 60 → 5 hours
+        (15, 40),   # 15m candles, last 40 → 10 hours
+        (60, 24),   # 1h candles, last 24 → 1 day
+    ]
+
     def get_input(self, now: datetime) -> dict[str, Any]:
         """Build raw input dict for this timestep from recent feed records.
 
-        Default implementation returns candle-shaped data (symbol, asof_ts, candles_1m).
-        Override or replace via contract.raw_input_type for non-price feeds.
+        Returns candle data at multiple timeframes aggregated from 1m candles:
+        candles_1m, candles_5m, candles_15m, candles_1h.
         """
-        candles = self._load_recent_candles(limit=self.window_size)
+        # Load enough 1m candles to cover the largest multi-TF window (24h = 1440m)
+        max_1m_needed = max(tf * count for tf, count in self.MULTI_TF)
+        load_limit = max(self.window_size, max_1m_needed)
+
+        candles = self._load_recent_candles(limit=load_limit)
 
         if len(candles) < min(3, self.window_size):
             self._recover_window(
-                start=now - timedelta(minutes=max(5, self.window_size)),
+                start=now - timedelta(minutes=max(5, load_limit)),
                 end=now,
             )
-            candles = self._load_recent_candles(limit=self.window_size)
+            candles = self._load_recent_candles(limit=load_limit)
 
         asof_ts = int(now.timestamp())
         if candles:
             asof_ts = int(candles[-1].get("ts", asof_ts))
 
-        return {
+        result = {
             "symbol": self.subject,
             "asof_ts": asof_ts,
-            "candles_1m": candles,
+            "candles_1m": candles[-self.window_size:],
         }
+
+        # Aggregate higher timeframes from 1m candles
+        for target_minutes, window_count in self.MULTI_TF:
+            key = f"candles_{target_minutes}m" if target_minutes < 60 else f"candles_{target_minutes // 60}h"
+            result[key] = self._aggregate_candles(candles, target_minutes, window_count)
+
+        # Attach microstructure data (order book + funding) if available
+        result["orderbook"] = self._load_latest_microstructure("depth")
+        result["funding"] = self._load_latest_microstructure("funding")
+
+        return result
 
     def fetch_window(
         self,
@@ -212,6 +234,64 @@ class FeedReader:
             return loop.run_until_complete(coro)
         except Exception:
             return []
+
+    def _load_latest_microstructure(self, kind: str) -> dict[str, Any] | None:
+        """Load the most recent depth or funding record for this subject."""
+        try:
+            with create_session() as session:
+                repo = DBFeedRecordRepository(session)
+                records = repo.fetch_records(
+                    source=self.source,
+                    subject=self.subject,
+                    kind=kind,
+                    granularity=self.granularity,
+                    limit=1,
+                )
+            if records:
+                return records[-1].values or None
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _aggregate_candles(
+        candles_1m: list[dict[str, Any]],
+        target_minutes: int,
+        max_output: int,
+    ) -> list[dict[str, Any]]:
+        """Roll up 1m candles into higher-timeframe OHLCV bars.
+
+        Groups by flooring each candle's timestamp to the target interval boundary.
+        Returns at most *max_output* bars, most-recent last.
+        """
+        if not candles_1m or target_minutes <= 1:
+            return candles_1m[-max_output:] if candles_1m else []
+
+        interval_s = target_minutes * 60
+        buckets: dict[int, dict[str, Any]] = {}
+
+        for c in candles_1m:
+            ts = c.get("ts", 0)
+            bucket_ts = (ts // interval_s) * interval_s
+
+            if bucket_ts not in buckets:
+                buckets[bucket_ts] = {
+                    "ts": bucket_ts,
+                    "open": c["open"],
+                    "high": c["high"],
+                    "low": c["low"],
+                    "close": c["close"],
+                    "volume": c["volume"],
+                }
+            else:
+                bar = buckets[bucket_ts]
+                bar["high"] = max(bar["high"], c["high"])
+                bar["low"] = min(bar["low"], c["low"])
+                bar["close"] = c["close"]
+                bar["volume"] += c["volume"]
+
+        sorted_bars = sorted(buckets.values(), key=lambda b: b["ts"])
+        return sorted_bars[-max_output:]
 
     @staticmethod
     def _record_price(record) -> float | None:
