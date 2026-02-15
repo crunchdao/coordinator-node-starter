@@ -35,9 +35,11 @@ class ScoreService:
         merkle_cycle_repository: DBMerkleCycleRepository | None = None,
         merkle_node_repository: DBMerkleNodeRepository | None = None,
         contract: CrunchConfig | None = None,
+        score_interval_seconds: int | None = None,
         **kwargs: Any,
     ):
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
+        self.score_interval_seconds = score_interval_seconds or min(60, checkpoint_interval_seconds)
         self.scoring_function = scoring_function
         self.feed_reader = feed_reader
         self.input_repository = input_repository
@@ -61,7 +63,10 @@ class ScoreService:
         self.stop_event = asyncio.Event()
 
     async def run(self) -> None:
-        self.logger.info("score service started")
+        self.logger.info(
+            "score service started (score_interval=%ds, checkpoint_interval=%ds)",
+            self.score_interval_seconds, self.checkpoint_interval_seconds,
+        )
         while not self.stop_event.is_set():
             try:
                 self.run_once()
@@ -71,7 +76,7 @@ class ScoreService:
                 self.logger.exception("score loop error: %s", exc)
                 self._rollback_repositories()
             try:
-                await asyncio.wait_for(self.stop_event.wait(), timeout=self.checkpoint_interval_seconds)
+                await asyncio.wait_for(self.stop_event.wait(), timeout=self.score_interval_seconds)
             except asyncio.TimeoutError:
                 pass
 

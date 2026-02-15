@@ -80,6 +80,47 @@ class BinanceRestClient:
         payload = response.json()
         return payload if isinstance(payload, list) else []
 
+    def depth(self, symbol: str, limit: int = 10) -> dict[str, Any]:
+        """Fetch order book depth snapshot (spot).
+
+        Returns: {"bids": [[price, qty], ...], "asks": [[price, qty], ...]}
+        """
+        response = requests.get(
+            f"{self.base_url}/api/v3/depth",
+            params={"symbol": symbol, "limit": limit},
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def funding_rate(self, symbol: str, limit: int = 1) -> list[dict[str, Any]]:
+        """Fetch recent funding rate from Binance Futures (fapi).
+
+        Returns list of: {"symbol", "fundingRate", "fundingTime", "markPrice"}
+        """
+        fapi_url = "https://fapi.binance.com"
+        response = requests.get(
+            f"{fapi_url}/fapi/v1/fundingRate",
+            params={"symbol": symbol, "limit": limit},
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def mark_price(self, symbol: str) -> dict[str, Any]:
+        """Fetch current mark price + funding info from Binance Futures.
+
+        Returns: {"symbol", "markPrice", "indexPrice", "lastFundingRate", "nextFundingTime", ...}
+        """
+        fapi_url = "https://fapi.binance.com"
+        response = requests.get(
+            f"{fapi_url}/fapi/v1/premiumIndex",
+            params={"symbol": symbol},
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        return response.json()
+
     def ticker_price(self, symbol: str) -> float:
         if self.sdk_client is not None:
             payload = self.sdk_client.get_symbol_ticker(symbol=symbol)
@@ -109,6 +150,11 @@ class _PollingFeedHandle:
             await self._task
         except asyncio.CancelledError:
             pass
+
+
+import logging as _logging
+
+_logger = _logging.getLogger(__name__)
 
 
 class BinanceFeed(DataFeed):
@@ -194,8 +240,24 @@ class BinanceFeed(DataFeed):
 
     async def fetch(self, req: FeedFetchRequest) -> Sequence[FeedDataRecord]:
         if req.kind == "candle":
-            return await self._fetch_candles(req)
-        return await self._fetch_ticks(req)
+            records = await self._fetch_candles(req)
+        elif req.kind == "depth":
+            records = await self._fetch_depth(req)
+        elif req.kind == "funding":
+            records = await self._fetch_funding(req)
+        else:
+            records = await self._fetch_ticks(req)
+
+        for subject in req.subjects:
+            subject_count = sum(1 for r in records if r.subject == subject)
+            if subject_count == 0:
+                _logger.warning(
+                    "Binance returned 0 records for subject=%r kind=%r granularity=%r. "
+                    "Binance requires full pair symbols (e.g. BTCUSDT, not BTC).",
+                    subject, req.kind, req.granularity,
+                )
+
+        return records
 
     async def _fetch_candles(self, req: FeedFetchRequest) -> list[FeedDataRecord]:
         records: list[FeedDataRecord] = []
@@ -239,6 +301,106 @@ class BinanceFeed(DataFeed):
                 except Exception:
                     continue
                 records.append(record)
+
+        return records
+
+    async def _fetch_depth(self, req: FeedFetchRequest) -> list[FeedDataRecord]:
+        """Fetch order book depth snapshots for requested subjects."""
+        records: list[FeedDataRecord] = []
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        depth_limit = int(self.settings.options.get("depth_limit", "10"))
+
+        for asset in req.subjects:
+            try:
+                data = await asyncio.to_thread(self.client.depth, asset, limit=depth_limit)
+            except Exception as exc:
+                _logger.warning("depth fetch failed for %s: %s", asset, exc)
+                continue
+
+            bids = data.get("bids", [])
+            asks = data.get("asks", [])
+
+            # Compute derived microstructure features
+            bid_prices = [float(b[0]) for b in bids[:depth_limit]]
+            bid_qtys = [float(b[1]) for b in bids[:depth_limit]]
+            ask_prices = [float(a[0]) for a in asks[:depth_limit]]
+            ask_qtys = [float(a[1]) for a in asks[:depth_limit]]
+
+            best_bid = bid_prices[0] if bid_prices else 0.0
+            best_ask = ask_prices[0] if ask_prices else 0.0
+            spread = best_ask - best_bid
+            mid_price = (best_bid + best_ask) / 2.0 if (best_bid + best_ask) > 0 else 0.0
+
+            total_bid_qty = sum(bid_qtys)
+            total_ask_qty = sum(ask_qtys)
+            imbalance = (
+                (total_bid_qty - total_ask_qty) / (total_bid_qty + total_ask_qty)
+                if (total_bid_qty + total_ask_qty) > 0
+                else 0.0
+            )
+
+            records.append(FeedDataRecord(
+                subject=asset,
+                kind="depth",
+                granularity=req.granularity,
+                ts_event=now_ts,
+                values={
+                    "best_bid": best_bid,
+                    "best_ask": best_ask,
+                    "spread": spread,
+                    "mid_price": mid_price,
+                    "bid_depth": total_bid_qty,
+                    "ask_depth": total_ask_qty,
+                    "imbalance": imbalance,
+                    "bids_top": [[p, q] for p, q in zip(bid_prices, bid_qtys)],
+                    "asks_top": [[p, q] for p, q in zip(ask_prices, ask_qtys)],
+                },
+                source="binance",
+            ))
+
+        return records
+
+    async def _fetch_funding(self, req: FeedFetchRequest) -> list[FeedDataRecord]:
+        """Fetch funding rate and mark price from Binance Futures."""
+        records: list[FeedDataRecord] = []
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+
+        for asset in req.subjects:
+            try:
+                mark_data = await asyncio.to_thread(self.client.mark_price, asset)
+            except Exception as exc:
+                _logger.warning("funding/mark fetch failed for %s: %s", asset, exc)
+                continue
+
+            if not isinstance(mark_data, dict):
+                continue
+
+            funding_rate = float(mark_data.get("lastFundingRate", 0.0))
+            mark_price = float(mark_data.get("markPrice", 0.0))
+            index_price = float(mark_data.get("indexPrice", 0.0))
+            next_funding_ts = int(mark_data.get("nextFundingTime", 0)) // 1000
+
+            # Basis = (mark - index) / index — a mean-reversion signal
+            basis = (
+                (mark_price - index_price) / index_price
+                if index_price > 0
+                else 0.0
+            )
+
+            records.append(FeedDataRecord(
+                subject=asset,
+                kind="funding",
+                granularity=req.granularity,
+                ts_event=now_ts,
+                values={
+                    "funding_rate": funding_rate,
+                    "mark_price": mark_price,
+                    "index_price": index_price,
+                    "basis": basis,
+                    "next_funding_ts": next_funding_ts,
+                },
+                source="binance",
+            ))
 
         return records
 

@@ -3,7 +3,8 @@
     "scope_key": "realtime-btc",
     "scope_template": {},
     "schedule": {
-      "every_seconds": 15
+      "prediction_interval_seconds": 15,
+      "resolve_after_seconds": 60
     },
     "active": true,
     "order": 0

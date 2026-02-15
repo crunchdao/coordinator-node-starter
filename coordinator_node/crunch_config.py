@@ -39,7 +39,13 @@ class InferenceOutput(BaseModel):
 
 
 class ScoreResult(BaseModel):
-    """What scoring produces. Customize metrics fields for your challenge."""
+    """What scoring produces. Customize metrics fields for your challenge.
+
+    Extra fields from the scoring function (e.g. actual_return, direction_correct)
+    are preserved in the DB via ``extra="allow"``, enabling richer analysis.
+    """
+
+    model_config = ConfigDict(extra="allow")
 
     value: float = 0.0
     success: bool = True

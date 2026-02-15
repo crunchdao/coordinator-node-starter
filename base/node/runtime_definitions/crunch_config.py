@@ -19,13 +19,24 @@ class Meta(BaseModel):
 
 
 class RawInput(BaseModel):
-    """What the feed produces. Shape is determined by feed config."""
+    """What the feed produces. Multi-timeframe OHLCV + microstructure data."""
 
     model_config = ConfigDict(extra="allow")
 
     symbol: str = "BTC"
     asof_ts: int = 0
+
+    # Multi-timeframe OHLCV candles (aggregated from 1m)
     candles_1m: list[dict] = Field(default_factory=list)
+    candles_5m: list[dict] = Field(default_factory=list)
+    candles_15m: list[dict] = Field(default_factory=list)
+    candles_1h: list[dict] = Field(default_factory=list)
+
+    # Order book microstructure (latest snapshot, or None if unavailable)
+    orderbook: dict | None = Field(default=None)
+
+    # Funding rate / basis (latest, or None if unavailable)
+    funding: dict | None = Field(default=None)
 
 
 class GroundTruth(RawInput):
@@ -197,6 +208,17 @@ def default_build_emission(
     }
 
 
+def default_compute_metrics(
+    metrics: list[str],
+    predictions: list[dict[str, Any]],
+    scores: list[dict[str, Any]],
+    context: Any,
+) -> dict[str, float]:
+    """Default metrics computation using the global metrics registry."""
+    from coordinator_node.metrics.registry import get_default_registry
+    return get_default_registry().compute(metrics, predictions, scores, context)
+
+
 class CrunchConfig(BaseModel):
     """Single source of truth for challenge data shapes and aggregation."""
 
@@ -210,6 +232,13 @@ class CrunchConfig(BaseModel):
     score_type: type[BaseModel] = ScoreResult
     scope: PredictionScope = Field(default_factory=PredictionScope)
     aggregation: Aggregation = Field(default_factory=Aggregation)
+
+    # Multi-metric scoring
+    metrics: list[str] = Field(default_factory=list)
+    compute_metrics: Callable = default_compute_metrics
+
+    # Ensemble configuration (optional)
+    ensembles: list[Any] = Field(default_factory=list)
 
     # On-chain identifiers
     crunch_pubkey: str = Field(default="", description="Crunch account pubkey for emission checkpoints")

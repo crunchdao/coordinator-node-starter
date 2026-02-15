@@ -6,12 +6,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ScheduleEnvelope(BaseModel):
-    """Canonical scheduling envelope stored in `scheduled_prediction_configs.schedule_jsonb`."""
+    """Canonical scheduling envelope stored in `scheduled_prediction_configs.schedule_jsonb`.
+
+    Note: extra="forbid" so that typos like ``every_seconds`` are caught
+    immediately instead of being silently swallowed with defaults.
+    """
 
     prediction_interval_seconds: int = Field(default=60, ge=1)
     resolve_after_seconds: int = Field(default=0, ge=0)
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
 
 class ScheduledPredictionConfigEnvelope(BaseModel):

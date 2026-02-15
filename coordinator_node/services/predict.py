@@ -120,6 +120,15 @@ class PredictService:
         if predictions:
             self.prediction_repository.save_all(predictions)
             self.logger.info("Saved %d predictions", len(predictions))
+            if self.logger.isEnabledFor(logging.DEBUG):
+                for p in predictions:
+                    out = p.inference_output or {}
+                    summary = {k: round(v, 6) if isinstance(v, float) else v
+                               for k, v in list(out.items())[:3]}
+                    self.logger.debug(
+                        "  model=%s scope=%s status=%s output=%s",
+                        p.model_id, p.scope_key, p.status, summary,
+                    )
 
     # ── runner lifecycle ──
 
