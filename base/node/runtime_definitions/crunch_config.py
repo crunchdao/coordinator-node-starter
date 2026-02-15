@@ -197,6 +197,17 @@ def default_build_emission(
     }
 
 
+def default_compute_metrics(
+    metrics: list[str],
+    predictions: list[dict[str, Any]],
+    scores: list[dict[str, Any]],
+    context: Any,
+) -> dict[str, float]:
+    """Default metrics computation using the global metrics registry."""
+    from coordinator_node.metrics.registry import get_default_registry
+    return get_default_registry().compute(metrics, predictions, scores, context)
+
+
 class CrunchConfig(BaseModel):
     """Single source of truth for challenge data shapes and aggregation."""
 
@@ -210,6 +221,13 @@ class CrunchConfig(BaseModel):
     score_type: type[BaseModel] = ScoreResult
     scope: PredictionScope = Field(default_factory=PredictionScope)
     aggregation: Aggregation = Field(default_factory=Aggregation)
+
+    # Multi-metric scoring
+    metrics: list[str] = Field(default_factory=list)
+    compute_metrics: Callable = default_compute_metrics
+
+    # Ensemble configuration (optional)
+    ensembles: list[Any] = Field(default_factory=list)
 
     # On-chain identifiers
     crunch_pubkey: str = Field(default="", description="Crunch account pubkey for emission checkpoints")

@@ -19,11 +19,26 @@ from coordinator_node.metrics.context import MetricsContext
 
 
 def _extract_pred_values(predictions: list[dict[str, Any]]) -> list[float]:
-    """Extract the prediction signal value from each prediction."""
+    """Extract the prediction signal value from each prediction.
+
+    Tries common field names in order: value, expected_return, signal, prediction.
+    Falls back to the first numeric field found.
+    """
+    _SIGNAL_KEYS = ("value", "expected_return", "signal", "prediction")
     values = []
     for p in predictions:
         output = p.get("inference_output", {})
-        v = output.get("value")
+        v = None
+        for key in _SIGNAL_KEYS:
+            v = output.get(key)
+            if v is not None:
+                break
+        if v is None:
+            # Fallback: first numeric value in output
+            for val in output.values():
+                if isinstance(val, (int, float)):
+                    v = val
+                    break
         if v is not None:
             try:
                 values.append(float(v))

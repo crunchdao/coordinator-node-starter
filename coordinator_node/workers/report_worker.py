@@ -581,6 +581,7 @@ def get_leaderboard(
 @app.get("/reports/models/global")
 def get_models_global(
     prediction_repo: Annotated[DBPredictionRepository, Depends(get_prediction_repository)],
+    snapshot_repo: Annotated[DBSnapshotRepository, Depends(get_snapshot_repository)],
     model_repo: Annotated[DBModelRepository, Depends(get_model_repository)],
     model_ids: Annotated[list[str] | None, Query(alias="projectIds")] = None,
     start: Annotated[datetime | None, Query()] = None,
@@ -601,6 +602,13 @@ def get_models_global(
         start = end - timedelta(days=7)
     predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
 
+    # Fetch latest snapshot per model for multi-metric enrichment
+    latest_snapshots: dict[str, dict[str, Any]] = {}
+    all_snaps = snapshot_repo.find(since=start, until=end)
+    for snap in all_snaps:
+        # Keep the most recent snapshot per model (list is ASC ordered)
+        latest_snapshots[snap.model_id] = snap.result_summary or {}
+
     rows: list[dict] = []
     for model_id, predictions in predictions_by_model.items():
         timed_scores = [
@@ -612,6 +620,13 @@ def get_models_global(
             continue
 
         metrics = _compute_window_metrics(timed_scores, CONTRACT)
+
+        # Merge snapshot metrics (ic, hit_rate, etc.) into the response
+        snap_metrics = latest_snapshots.get(model_id, {})
+        for key, val in snap_metrics.items():
+            if key not in metrics and isinstance(val, (int, float)):
+                metrics[key] = val
+
         performed_at = max((p.performed_at for p in predictions), default=end)
 
         rows.append(
@@ -800,6 +815,95 @@ def get_snapshots(
         }
         for s in snapshots
     ]
+
+
+@app.get("/reports/models/metrics")
+def get_models_metrics_timeseries(
+    snapshot_repo: Annotated[DBSnapshotRepository, Depends(get_snapshot_repository)],
+    model_repo: Annotated[DBModelRepository, Depends(get_model_repository)],
+    model_ids: Annotated[list[str] | None, Query(alias="projectIds")] = None,
+    start: Annotated[datetime | None, Query()] = None,
+    end: Annotated[datetime | None, Query()] = None,
+    include_ensembles: Annotated[bool, Query()] = False,
+) -> list[dict]:
+    """Time-series of snapshot metrics per model — powers metric charts.
+
+    Returns one row per snapshot with all result_summary fields flattened
+    to the top level alongside model_id and performed_at.
+    """
+    if not model_ids:
+        model_ids = list(model_repo.fetch_all().keys())
+    else:
+        model_ids = _normalize_project_ids(model_ids)
+    if not include_ensembles:
+        model_ids = [m for m in model_ids if not _is_ensemble_model(m)]
+    if not model_ids:
+        return []
+    if end is None:
+        end = datetime.now(timezone.utc)
+    if start is None:
+        start = end - timedelta(days=7)
+
+    rows: list[dict] = []
+    for mid in model_ids:
+        snapshots = snapshot_repo.find(model_id=mid, since=start, until=end)
+        for snap in snapshots:
+            summary = snap.result_summary or {}
+            row: dict[str, Any] = {
+                "model_id": snap.model_id,
+                "performed_at": snap.created_at,
+                "prediction_count": snap.prediction_count,
+            }
+            for key, val in summary.items():
+                if isinstance(val, (int, float)):
+                    row[key] = val
+            rows.append(row)
+
+    return sorted(rows, key=lambda r: r["performed_at"])
+
+
+@app.get("/reports/models/summary")
+def get_models_summary(
+    snapshot_repo: Annotated[DBSnapshotRepository, Depends(get_snapshot_repository)],
+    model_repo: Annotated[DBModelRepository, Depends(get_model_repository)],
+    model_ids: Annotated[list[str] | None, Query(alias="projectIds")] = None,
+    start: Annotated[datetime | None, Query()] = None,
+    end: Annotated[datetime | None, Query()] = None,
+    include_ensembles: Annotated[bool, Query()] = False,
+) -> list[dict]:
+    """One row per model with latest snapshot metrics — powers bar charts."""
+    if not model_ids:
+        model_ids = list(model_repo.fetch_all().keys())
+    else:
+        model_ids = _normalize_project_ids(model_ids)
+    if not include_ensembles:
+        model_ids = [m for m in model_ids if not _is_ensemble_model(m)]
+    if not model_ids:
+        return []
+    if end is None:
+        end = datetime.now(timezone.utc)
+    if start is None:
+        start = end - timedelta(days=7)
+
+    # Get latest snapshot per model
+    all_snaps = snapshot_repo.find(since=start, until=end)
+    latest: dict[str, Any] = {}
+    for snap in all_snaps:
+        latest[snap.model_id] = snap  # ASC order, last wins
+
+    rows: list[dict] = []
+    for mid in model_ids:
+        snap = latest.get(mid)
+        if not snap:
+            continue
+        summary = snap.result_summary or {}
+        row: dict[str, Any] = {"model_id": mid}
+        for key, val in summary.items():
+            if isinstance(val, (int, float)):
+                row[key] = val
+        rows.append(row)
+
+    return rows
 
 
 # ── Diversity overview ──
@@ -1319,6 +1423,12 @@ class BackfillRequestBody(BaseModel):
     start: datetime
     end: datetime
 
+    def model_post_init(self, __context: Any) -> None:
+        if self.start.tzinfo is None:
+            self.start = self.start.replace(tzinfo=timezone.utc)
+        if self.end.tzinfo is None:
+            self.end = self.end.replace(tzinfo=timezone.utc)
+
 
 def get_backfill_job_repository(
     session_db: Annotated[Session, Depends(get_db_session)]
@@ -1461,7 +1571,9 @@ async def _run_backfill_async(job_id: str, body: BackfillRequestBody) -> None:
             # Check if we should resume
             job = job_repo.get(job_id)
             cursor_ts = None
-            if job and job.cursor_ts and job.cursor_ts > body.start:
+            _cursor = job.cursor_ts.replace(tzinfo=timezone.utc) if job and job.cursor_ts and job.cursor_ts.tzinfo is None else (job.cursor_ts if job else None)
+            _start = body.start.replace(tzinfo=timezone.utc) if body.start.tzinfo is None else body.start
+            if _cursor and _cursor > _start:
                 cursor_ts = job.cursor_ts
 
             registry = create_default_registry()
