@@ -156,8 +156,9 @@ def compute_ic_sharpe(
     std_ic = math.sqrt(sum((ic - mean_ic) ** 2 for ic in ics) / len(ics))
 
     if std_ic < 1e-12:
-        # All chunk ICs identical — perfectly consistent signal
-        return float("inf") if abs(mean_ic) > 1e-12 else 0.0
+        # All chunk ICs identical — perfectly consistent signal.
+        # Cap at 10.0 to avoid Infinity (not JSON-serializable for Postgres).
+        return 10.0 if abs(mean_ic) > 1e-12 else 0.0
 
     return mean_ic / std_ic
 
@@ -290,7 +291,8 @@ def compute_sortino_ratio(
     downside_sq = [r ** 2 for r in strategy_returns if r < 0]
 
     if not downside_sq:
-        return mean_ret / 1e-9 if mean_ret != 0 else 0.0  # no downside
+        # No downside — cap at ±10.0 to keep values JSON-safe and displayable
+        return min(10.0, max(-10.0, mean_ret * 1e6)) if mean_ret != 0 else 0.0
 
     downside_dev = math.sqrt(sum(downside_sq) / len(downside_sq))
     if downside_dev < 1e-12:

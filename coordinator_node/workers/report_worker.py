@@ -104,14 +104,16 @@ def auto_report_schema(contract: CrunchConfig) -> dict[str, Any]:
     ]
     col_id = 2
     for i, (window_name, window) in enumerate(aggregation.windows.items()):
-        display = window_name.replace("_", " ").title()
+        display = getattr(window, "display_name", None) or window_name.replace("_", " ").title()
+        tooltip = getattr(window, "tooltip", None) or f"Rolling score over {window.hours}h"
+        fmt = getattr(window, "format", None) or "decimal-2"
         columns.append({
             "id": col_id,
             "type": "VALUE",
             "property": window_name,
-            "format": "decimal-2",
+            "format": fmt,
             "displayName": display,
-            "tooltip": f"Rolling score over {window.hours}h",
+            "tooltip": tooltip,
             "nativeConfiguration": None,
             "order": (i + 1) * 10,
         })
