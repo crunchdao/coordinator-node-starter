@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from collections import defaultdict
 from statistics import mean
 from datetime import date
 import pandas as pd
 
-from sqlmodel import Session, select
+from sqlmodel import Session, select, desc
 
 from condorgame_backend.entities.daily_synth_leaderboard import DailySynthLeaderboard, DailySynthLeaderboardEntry
 from condorgame_backend.services.interfaces.daily_synth_leaderboard_repository import SynthLeaderboardRepository
@@ -46,6 +46,51 @@ class DBDailySynthLeaderboardRepository(SynthLeaderboardRepository):
 
         self._session.commit()
 
+    def update(self, day: date, entries: list[DailySynthLeaderboardEntry]) -> None:
+        """
+        Update the leaderboard for a given day by appending new entries
+        to the latest snapshot for that day.
+        """
+
+        # Get latest snapshot for that day
+        stmt = (
+            select(DailySynthLeaderboardRow)
+            .where(DailySynthLeaderboardRow.day == day)
+            .order_by(desc(DailySynthLeaderboardRow.created_at))
+            .limit(1)
+        )
+
+        row = self._session.exec(stmt).first()
+
+        if row is None:
+            raise ValueError(f"Update leaderboard - No leaderboard found for day={day}")
+
+        # Existing entries (stored as list[dict])
+        existing_entries = [
+            DailySynthLeaderboardEntry(**entry)
+            for entry in row.entries
+        ]
+
+        # trick method to overwrite
+        existing_by_key = {self._entry_key(e): e for e in existing_entries}
+        for entry in entries:
+            existing_by_key[self._entry_key(entry)] = entry  # overwrite or insert
+
+        # Append new entries
+        row.entries = [asdict(e) for e in existing_by_key.values()]
+
+        self._session.add(row)
+        self._session.commit()
+
+    def _entry_key(self, e: DailySynthLeaderboardEntry) -> tuple:
+        return (
+            e.miner_uid,
+            e.player_name,
+            e.model,
+            e.asset,
+            e.time_length,
+        )
+
     def get_latest(self) -> Optional[DailySynthLeaderboard]:
         stmt = select(DailySynthLeaderboardRow).order_by(DailySynthLeaderboardRow.created_at.desc())
         row = self._session.exec(stmt).first()
@@ -65,6 +110,37 @@ class DBDailySynthLeaderboardRepository(SynthLeaderboardRepository):
         """ Return all distinct calendar days for which a leaderboard snapshot exists. """
         stmt = select(DailySynthLeaderboardRow.day).distinct().order_by(DailySynthLeaderboardRow.day)
         return list(self._session.exec(stmt).all())
+    
+    def get_entries_for_day(self, day: date, player_name: str = "Ensemble", asset: str = "ALL") -> List[DailySynthLeaderboardEntry]:
+        """
+        Return all leaderboard entries for a given day matching
+        (player_name, asset), using the latest snapshot of that day.
+        """
+
+        # Get latest snapshot for the day
+        stmt = (
+            select(DailySynthLeaderboardRow)
+            .where(DailySynthLeaderboardRow.day == day)
+            .order_by(desc(DailySynthLeaderboardRow.created_at))
+            .limit(1)
+        )
+
+        row = self._session.exec(stmt).first()
+
+        if row is None:
+            return []
+
+        # Deserialize entries
+        entries = [DailySynthLeaderboardEntry(**entry) for entry in row.entries]
+
+        # Apply filters
+        filtered_entries = [
+            e for e in entries
+            if e.player_name == player_name
+            and e.asset == asset
+        ]
+
+        return filtered_entries
 
     def get_avg_mean_prompt_score_per_miner(self, time_length:int) -> Dict[str, float]:
         """

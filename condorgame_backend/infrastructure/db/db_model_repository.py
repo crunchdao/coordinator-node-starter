@@ -95,7 +95,7 @@ class DbModelRepository(ModelRepository):
         self._session.bulk_save_objects(rows)
         self._session.commit()
 
-    def fetch_model_score_snapshots(self, model_ids: list[str], _from: Optional[datetime], to: Optional[datetime]) -> dict[str, list[ModelScoreSnapshot]]:
+    def fetch_model_score_snapshots(self, model_ids: list[str], _from: Optional[datetime], to: Optional[datetime], apply_row_to_domain: bool = True) -> dict[str, list[ModelScoreSnapshot]]:
         """
         Retrieve model score snapshots for specific models within a time range.
         """
@@ -114,6 +114,9 @@ class DbModelRepository(ModelRepository):
         stmt.order_by(ModelScoreSnapshotRow.performed_at.asc())
 
         rows = self._session.exec(stmt).all()
+
+        if not apply_row_to_domain:
+            return [m.model_dump() for m in rows]
 
         snapshots_by_model = {}
         for row in rows:

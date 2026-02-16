@@ -22,6 +22,10 @@ from condorgame_backend.services.interfaces.model_repository import ModelReposit
 from condorgame_backend.services.interfaces.prediction_repository import PredictionRepository
 from condorgame_backend.services.interfaces.price_repository import PriceRepository
 
+from condorgame_backend.services.utils.ensembler import get_ensemble_name, ensemble_tracker_distributions
+from condorgame_backend.services.utils.simulate_paths import simulate_paths, combine_multiscale_simulations
+from condorgame_backend.services.utils.synth_crps_scoring import crps_ensemble_score, scoring_intervals, transform_data, rank
+
 from importlib.machinery import ModuleSpec
 from typing import Optional, Any, Dict, List
 
@@ -30,226 +34,85 @@ from condorgame_backend.utils.times import MINUTE
 __spec__: Optional[ModuleSpec]
 
 ASSETS = ["BTC", "SOL", "ETH", "XAUT", "SPYX", "NVDAX", "TSLAX", "AAPLX", "GOOGLX"] # Supported assets: "BTC", "SOL", "ETH", "XAUT", "SPYX", "NVDAX", "TSLAX", "AAPLX", "GOOGLX"
-LIST_PARAMS_HORIZON = [(86400, 300), (3600, 60)]
+LIST_PARAMS_HORIZON = [(86400, 300), (3600, 60)] # TODO: maybe get ASSETS and LIST_PARAMS_HORIZON from init_db.py prediction_config
 
 
-from properscoring import crps_ensemble
+# Config Ensemblers
+LIST_CONFIGS_ENSEMBLE_ALL = [ 
+                # Ensembler 1:
+                {
+                    "strategy": "score_weighted",   # "uniform", "score_weighted", "softmax", "winner", "rank_weighted"
+                    "temperature": 1.0,      # only used for "softmax" weighting
+                    "top_k": 3,              # Optional TOP-K filtering BEFORE strategy weighting
+                    "score": "anchor",       # recent, steady, anchor (score used in strategy + top_k)
 
-def get_interval_steps(interval_seconds: int, time_increment: int) -> int:
-    return int(interval_seconds / time_increment)
+                    "id": "1"
+                },
+                # Ensembler 2:
+                {
+                    "strategy": "softmax",   # "uniform", "score_weighted", "softmax", "winner", "rank_weighted"
+                    "temperature": 1.0,      # only used for "softmax" weighting
+                    "top_k": 5,              # Optional TOP-K filtering BEFORE strategy weighting
+                    "score": "anchor",       # recent, steady, anchor (score used in strategy + top_k)
 
-def score_summary(score_details):
-    filtered = score_details[score_details["block"] == "TOTAL"]
-    filtered = filtered[["interval", "crps"]]
+                    "id": "2"
+                },
+                {
+                    "strategy": "uniform",   # "uniform", "score_weighted", "softmax", "winner", "rank_weighted"
+                    "temperature": 1.0,      # only used for "softmax" weighting
+                    "top_k": 5,              # Optional TOP-K filtering BEFORE strategy weighting
+                    "score": "anchor",       # recent, steady, anchor (score used in strategy + top_k)
 
-    return filtered.to_string(index=False)
+                    "id": "3"
+                },
+                {
+                    "strategy": "rank_weighted",   # "uniform", "score_weighted", "softmax", "winner", "rank_weighted"
+                    "temperature": 1.0,      # only used for "softmax" weighting
+                    "top_k": 5,              # Optional TOP-K filtering BEFORE strategy weighting
+                    "score": "recent",       # recent, steady, anchor (score used in strategy + top_k)
 
+                    "id": "4"
+                },
+                {
+                    "strategy": "rank_weighted",   # "uniform", "score_weighted", "softmax", "winner", "rank_weighted"
+                    "temperature": 1.0,      # only used for "softmax" weighting
+                    "top_k": 5,              # Optional TOP-K filtering BEFORE strategy weighting
+                    "score": "steady",       # recent, steady, anchor (score used in strategy + top_k)
 
-def label_observed_blocks(arr: np.ndarray) -> np.ndarray:
-    """
-    groups consecutive NON-MISSING values into blocks.
-    Missing values = gaps = block -1.
-    """
-    not_nan = ~np.isnan(arr)
-    block_start = not_nan & np.concatenate(([True], ~not_nan[:-1]))
-    group_numbers = np.cumsum(block_start) - 1
-    return np.where(not_nan, group_numbers, -1)
+                    "id": "5"
+                },
+                {
+                    "strategy": "rank_weighted",   # "uniform", "score_weighted", "softmax", "winner", "rank_weighted"
+                    "temperature": 1.0,      # only used for "softmax" weighting
+                    "top_k": 5,              # Optional TOP-K filtering BEFORE strategy weighting
+                    "score": "anchor",       # recent, steady, anchor (score used in strategy + top_k)
 
+                    "id": "6"
+                },
+                {
+                    "strategy": "score_weighted",   # "uniform", "score_weighted", "softmax", "winner", "rank_weighted"
+                    "temperature": 1.0,      # only used for "softmax" weighting
+                    "top_k": 3,              # Optional TOP-K filtering BEFORE strategy weighting
+                    "score": "recent",       # recent, steady, anchor (score used in strategy + top_k)
 
-def calculate_price_changes_over_intervals(
-    price_paths: np.ndarray,
-    interval_steps: int,
-    absolute_price=False,
-    is_gap=False,
-) -> np.ndarray:
-    """
-    Computes the interval values:
-      - returns (ΔP / P * 10000)
-      - absolute prices (dropping first point)
-      - gap handling
-    """
-    interval_prices = price_paths[:, ::interval_steps]
+                    "id": "7"
+                },
+                {
+                    "strategy": "score_weighted",   # "uniform", "score_weighted", "softmax", "winner", "rank_weighted"
+                    "temperature": 1.0,      # only used for "softmax" weighting
+                    "top_k": 3,              # Optional TOP-K filtering BEFORE strategy weighting
+                    "score": "steady",       # recent, steady, anchor (score used in strategy + top_k)
 
-    if is_gap:
-        interval_prices = interval_prices[:1]   # first point only
+                    "id": "8"
+                }
+                ]
 
-    if absolute_price:
-        # For absolute prices, drop first point
-        return interval_prices[:, 1:]
-
-    # Relative returns
-    return (np.diff(interval_prices, axis=1) / interval_prices[:, :-1]) * 10000
-
-
-def crps_ensemble_score(
-    real_price_path: np.ndarray,
-    simulation_runs: np.ndarray,
-    time_increment: int,
-    scoring_intervals: dict,
-):
-    detailed = []
-    dict_int = {}
-    total_score = 0.0
-
-    for name, interval_seconds in scoring_intervals.items():
-
-        interval_steps = get_interval_steps(interval_seconds, time_increment)
-        if interval_steps < 1:
-            continue
-
-        absolute_price = name.endswith("_abs")
-        is_gap = name.endswith("_gap")
-
-        # Fix intervals when only one point exists
-        if absolute_price:
-            while (
-                real_price_path[::interval_steps].shape[0] == 1
-                and interval_steps > 1
-            ):
-                interval_steps -= 1
-
-        # --- Compute price changes for this interval ---
-        simulated_changes = calculate_price_changes_over_intervals(
-            simulation_runs,
-            interval_steps,
-            absolute_price,
-            is_gap,
-        )
-        real_changes = calculate_price_changes_over_intervals(
-            real_price_path.reshape(1, -1),
-            interval_steps,
-            absolute_price,
-            is_gap,
-        )
-
-        # Identify valid blocks (skipping gaps)
-        data_blocks = label_observed_blocks(real_changes[0])
-        if len(data_blocks) == 0:
-            continue
-
-        interval_total = 0.0
-
-        # Compute CRPS block-by-block
-        for block_id in np.unique(data_blocks):
-            if block_id == -1:
-                continue
-
-            mask = data_blocks == block_id
-
-            sim_block = simulated_changes[:, mask]
-            obs_block = real_changes[:, mask][0]
-
-            for t in range(sim_block.shape[1]):
-                obs = obs_block[t]
-                forecasts = sim_block[:, t]
-                crps_val = crps_ensemble(obs, forecasts)
-
-                # Scaling for absolute prices
-                if absolute_price:
-                    crps_val = (crps_val / real_price_path[-1]) * 10000
-
-                interval_total += crps_val
-
-                detailed.append({
-                    "interval": name,
-                    "block": int(block_id),
-                    "crps": float(crps_val),
-                })
-
-        total_score += interval_total
-
-        detailed.append({
-            "interval": name,
-            "block": "TOTAL",
-            "crps": float(interval_total),
-        })
-        dict_int[name] = float(interval_total)
-
-    detailed.append({
-        "interval": "OVERALL",
-        "block": "TOTAL",
-        "crps": float(total_score),
-    })
-
-    return total_score, detailed, dict_int
-
-scoring_intervals={
-        300: {
-        "5min": 300,  # 5 minutes
-        "30min": 1800,  # 30 minutes
-        "3hour": 10800,  # 3 hours
-        "24hour_abs": 86400,  # 24 hours
-        },
-        60: {
-        "1min": 60,
-        "2min": 120,
-        "5min": 300,
-        "15min": 900,
-        "30min": 1800,
-        "60min_abs": 3600,
-        "0_5min_gaps": 300,
-        "0_10min_gaps": 600,
-        "0_15min_gaps": 900,
-        "0_20min_gaps": 1200,
-        "0_25min_gaps": 1500,
-        "0_30min_gaps": 1800,
-        "0_35min_gaps": 2100,
-        "0_40min_gaps": 2400,
-        "0_45min_gaps": 2700,
-        "0_50min_gaps": 3000,
-        "0_55min_gaps": 3300,
-        "0_60min_gaps": 3600,
-        }
-    }
-
-import bisect
-def rank(value, lst):
-    return bisect.bisect_left(sorted(lst), value) + 1
-
-
-def transform_data(
-    data_, start_time_int: int, time_increment: int, time_length: int
-) -> list:
-    
-    data = {}
-    data["t"] = [t[0] for t in data_]
-    data["c"] = [t[1] for t in data_]
-
-    if data is None or len(data) == 0 or len(data["t"]) == 0:
-        return []
-
-    time_end_int = start_time_int + time_length
-    timestamps = [
-        t
-        for t in range(
-            start_time_int, time_end_int + time_increment, time_increment
-        )
-    ]
-
-    if len(timestamps) != int(time_length / time_increment) + 1:
-        # Note: this part of code should never be activated; just included for precaution
-        if len(timestamps) == int(time_length / time_increment) + 2:
-            if data["t"][-1] < timestamps[1]:
-                timestamps = timestamps[:-1]
-            elif data["t"][0] > timestamps[0]:
-                timestamps = timestamps[1:]
-        else:
-            return []
-
-    close_prices_dict = {t: c for t, c in zip(data["t"], data["c"])}
-    transformed_data = [np.nan for _ in range(len(timestamps))]
-
-    for idx, t in enumerate(timestamps):
-        if t in close_prices_dict:
-            transformed_data[idx] = close_prices_dict[t]
-
-    return np.array(transformed_data)
 
 
 class DailySynthScoreService:
     PRICES_HISTORY_PERIOD = timedelta(days=30)  # Cache period for predictions
     PRICE_RESOLUTION = "minute"
-    SLEEP_TIMEOUT = 60 * MINUTE * 3 # Run every 
+    SLEEP_TIMEOUT = 60 * MINUTE * 3 # Run every
 
     def __init__(self,
                  prices_repository: PriceRepository,
@@ -307,7 +170,8 @@ class DailySynthScoreService:
     def _refresh_models(self):
         self.models = self.model_repository.fetch_all(apply_row_to_domain=False)
 
-    def score_predictions(self, day: date) -> pd.DataFrame:
+    def score_predictions(self, day: date, 
+                          ensemblers: bool=False, list_configs_ensemble: list=[]) -> pd.DataFrame:
 
         print(f"Scoring predictions for day {day}.")
 
@@ -339,13 +203,16 @@ class DailySynthScoreService:
                                     day=day, asset=asset, horizon=time_length)
                 
                 if len(predictions) == 0:
-                    print(f"No predictions to score for day {day}, horizon {time_length}, asset {asset}.")
+                    print(f"No prediction to score for day {day}, horizon {time_length}, asset {asset}.")
                     continue
                 
                 prediction_round = pd.DataFrame(predictions)
 
                 # Load models table to get player names and model names
                 models_df = pd.DataFrame(self.models)
+                if len(models_df) == 0:
+                    print(f"No model to score for day {day}, horizon {time_length}, asset {asset}.")
+                    continue
 
                 # Merge on model_id → crunch_identifier
                 prediction_round = prediction_round.merge(
@@ -362,7 +229,8 @@ class DailySynthScoreService:
                 df_prediction_round.columns = ["miner_uid", "player_name", "model", "asset", "time_length", "crunch_score", "prediction", "scored_time", "status"]
                 df_prediction_round["scored_time"] = df_prediction_round["scored_time"].apply(lambda x: x.strftime("%Y-%m-%dT%H:%M:%SZ"))
                 
-                leaderboard_prompt_score = self._score_predictions(df_prediction_round, day, asset, time_length, time_increment)
+                leaderboard_prompt_score = self._score_predictions(df_prediction_round, day, asset, time_length, time_increment, 
+                                                                   ensemblers, list_configs_ensemble)
 
                 if leaderboard_prompt_score is not None:
                     all_leaderboard.append(leaderboard_prompt_score)
@@ -372,16 +240,120 @@ class DailySynthScoreService:
         
         leaderboard_prompt_score_final = self.compute_global_daily_leaderboard(all_leaderboard, day, time_length)
         all_leaderboard_final = pd.concat(all_leaderboard + [leaderboard_prompt_score_final]).reset_index(drop=True)
+
+        if ensemblers:
+            all_leaderboard_final = all_leaderboard_final[all_leaderboard_final.player_name == "Ensemble"]
         
         return all_leaderboard_final
 
-    def _score_predictions(self, df_prediction_round: pd.DataFrame, day: date, asset: str, time_length: int, time_increment: int):
-        df_all = df_prediction_round[(df_prediction_round.asset == asset) & (df_prediction_round.time_length == time_length)].copy()
+    def _score_predictions(self, df_prediction_round: pd.DataFrame, day: date, asset: str, time_length: int, time_increment: int, 
+                           ensemblers: bool, list_configs_ensemble: list):
+        df_all = df_prediction_round[(df_prediction_round.asset == asset) & (df_prediction_round.time_length == time_length)].copy() # optional
         print(df_all)
 
         # get models present at each prediction round of the day
         trackers_present_all_time = list(df_all.miner_uid.value_counts()[(df_all.miner_uid.value_counts() == max(df_all.miner_uid.value_counts()))].index)
         df_all = df_all[df_all.miner_uid.isin(trackers_present_all_time)]
+
+        #############
+        # ENSEMBLER
+        #############
+        if ensemblers:
+            print("COMPUTE ENSEMBLERS:")
+
+            # Get model scores occuring during the day
+            day_start = datetime(year=day.year, month=day.month, day=day.day, tzinfo=timezone.utc)
+            day_end = day_start + timedelta(days=1)
+            model_scores_day = self.model_repository.fetch_model_score_snapshots(
+                                                    model_ids=None,
+                                                    _from=day_start - timedelta(hours=27), # need ~2days of model score snapshots
+                                                    to=day_end,
+                                                    apply_row_to_domain=False)
+            if len(model_scores_day) == 0:
+                print(f"No model scores for day {day}.")
+                return None
+            df_model_scores_day = pd.DataFrame(model_scores_day)
+            df_model_scores_day.loc[:,"model_id"] = df_model_scores_day["model_id"].apply(lambda x: "crunch_"+x)
+            df_model_scores_day["performed_at"] = df_model_scores_day["performed_at"] - timedelta(days=1)
+            df_model_scores_day["performed_at"] = df_model_scores_day["performed_at"].apply(lambda x: x.strftime("%Y-%m-%dT%H:%M:%SZ"))
+
+            df_ensemble_predictions = []
+            # models_use_for_ensemble = []
+
+            for scored_time, prediction_round in df_all.groupby("scored_time"):
+                # /!/ Input: All distributions must have SUCCESS status before apply ensembling /!/
+                prediction_round = prediction_round[prediction_round.status == "SUCCESS"]
+
+                # Get prediction by substracting the time_length from scored_time
+                prediction_time_ts = prediction_round.scored_time.iloc[0]
+                prediction_time_ts = datetime.fromisoformat(prediction_time_ts.replace("Z", "+00:00"))
+                prediction_time_ts = prediction_time_ts - timedelta(seconds=time_length)
+                prediction_time_ts = prediction_time_ts.isoformat().replace("+00:00", "Z")
+
+                # Get Model score snapshot closest to prediction_time_ts
+                score_performed_at = df_model_scores_day.loc[df_model_scores_day["performed_at"] <= prediction_time_ts, "performed_at"].max()
+                scores_just_before_prediction_round = df_model_scores_day[(df_model_scores_day.performed_at == score_performed_at) & 
+                                                                        (df_model_scores_day["model_id"].isin(list(prediction_round["miner_uid"].unique())))]
+                
+                # Pass if no model score snapshot
+                if len(scores_just_before_prediction_round) == 0:
+                    continue
+
+                # dict[str, dict[str, list[dict]]: {model_id: distributions}
+                dict_prediction_round = prediction_round[["miner_uid", "prediction"]].set_index("miner_uid").to_dict()["prediction"]
+
+                for config_ensemble in list_configs_ensemble:
+                    try:
+                        # Naming
+                        ensemble_name, model_name = get_ensemble_name(config_ensemble)
+                        print("Name:", ensemble_name)
+
+                        col_score = "overall_score_anchor"
+                        if config_ensemble["score"] is not None:
+                            col_score = "overall_score_" + config_ensemble["score"]
+
+                        dict_scores_just_before_prediction_round = scores_just_before_prediction_round[["model_id", col_score]].set_index("model_id").to_dict()[col_score]
+
+                        # remove NA scores
+                        dict_scores_just_before_prediction_round = {t: s for t, s in dict_scores_just_before_prediction_round.items() if s is not None and np.isfinite(s)}
+                        if len(dict_scores_just_before_prediction_round) == 0:
+                            print(f"No sufficient data for Ensemble: {ensemble_name}")
+                            continue
+
+                        ensemble_distributions, weights = ensemble_tracker_distributions(
+                            tracker_distributions=dict_prediction_round,
+                            tracker_scores=dict_scores_just_before_prediction_round,
+                            config = config_ensemble,
+                        ) 
+
+                        print("Model weights:", weights)
+                        status = 'SUCCESS'
+                        # models_use_for_ensemble += list(weights.keys())
+                    except Exception as e:
+                        print(f"[Ensemble] ERROR: {e}")
+                        ensemble_distributions = None
+                        status = 'FAILED'
+
+                    row_prediction = {
+                        'miner_uid': "crunch_ens_" + config_ensemble["id"],
+                        'player_name': 'Ensemble',
+                        'model': model_name,
+                        'asset': asset,
+                        'time_length': time_length,
+                        'crunch_score': None,
+                        'prediction': ensemble_distributions,
+                        'scored_time': scored_time,
+                        'status': status
+                    }
+                    df_ensemble_predictions.append(row_prediction)
+
+            # models_use_for_ensemble = list(set(models_use_for_ensemble))
+            df_ensemble_predictions = pd.DataFrame(df_ensemble_predictions)
+
+            if len(df_ensemble_predictions) == 0 or len(df_ensemble_predictions[df_ensemble_predictions.status == "SUCCESS"]) == 0:
+                return None
+
+            df_all = df_ensemble_predictions.copy()
 
         #############
         # SYNTH score: Query SYNTH API: get all miner scores from a prediction round
@@ -393,7 +365,7 @@ class DailySynthScoreService:
         to_date = df_all.scored_time.max()
         to_date = datetime.fromisoformat(to_date.replace("Z", "+00:00")).astimezone(timezone.utc) + timedelta(hours=1)
 
-        synth_data_json = self._fetch_historical(base_url="mainnet", 
+        synth_data_json = self._fetch_synth_mainnet_historical(base_url="mainnet", 
                             start_dt=from_date, 
                             end_dt=to_date,
                             asset=asset if asset != "XAUT" else "XAU",
@@ -703,7 +675,7 @@ class DailySynthScoreService:
 
         return total_score
     
-    def _fetch_historical(self, base_url: str, start_dt: str, end_dt: str,
+    def _fetch_synth_mainnet_historical(self, base_url: str, start_dt: str, end_dt: str,
                      asset: Optional[str], miner_uid: Optional[int],
                      time_increment: Optional[int], time_length: Optional[int]) -> List[Dict[str, Any]]:
         """
@@ -747,7 +719,7 @@ class DailySynthScoreService:
                 print(f"Fetching {params['from']} → {params['to']} ...")
                 r = s.get(url, params=params, timeout=60)
                 if r.status_code == 404:
-                    print(f"No data for {params['from']} → {params['to']}, skipping.")
+                    print(f"No Synth data for {params['from']} → {params['to']}, skipping.")
                     start_dt = chunk_end
                     sleep(1)
                     continue
@@ -880,7 +852,7 @@ class DailySynthScoreService:
 
         print("correlation synth/crunch score:", 
                   leaderboard_prompt_score_final[(leaderboard_prompt_score_final.crunch_model) & (leaderboard_prompt_score_final.mean_crunch_score > 0)].iloc[:20][["mean_crps_score", "mean_crunch_score"]].corr().iloc[0, 1])
-        
+
         return leaderboard_prompt_score_final
 
     def leaderboard_per_asset_col(self, leaderboard_df, crunch_models_id, asset, col, suffix, rank_by="mean", rolling_days: int | None = None):
@@ -963,7 +935,16 @@ class DailySynthScoreService:
         self.daily_synth_leaderboard_repo.save(leaderboard, day)
         self.last_leaderboard = leaderboard
 
+    def add_ensemblers_leaderboard(self, day: date, df_daily_asset_synth_ensemblers_leaderboard: pd.DataFrame):
+        leaderboard = DailySynthLeaderboard.create(df_daily_asset_synth_ensemblers_leaderboard)
+
+        top1 = leaderboard.entries[0].player_name if leaderboard.entries else None
+        print(f"Ensemble Leaderboard created with {len(leaderboard.entries)} positions. TOP 1: {top1}")
+
+        self.daily_synth_leaderboard_repo.update(day, entries=leaderboard.entries)
+
     def compute_summary_last_7_days_leaderboard(self):
+        # 24H Horizon
         time_length=86400
         leaderboard_df, crunch_df, crunch_models_id = self.daily_synth_leaderboard_repo.get_avg_mean_prompt_score_per_miner(time_length=time_length)
 
@@ -989,6 +970,7 @@ class DailySynthScoreService:
         print(crunch_model_stats)
         print()
         
+        # 1H Horizon
         time_length=3600
 
         leaderboard_df, crunch_df, crunch_models_id = self.daily_synth_leaderboard_repo.get_avg_mean_prompt_score_per_miner(time_length=time_length)
@@ -1039,6 +1021,32 @@ class DailySynthScoreService:
         if df_daily_asset_synth_leaderboard is not None:
             self.compute_leaderboard(day, df_daily_asset_synth_leaderboard)
 
+    def _score_ensemblers_for_day(self, day: date):
+        """
+        Run scoring + leaderboard computation for ensembler not in the leaderboard for the given day.
+        """
+        # Get Ensembler already computed
+        ensembler_already_computed = self.daily_synth_leaderboard_repo.get_entries_for_day(day, player_name = "Ensemble", asset = "ALL")
+        ensembler_already_computed = [entry.model for entry in ensembler_already_computed]
+
+        # Keep only config ensembler not computed
+        list_configs_ensemble = []
+        for config_ensemble in LIST_CONFIGS_ENSEMBLE_ALL:
+            ensemble_name, model_name = get_ensemble_name(config_ensemble)
+            if model_name not in ensembler_already_computed:
+                list_configs_ensemble.append(config_ensemble)
+
+        if len(list_configs_ensemble) == 0:
+            return
+
+        print(f"Backfilling Ensemble leaderboard for day {day} - Number of ensemblers: {len(list_configs_ensemble)}")
+
+        # score_predictions(day): get synth miners leaderbaord for the day, compute crps for trackers, build daily synth leaderbaord
+        df_daily_asset_synth_ensemblers_leaderboard = self.score_predictions(day, ensemblers=True, list_configs_ensemble=list_configs_ensemble)
+
+        # self.add_ensemblers_leaderboard() i.e. add the daily synth ensemble leaderbaord to self.daily_synth_leaderboard_repo
+        if df_daily_asset_synth_ensemblers_leaderboard is not None:
+            self.add_ensemblers_leaderboard(day, df_daily_asset_synth_ensemblers_leaderboard)
 
     async def run(self):
         """
@@ -1078,7 +1086,7 @@ class DailySynthScoreService:
             existing_days = set(self.daily_synth_leaderboard_repo.get_available_days())
             
             # Get all missing days in daily_synth_leaderboard from 2026-01-23 to now() -> missing_days
-            START_DAY = date(2026, 1, 23)
+            START_DAY = date(2026, 2, 3)
             LAST_DAY = datetime.now(timezone.utc).date() - timedelta(days=1) # always one day of delay
 
             missing_days = self._compute_missing_days(
@@ -1090,10 +1098,37 @@ class DailySynthScoreService:
 
             if len(missing_days) == 0:
                 self.logger.debug("No daily leaderboard to compute")
+                
+            print("\n#################################################################")
+            print("SINGLE TRACKER LEADERBOARD:")
+            print("#################################################################")
 
             # For each day in 'missing_days' apply score_predictions(day)
             for day in missing_days:
                 self._score_for_day(day)
+
+            self.compute_summary_last_7_days_leaderboard()
+
+            #############
+            # ENSEMBLER
+            #############
+            print("\n#################################################################")
+            print("ENSEMBLER LEADERBOARD:")
+            print("#################################################################")
+            
+            START_DAY = date(2026, 2, 3)
+            LAST_DAY = datetime.now(timezone.utc).date() - timedelta(days=1)
+
+            all_days = self._compute_missing_days(
+                start_day=START_DAY,
+                end_day=LAST_DAY,
+                existing_days=[],         # we set existing_days to empty, in case there are new ensemblers, it will compute scores since start_day
+            )
+            print("Days to compute:", all_days)
+
+            # For each day in 'all_days' apply score_ensemblers(day) for each ensembler not in leaderboard
+            for day in all_days:
+                self._score_ensemblers_for_day(day)
 
             self.compute_summary_last_7_days_leaderboard()
 
@@ -1107,305 +1142,3 @@ class DailySynthScoreService:
 
     async def shutdown(self):
         self.stop_event.set()
-
-
-
-
-import numpy as np
-from datetime import datetime, timedelta
-from scipy import stats as st
-from statistics import NormalDist
-
-
-def simulate_points(
-    density_dict: dict,
-    current_point: float = 0.0,
-    num_simulations: int = 1,
-    max_depth: int = 3,
-    current_depth: int = 0,
-    max_mixtures: int = 5,
-    mixture_count: int = 0,
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Simulate 'next point' samples based on a density specification.
-    Returns both the sampled values and the 'loc' (mean) values used.
-
-    Supports the same formats as density_pdf:
-      1) Scipy distribution
-      2) Statistics (NormalDist)
-      3) Builtin distribution (via scipy)
-      4) Mixture distribution (recursive)
-
-    Parameters
-    ----------
-    density_dict : dict
-        Density specification dictionary.
-    current_point : float
-        Current point used as a reference (optional).
-    num_simulations : int
-        Number of samples to draw.
-    max_depth : int
-        Maximum recursion depth for mixtures.
-    current_depth : int
-        Current recursion level (internal usage).
-    max_mixtures : int
-        Maximum total number of mixtures allowed.
-    mixture_count : int
-        Current count of mixtures encountered.
-
-    Returns
-    -------
-    samples : np.ndarray
-        Simulated values.
-    locs : np.ndarray
-        Loc (mean) values used in each simulation.
-    """
-
-    # --- Check recursion depth
-    if current_depth > max_depth:
-        raise RecursionError(
-            f"Exceeded maximum recursion depth of {max_depth}. "
-            "Possible nested mixtures beyond allowed depth."
-        )
-
-    dist_type = density_dict.get("type")
-
-    # --- 1) Mixture distribution
-    if dist_type == "mixture":
-        mixture_count += 1
-        if mixture_count > max_mixtures:
-            raise ValueError(f"Exceeded maximum mixture count {max_mixtures}")
-
-        components = density_dict["components"]
-        weights = np.array([abs(c["weight"]) for c in components], dtype=float)
-        weights /= weights.sum()
-
-        # Choose which component each sample comes from
-        chosen_idx = np.random.choice(len(components), size=num_simulations, p=weights)
-
-        samples = np.empty(num_simulations)
-        locs = np.empty(num_simulations)
-
-        # --- Vectorize: process all samples for each component in a batch
-        for j, comp in enumerate(components):
-            idx = np.where(chosen_idx == j)[0]
-            if len(idx) == 0:
-                continue
-            sub_spec = comp["density"]
-            sub_samples, sub_locs = simulate_points(
-                sub_spec,
-                current_point=current_point,
-                num_simulations=len(idx),
-                max_depth=max_depth,
-                current_depth=current_depth + 1,
-                max_mixtures=max_mixtures,
-                mixture_count=mixture_count,
-            )
-            samples[idx] = sub_samples
-            locs[idx] = sub_locs
-
-        return samples, locs
-
-    # --- 2) Scipy distribution
-    elif dist_type == "scipy":
-        dist_name = density_dict["name"]
-        params = density_dict["params"]
-        dist_class = getattr(st, dist_name, None)
-        if dist_class is None:
-            raise ValueError(f"Unknown scipy distribution '{dist_name}'.")
-        dist_obj = dist_class(**params)
-
-        loc_val = params.get("loc", 0.0)
-        samples = dist_obj.rvs(size=num_simulations)
-        locs = np.full(num_simulations, loc_val)
-        return samples, locs
-
-    # --- 3) Statistics distribution
-    elif dist_type == "statistics":
-        bname = density_dict["name"]
-        bparams = density_dict["params"]
-        if bname == "normal":
-            mu = bparams.get("mu", bparams.get("loc", 0.0))
-            sigma = bparams.get("sigma", bparams.get("scale", 1.0))
-            dist_obj = NormalDist(mu=mu, sigma=sigma)
-            samples = np.array(dist_obj.samples(num_simulations))
-            locs = np.full(num_simulations, mu)
-            return samples, locs
-        else:
-            raise NotImplementedError(f"Unsupported statistics distribution '{bname}'.")
-
-    # --- 4) Builtin (using scipy fallback)
-    elif dist_type == "builtin":
-        dist_name = density_dict["name"]
-        params = density_dict["params"]
-        dist_class = getattr(st, dist_name, None)
-        if dist_class is None:
-            raise ValueError(f"Unknown builtin distribution '{dist_name}'.")
-        dist_obj = dist_class(**params)
-        samples = dist_obj.rvs(size=num_simulations)
-        locs = np.full(num_simulations, params.get("loc", 0.0))
-        return samples, locs
-
-    else:
-        raise ValueError(f"Unknown or missing 'type' in density_dict: {density_dict}")
-        
-def simulate_paths(
-    mixture_specs: list,
-    start_point: float,
-    num_paths: int = 100,
-    step_minutes: int = 5,
-    start_time: datetime | None = None,
-    mode: str = "incremental",  # "absolute", "incremental", "relative"
-    quantile_range: list = [0.05, 0.95],
-    **simulate_kwargs,
-):
-    """
-    Simulate multiple paths forward given a list of mixture specs for each step.
-
-    Parameters
-    ----------
-    mixture_specs : list of dict
-        Each dict is a valid density spec (mixture, scipy, builtin...), one per step.
-    start_point : float
-        Initial value at time step 0.
-    num_paths : int
-        Number of independent paths to simulate.
-    step_minutes : int
-        Minutes between consecutive steps.
-    start_time : datetime, optional
-        If provided, returns timestamps instead of integer steps.
-    mode : {"absolute", "incremental", "relative"}, default="incremental"
-        Determines how simulated values are applied:
-        - "absolute" : draw represents an absolute target value
-        - "incremental" : draw represents a change (Δ) added to previous value
-        - "relative" : draw represents a fractional change
-        - "direct" : draw represents the next absolute value directly
-    quantile_range : list[float, float], default=[0.05, 0.95]
-        Quantile interval to compute for uncertainty bands.
-    **simulate_kwargs :
-        Extra arguments to pass to simulate_points() (e.g., max_depth, max_mixtures)
-
-    Returns
-    -------
-    dict
-        Dictionary containing:
-            "times"       : list of timestamps or integer step indices
-            "paths"       : np.ndarray, shape (num_paths, num_steps + 1)
-            "mean"        : np.ndarray, mean path value at each step
-            "q_low_paths"  : np.ndarray, lower quantile path (quantile_range[0])
-            "q_high_paths" : np.ndarray, upper quantile path (quantile_range[1])
-    """
-    num_steps = len(mixture_specs)
-    paths = np.zeros((num_paths, num_steps + 1))
-    paths[:, 0] = start_point
-
-    current_points = np.full(num_paths, start_point)
-
-    for t, spec in enumerate(mixture_specs):
-        # Simulate all paths for this step
-        draws, locs = simulate_points(spec, num_simulations=num_paths, **simulate_kwargs)
-
-        if mode == "absolute":
-            # The mixture gives absolute value around loc, so use deviation from loc
-            increment = draws - locs
-            next_values = current_points + increment
-        elif mode == "incremental":
-            # The mixture directly represents a change (Δ)
-            next_values = current_points + draws
-        elif mode == "relative":
-            # The mixture represents a fractional change
-            next_values = current_points * (1 + draws)
-        elif mode == "direct":
-            # The mixture draws represent the next absolute value directly
-            next_values = draws
-        elif mode == "point":
-            next_values = draws
-        else:
-            raise ValueError(f"Unknown mode '{mode}'. Use 'absolute', 'incremental', or 'relative'.")
-
-        paths[:, t + 1] = next_values
-        current_points = next_values
-
-    # Build timestamps if requested
-    if start_time is not None:
-        times = [start_time + timedelta(minutes=step_minutes * i)
-                 for i in range(num_steps + 1)]
-    else:
-        times = list(range(num_steps + 1))
-
-    # --- Compute per-step statistics
-    mean_path  = np.mean(paths, axis=0)
-    q_low = np.quantile(paths, quantile_range[0], axis=0)
-    q_high = np.quantile(paths, quantile_range[1], axis=0)
-
-    return {"times": times, "paths": paths, "mean": mean_path, "q_low_paths": q_low, "q_high_paths": q_high, "quantile_range": quantile_range}
-
-
-def condition_sum(children, target_sum):
-    """
-    Enforces sum(children) == target_sum
-    Minimal L2 adjustment (optimal transport).
-    """
-    correction = (target_sum - np.sum(children)) / len(children)
-    return children + correction
-
-    
-def combine_multiscale_simulations(
-    dict_paths: dict,
-    step_config: dict
-):
-    """
-    Hierarchical conditional coupling across multiple time resolutions.
-
-    All inputs are INCREMENTS (not prices).
-
-    Parameters
-    ----------
-    dict_paths : dict[str, np.ndarray]
-        Mapping resolution -> array of shape (N, n_steps).
-    step_config : dict[str, int]
-        Mapping resolution -> step size in seconds.
-
-    Returns
-    -------
-    final_paths : np.ndarray
-        Shape (N, T+1), integrated price paths at finest resolution.
-    """
-
-    # --- Sort resolutions from coarse -> fine ---
-    levels = sorted(step_config.keys(), key=lambda k: step_config[k], reverse=True)
-
-    # Finest resolution = smallest step
-    finest_key = min(step_config, key=step_config.get)
-
-    N = next(iter(dict_paths.values())).shape[0]
-    finest_steps = dict_paths[finest_key].shape[1]
-
-    # Working copy (will be progressively constrained)
-    constrained = {k: dict_paths[k].copy() for k in levels}
-
-    # --- Enforce constraints top-down ---
-    for parent, child in zip(levels[:-1], levels[1:]):
-        parent_step = step_config[parent]
-        child_step = step_config[child]
-
-        ratio = parent_step // child_step
-        if ratio * constrained[parent].shape[1] != constrained[child].shape[1]:
-            raise ValueError(f"Incompatible steps between {parent} and {child}")
-
-        for i in range(N):
-            for k in range(constrained[parent].shape[1]):
-                start = k * ratio
-                end = start + ratio
-
-                constrained[child][i, start:end] = condition_sum(
-                    constrained[child][i, start:end],
-                    constrained[parent][i, k],
-                )
-
-    # --- Integrate finest increments ---
-    final_increments = constrained[finest_key]
-    final_paths = np.zeros((N, finest_steps + 1))
-    final_paths[:, 1:] = np.cumsum(final_increments, axis=1)
-
-    return final_paths
