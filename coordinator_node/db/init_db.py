@@ -84,6 +84,10 @@ def migrate() -> None:
 
     print("➡️  Upserting scheduled prediction configs...")
     with create_session() as session:
+        # Drop FK temporarily so we can replace prediction configs
+        session.exec(text(
+            "ALTER TABLE predictions DROP CONSTRAINT IF EXISTS predictions_prediction_config_id_fkey"
+        ))
         session.exec(delete(PredictionConfigRow))
         for idx, config in enumerate(load_scheduled_prediction_configs(), start=1):
             envelope = ScheduledPredictionConfigEnvelope.model_validate(config)

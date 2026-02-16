@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-FeedDataKind = Literal["tick", "candle"]
+FeedDataKind = Literal["tick", "candle", "depth", "funding"]
 
 
 @dataclass(frozen=True)
