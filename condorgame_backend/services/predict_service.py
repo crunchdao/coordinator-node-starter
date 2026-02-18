@@ -6,6 +6,7 @@ import signal
 from model_runner_client.grpc.generated.commons_pb2 import Argument, Variant, VariantType
 from model_runner_client.model_concurrent_runners.model_concurrent_runner import ModelPredictResult
 from model_runner_client.security.credentials import SecureCredentials
+from model_runner_client.security.gateway_credentials import GatewayCredentials
 from model_runner_client.utils.datatype_transformer import encode_data
 
 from condorgame_backend.entities.model import Model
@@ -233,16 +234,29 @@ class PredictService:
         self.prediction_repository.save_all(predictions.values())
 
     def _init_model_runner(self):
-        # For testnet/mainnet deployment, configure TLS certificates + signed message to secure the connection
-        # to the model-orchestrator:
-        #   1. Generate certificates using: https://pypi.org/project/crunch-certificate/
-        #   2. Store them securely (restrict access)
-        #   3. Set the directory path below and uncomment the secure_credentials parameter
-        #      in DynamicSubclassModelConcurrentRunner
+        # Connection modes (mutually exclusive):
+        #   1. Gateway TLS: for TLS-terminating gateways (e.g. Phala CVM).
+        #      Set GATEWAY_CERT_DIR to the directory containing cert.pem and key.pem.
+        #   2. mTLS (secure): Set SECURE_CERT_DIR to the directory with TLS certs.
+        #   3. Insecure: no env var set (local development only).
 
-        # secure_credentials = SecureCredentials.from_directory(
-        #     path="../../issued-certificate"
-        # )
+        gateway_credentials = None
+        secure_credentials = None
+
+        gateway_cert_dir = os.getenv("GATEWAY_CERT_DIR")
+        secure_cert_dir = os.getenv("SECURE_CERT_DIR")
+
+        if gateway_cert_dir:
+            gateway_credentials = GatewayCredentials.from_files(
+                cert_path=os.path.join(gateway_cert_dir, "cert.pem"),
+                key_path=os.path.join(gateway_cert_dir, "key.pem"),
+            )
+            self.logger.info("Using gateway TLS credentials from %s", gateway_cert_dir)
+        elif secure_cert_dir:
+            secure_credentials = SecureCredentials.from_directory(path=secure_cert_dir)
+            self.logger.info("Using mTLS secure credentials from %s", secure_cert_dir)
+        else:
+            self.logger.info("Using insecure connection (no credentials configured)")
 
         self.model_concurrent_runner = DynamicSubclassModelConcurrentRunner(
             host=self.MODEL_RUNNER_NODE_HOST,
@@ -252,7 +266,8 @@ class PredictService:
             timeout=self.MODEL_RUNNER_TIMEOUT,
             max_consecutive_failures=100,
             max_consecutive_timeouts=100,
-            # secure_credentials=secure_credentials,
+            secure_credentials=secure_credentials,
+            gateway_credentials=gateway_credentials,
         )
 
         return self.model_concurrent_runner

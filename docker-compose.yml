@@ -49,8 +49,15 @@ services:
       <<: *common-db-env
       MODEL_RUNNER_NODE_HOST: ${MODEL_RUNNER_NODE_HOST:-model-orchestrator}
       MODEL_RUNNER_NODE_PORT: ${MODEL_RUNNER_NODE_PORT:-9091}
+      # Gateway TLS: set GATEWAY_CERT_DIR=/certs and mount your cert directory below
+      # mTLS: set SECURE_CERT_DIR=/certs and mount your cert directory below
+      GATEWAY_CERT_DIR: ${GATEWAY_CERT_DIR:-}
+      SECURE_CERT_DIR: ${SECURE_CERT_DIR:-}
     restart: always
     command: [ "python", "-m", "condorgame_backend.workers.predict_worker" ]
+    # Uncomment to mount certificates for gateway TLS or mTLS:
+    # volumes:
+    #   - ./deployment/certs:/certs:ro
     depends_on:
       init-db:
         condition: service_completed_successfully
