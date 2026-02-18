@@ -5,6 +5,7 @@ import asyncio
 import contextlib
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable
 
 from coordinator_node.entities.model import Model
@@ -19,6 +20,8 @@ try:
         DynamicSubclassModelConcurrentRunner,
     )
     from model_runner_client.model_concurrent_runners.model_concurrent_runner import ModelConcurrentRunner
+    from model_runner_client.security.credentials import SecureCredentials
+    from model_runner_client.security.gateway_credentials import GatewayCredentials
     from model_runner_client.utils.datatype_transformer import encode_data
 
     MODEL_RUNNER_PROTO_AVAILABLE = True
@@ -44,6 +47,8 @@ class PredictService:
         model_runner_timeout_seconds: float = 60,
         crunch_id: str = "starter-challenge",
         base_classname: str = "tracker.TrackerBase",
+        gateway_cert_dir: str | None = None,
+        secure_cert_dir: str | None = None,
         **kwargs,
     ):
         self.feed_reader = feed_reader
@@ -61,6 +66,8 @@ class PredictService:
         self._runner_timeout = model_runner_timeout_seconds
         self._runner_initialized = False
         self._runner_sync_task = None
+        self._gateway_cert_dir = gateway_cert_dir
+        self._secure_cert_dir = secure_cert_dir
 
         self._known_models: dict[str, Model] = {}
         self.logger = logging.getLogger(type(self).__name__)
@@ -132,6 +139,38 @@ class PredictService:
 
     # ── runner lifecycle ──
 
+    def _build_credentials(self) -> dict:
+        """Build credential kwargs for the model runner.
+
+        Connection modes (mutually exclusive, first match wins):
+          1. GATEWAY_CERT_DIR → gateway TLS (TLS-terminating proxies, e.g. Phala CVM)
+          2. SECURE_CERT_DIR  → mTLS (direct secure connection)
+          3. Neither          → insecure (local development only)
+        """
+        import os
+
+        gateway_credentials = None
+        secure_credentials = None
+
+        gateway_cert_dir = self._gateway_cert_dir or os.getenv("GATEWAY_CERT_DIR")
+        secure_cert_dir = self._secure_cert_dir or os.getenv("SECURE_CERT_DIR")
+
+        if gateway_cert_dir:
+            gateway_credentials = GatewayCredentials.from_pem(
+                key_pem=Path(os.path.join(gateway_cert_dir, "key.pem")).read_bytes(),
+            )
+            self.logger.info("Using gateway TLS credentials from %s", gateway_cert_dir)
+        elif secure_cert_dir:
+            secure_credentials = SecureCredentials.from_directory(path=secure_cert_dir)
+            self.logger.info("Using mTLS secure credentials from %s", secure_cert_dir)
+        else:
+            self.logger.info("Using insecure connection (no credentials configured)")
+
+        return dict(
+            secure_credentials=secure_credentials,
+            gateway_credentials=gateway_credentials,
+        )
+
     async def init_runner(self) -> None:
         if self._runner is None:
             if not MODEL_RUNNER_PROTO_AVAILABLE:
@@ -141,6 +180,7 @@ class PredictService:
                 crunch_id=self.crunch_id, base_classname=self.base_classname,
                 timeout=self._runner_timeout,
                 max_consecutive_failures=100, max_consecutive_timeouts=100,
+                **self._build_credentials(),
             )
         if not self._runner_initialized:
             await self._runner.init()

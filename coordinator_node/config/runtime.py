@@ -17,6 +17,8 @@ class RuntimeSettings:
     base_classname: str
     feed_provider: str
     feed_record_ttl_days: int
+    gateway_cert_dir: str | None
+    secure_cert_dir: str | None
 
     @classmethod
     def from_env(cls) -> "RuntimeSettings":
@@ -33,4 +35,6 @@ class RuntimeSettings:
             base_classname=os.getenv("MODEL_BASE_CLASSNAME", "tracker.TrackerBase"),
             feed_provider=os.getenv("FEED_PROVIDER", "pyth"),
             feed_record_ttl_days=int(os.getenv("FEED_RECORD_TTL_DAYS", "90")),
+            gateway_cert_dir=os.getenv("GATEWAY_CERT_DIR"),
+            secure_cert_dir=os.getenv("SECURE_CERT_DIR"),
         )

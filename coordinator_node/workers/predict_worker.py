@@ -34,6 +34,8 @@ def build_service() -> RealtimePredictService:
         model_runner_timeout_seconds=runtime_settings.model_runner_timeout_seconds,
         crunch_id=runtime_settings.crunch_id,
         base_classname=runtime_settings.base_classname,
+        gateway_cert_dir=runtime_settings.gateway_cert_dir,
+        secure_cert_dir=runtime_settings.secure_cert_dir,
     )
 
 

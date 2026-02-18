@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "coordinator-node"
-version = "0.1.6"
+version = "0.1.7"
 description = "Runtime engine for Crunch coordinator nodes"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -12,7 +12,7 @@ license = "MIT"
 dependencies = [
     "alembic>=1.13",
     "fastapi>=0.100.0",
-    "model-runner-client>=0.10.0",
+    "model-runner-client @ git+https://github.com/crunchdao/model-runner-client.git@master",
     "psycopg2-binary>=2.9",
     "pyarrow>=15.0",
     "python-binance>=1.0",
@@ -24,6 +24,9 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/crunchdao/coordinator-node-starter"
 Repository = "https://github.com/crunchdao/coordinator-node-starter"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["coordinator_node"]
