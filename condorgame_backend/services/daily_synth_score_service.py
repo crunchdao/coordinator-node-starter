@@ -284,8 +284,8 @@ class DailySynthScoreService:
                 # /!/ Input: All distributions must have SUCCESS status before apply ensembling /!/
                 prediction_round = prediction_round[prediction_round.status == "SUCCESS"]
 
-                # Get prediction by substracting the time_length from scored_time
-                prediction_time_ts = prediction_round.scored_time.iloc[0]
+                # Get prediction time by substracting the time_length from scored_time
+                prediction_time_ts = scored_time
                 prediction_time_ts = datetime.fromisoformat(prediction_time_ts.replace("Z", "+00:00"))
                 prediction_time_ts = prediction_time_ts - timedelta(seconds=time_length)
                 prediction_time_ts = prediction_time_ts.isoformat().replace("+00:00", "Z")
@@ -303,11 +303,11 @@ class DailySynthScoreService:
                 dict_prediction_round = prediction_round[["miner_uid", "prediction"]].set_index("miner_uid").to_dict()["prediction"]
 
                 for config_ensemble in list_configs_ensemble:
+                    # Naming
+                    ensemble_name, model_name = get_ensemble_name(config_ensemble)
+                    print("Name:", ensemble_name)
+                  
                     try:
-                        # Naming
-                        ensemble_name, model_name = get_ensemble_name(config_ensemble)
-                        print("Name:", ensemble_name)
-
                         col_score = "overall_score_anchor"
                         if config_ensemble["score"] is not None:
                             col_score = "overall_score_" + config_ensemble["score"]
