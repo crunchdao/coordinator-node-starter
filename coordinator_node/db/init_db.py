@@ -122,6 +122,29 @@ def reset_db() -> None:
 init_db = reset_db
 
 
+def _stamp_alembic_if_needed() -> None:
+    """Stamp the DB at revision 001 if tables exist but alembic_version doesn't.
+
+    This handles databases created by the old ``create_all`` code path before
+    Alembic was introduced.  Without the stamp, ``alembic upgrade head`` tries
+    to re-create every table and fails.
+    """
+    from alembic.config import Config
+    from alembic import command
+
+    from sqlalchemy import inspect as sa_inspect
+    inspector = sa_inspect(engine)
+    if inspector.has_table("models") and not inspector.has_table("alembic_version"):
+        print("➡️  Stamping existing DB at Alembic revision 001...")
+        alembic_cfg = Config()
+        alembic_cfg.set_main_option(
+            "script_location",
+            str(Path(__file__).resolve().parent.parent.parent / "alembic"),
+        )
+        alembic_cfg.set_main_option("sqlalchemy.url", str(engine.url))
+        command.stamp(alembic_cfg, "001")
+
+
 def auto_migrate() -> None:
     """Run migrate if tables don't exist yet. Called by workers on boot."""
     try:
@@ -130,11 +153,13 @@ def auto_migrate() -> None:
         if not inspector.has_table("models"):
             migrate()
         else:
-            # Tables exist — run Alembic to apply any pending migrations
+            # Tables exist — stamp at 001 if created before Alembic was added,
+            # then run upgrade to apply any pending migrations (e.g. 002+).
             try:
+                _stamp_alembic_if_needed()
                 _run_alembic_upgrade()
-            except Exception:
-                pass  # Non-critical on boot if already up to date
+            except Exception as exc:
+                print(f"⚠️  auto_migrate alembic step: {exc}")
     except Exception:
         # First boot or connection issue — try migrate anyway
         try:
