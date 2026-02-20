@@ -179,8 +179,6 @@ class ScoreService:
 
         self._score_predictions(predictions)
 
-        self.prediction_repository.save_all(predictions)
-
         return True
 
     def _score_predictions(self, predictions: list[Prediction]):
@@ -262,6 +260,8 @@ class ScoreService:
                     f"Params: [{group_key[0]}], Performed_at: [{group_key[1]}], "
                     f"no successful scores -> all normalized to 0.0"
                 )
+
+            self.prediction_repository.save_all(group_predictions)
 
     def score_prediction(self, prediction: Prediction):
         total_score = 0.0
