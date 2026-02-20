@@ -41,7 +41,7 @@ class DBLeaderboardRepository(LeaderboardRepository):
         self._session.commit()
 
     def get_latest(self) -> Optional[Leaderboard]:
-        stmt = select(LeaderboardRow).order_by(LeaderboardRow.created_at.desc())
+        stmt = select(LeaderboardRow).order_by(LeaderboardRow.created_at.desc()).limit(1)
         row = self._session.exec(stmt).first()
 
         if row is None:
