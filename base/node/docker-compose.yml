@@ -221,7 +221,7 @@ services:
 
   model-orchestrator:
     build:
-      context: https://github.com/crunchdao/model-orchestrator.git
+      context: ./deployment/model-orchestrator-local
     restart: unless-stopped
     init: true
     ports:

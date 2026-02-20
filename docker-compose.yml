@@ -85,6 +85,8 @@ services:
         condition: service_healthy
       feed-data-worker:
         condition: service_started
+      model-orchestrator:
+        condition: service_started
     networks: [coordinator-net]
 
   score-worker:
@@ -132,6 +134,33 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks: [coordinator-net]
+
+  model-orchestrator:
+    build:
+      context: ./base/node/deployment/model-orchestrator-local
+    restart: unless-stopped
+    init: true
+    ports:
+      - "9091:9091"
+    environment:
+      DOCKER_NETWORK_NAME: crunch-node-${CRUNCH_ID:-starter}-net
+      DOCKER_COMPOSE_PROJECT: crunch-node-${CRUNCH_ID:-starter}
+    volumes:
+      - ./base/node/deployment/model-orchestrator-local/data:/app/data
+      - ./base/node/deployment/model-orchestrator-local/config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock
+    privileged: true
+    entrypoint: ["sh", "/app/config/docker-entrypoint.sh"]
+    command:
+      [
+        "model-orchestrator",
+        "dev",
+        "--configuration-file",
+        "/app/config/orchestrator.dev.yml",
+        "--rebuild",
+        "if-code-modified",
+      ]
     networks: [coordinator-net]
 
   report-ui:
