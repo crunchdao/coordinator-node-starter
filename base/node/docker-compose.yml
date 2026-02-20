@@ -1,7 +1,8 @@
+name: crunch-node-${CRUNCH_ID:-starter-challenge}
+
 services:
   postgres:
     image: postgres:15
-    container_name: starter-challenge-postgres
     restart: always
     ports:
       - "5432:5432"
@@ -25,7 +26,8 @@ services:
     build:
       context: ..
       dockerfile: node/Dockerfile
-    container_name: starter-challenge-init-db
+    stdin_open: false
+    tty: false
     command: ["python", "-m", "coordinator_node.db.init_db"]
     profiles: [init]
     environment:
@@ -34,6 +36,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-starter}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
       POSTGRES_DB: ${POSTGRES_DB:-starter}
+      PYTHONUNBUFFERED: "1"
       SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
     volumes:
       - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
@@ -46,7 +49,8 @@ services:
     build:
       context: ..
       dockerfile: node/Dockerfile
-    container_name: starter-challenge-reset-db
+    stdin_open: false
+    tty: false
     command: ["python", "-m", "coordinator_node.db.init_db", "--reset"]
     profiles: [reset]
     environment:
@@ -55,6 +59,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-starter}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
       POSTGRES_DB: ${POSTGRES_DB:-starter}
+      PYTHONUNBUFFERED: "1"
       SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
     volumes:
       - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
@@ -67,7 +72,6 @@ services:
     build:
       context: ..
       dockerfile: node/Dockerfile
-    container_name: starter-challenge-feed-data-worker
     restart: always
     command: ["python", "-m", "coordinator_node.workers.feed_data_worker"]
     environment:
@@ -98,7 +102,6 @@ services:
     build:
       context: ..
       dockerfile: node/Dockerfile
-    container_name: starter-challenge-predict-worker
     restart: always
     command: ["python", "-m", "coordinator_node.workers.predict_worker"]
     environment:
@@ -135,7 +138,6 @@ services:
     build:
       context: ..
       dockerfile: node/Dockerfile
-    container_name: starter-challenge-score-worker
     restart: always
     command: ["python", "-m", "coordinator_node.workers.score_worker"]
     environment:
@@ -167,7 +169,6 @@ services:
     build:
       context: ..
       dockerfile: node/Dockerfile
-    container_name: starter-challenge-checkpoint-worker
     restart: always
     command: ["python", "-m", "coordinator_node.workers.checkpoint_worker"]
     environment:
@@ -191,7 +192,6 @@ services:
     build:
       context: ..
       dockerfile: node/Dockerfile
-    container_name: starter-challenge-report-worker
     restart: always
     command: ["python", "-m", "coordinator_node.workers.report_worker"]
     ports:
@@ -222,13 +222,13 @@ services:
   model-orchestrator:
     build:
       context: https://github.com/crunchdao/model-orchestrator.git
-    container_name: starter-challenge-model-orchestrator
     restart: unless-stopped
     init: true
     ports:
       - "9091:9091"
     environment:
-      DOCKER_NETWORK_NAME: starter-challenge-net
+      DOCKER_NETWORK_NAME: crunch-node-${CRUNCH_ID:-starter-challenge}-net
+      DOCKER_COMPOSE_PROJECT: crunch-node-${CRUNCH_ID:-starter-challenge}
     volumes:
       - ./deployment/model-orchestrator-local/data:/app/data
       - ./deployment/model-orchestrator-local/config:/app/config
@@ -253,7 +253,6 @@ services:
       args:
         NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://report-worker:8000}"
         NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR: "${NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR:-http://model-orchestrator:8001}"
-    container_name: starter-challenge-report-ui
     ports:
       - "3000:3000"
     volumes:
@@ -267,7 +266,7 @@ services:
 networks:
   coordinator-net:
     driver: bridge
-    name: starter-challenge-net
+    name: crunch-node-${CRUNCH_ID:-starter-challenge}-net
 
 volumes:
   postgres-data:

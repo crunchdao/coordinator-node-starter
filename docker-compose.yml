@@ -1,3 +1,5 @@
+name: crunch-node-${CRUNCH_ID:-starter}
+
 x-common-env:
   environment: &common-db-env
     POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
@@ -15,7 +17,6 @@ services:
   postgres:
     image: postgres:15
     environment: *common-db-env
-    container_name: coordinator-starter-postgres
     restart: always
     ports:
       - "5432:5432"
@@ -140,7 +141,6 @@ services:
       args:
         NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://report-worker:8000}"
         NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR: "${NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR:-http://model-orchestrator:8001}"
-    container_name: coordinator-starter-report-ui
     restart: always
     ports:
       - "3000:3000"
@@ -151,4 +151,4 @@ services:
 networks:
   coordinator-net:
     driver: bridge
-    name: coordinator-starter-net
+    name: crunch-node-${CRUNCH_ID:-starter}-net
