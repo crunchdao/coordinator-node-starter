@@ -361,9 +361,10 @@ class TestGetLeaderboard(unittest.TestCase):
 
 
 class TestGetModelsGlobal(unittest.TestCase):
-    def _call(self, pred_repo=None, model_repo=None, model_ids=None, start=None, end=None):
+    def _call(self, pred_repo=None, model_repo=None, snapshot_repo=None, model_ids=None, start=None, end=None):
         return get_models_global(
             prediction_repo=pred_repo or InMemoryPredictionRepository(),
+            snapshot_repo=snapshot_repo or InMemorySnapshotRepository(),
             model_repo=model_repo or InMemoryModelRepository(),
             model_ids=model_ids,
             start=start,
@@ -396,6 +397,8 @@ class TestGetModelsGlobal(unittest.TestCase):
         result = self._call(
             pred_repo=InMemoryPredictionRepository(preds),
             model_repo=InMemoryModelRepository(models),
+            start=NOW - timedelta(days=1),
+            end=NOW + timedelta(days=1),
         )
         self.assertEqual(len(result), 2)
 

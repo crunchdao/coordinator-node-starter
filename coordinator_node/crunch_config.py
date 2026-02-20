@@ -62,6 +62,36 @@ class PredictionScope(BaseModel):
     step_seconds: int = Field(default=15, ge=1)
 
 
+class CallMethodArg(BaseModel):
+    """A single argument to pass when calling a model method."""
+
+    name: str = Field(description="Scope key to read the value from")
+    type: str = Field(default="STRING", description="VariantType: STRING, INT, FLOAT, JSON")
+
+
+class CallMethodConfig(BaseModel):
+    """How the coordinator invokes models.
+
+    Default: ``predict(subject, horizon_seconds, step_seconds)``
+    Override for competitions that use a different method signature, e.g.::
+
+        CallMethodConfig(method="trade", args=[
+            CallMethodArg(name="symbol", type="STRING"),
+            CallMethodArg(name="side", type="STRING"),
+        ])
+    """
+
+    method: str = Field(default="predict", description="gRPC method name to call on models")
+    args: list[CallMethodArg] = Field(
+        default_factory=lambda: [
+            CallMethodArg(name="subject", type="STRING"),
+            CallMethodArg(name="horizon_seconds", type="INT"),
+            CallMethodArg(name="step_seconds", type="INT"),
+        ],
+        description="Ordered list of arguments extracted from the prediction scope",
+    )
+
+
 class AggregationWindow(BaseModel):
     """A rolling time window for score aggregation."""
 
@@ -247,6 +277,7 @@ class CrunchConfig(BaseModel):
     output_type: type[BaseModel] = InferenceOutput
     score_type: type[BaseModel] = ScoreResult
     scope: PredictionScope = Field(default_factory=PredictionScope)
+    call_method: CallMethodConfig = Field(default_factory=CallMethodConfig)
     aggregation: Aggregation = Field(default_factory=Aggregation)
 
     # Multi-metric scoring

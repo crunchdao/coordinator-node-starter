@@ -93,8 +93,9 @@ class PredictService:
     # ── 2. store predictions ──
 
     async def _call_models(self, scope: dict[str, Any]) -> dict:
-        """Send predict call to model runner, return raw responses."""
-        return await self._runner.call("predict", self._encode_predict(scope))
+        """Send call to model runner using the configured method name."""
+        method = self.contract.call_method.method
+        return await self._runner.call(method, self._encode_predict(scope))
 
     async def _tick_models(self, inference_input: dict[str, Any]) -> None:
         """Send latest data to all models."""
@@ -230,15 +231,60 @@ class PredictService:
             )], [])
         return (inference_input,)
 
+    # ── proto type mapping ──
+
+    _VARIANT_TYPE_MAP: dict[str, Any] = {}
+
+    @classmethod
+    def _get_variant_type(cls, type_name: str) -> Any:
+        """Resolve a CallMethodArg type string to a VariantType enum value."""
+        if not cls._VARIANT_TYPE_MAP and MODEL_RUNNER_PROTO_AVAILABLE:
+            cls._VARIANT_TYPE_MAP.update({
+                "STRING": VariantType.STRING,
+                "INT": VariantType.INT,
+                "FLOAT": VariantType.DOUBLE,
+                "DOUBLE": VariantType.DOUBLE,
+                "JSON": VariantType.JSON,
+            })
+        return cls._VARIANT_TYPE_MAP.get(type_name.upper(), cls._VARIANT_TYPE_MAP.get("STRING"))
+
     def _encode_predict(self, scope: dict[str, Any]) -> tuple:
-        subject = scope.get("subject", self.contract.scope.subject)
-        horizon = int(scope.get("horizon_seconds", self.contract.scope.horizon_seconds))
-        step = int(scope.get("step_seconds", self.contract.scope.step_seconds))
+        """Encode arguments according to ``contract.call_method.args``.
+
+        Each arg reads its value from the scope dict (falling back to the
+        contract's default scope), converts to the declared type, and is
+        packed as a proto Argument when the model-runner client is available.
+        """
+        call_args = self.contract.call_method.args
+        scope_defaults = self.contract.scope.model_dump()
+
+        # Resolve raw values
+        raw_values: list[tuple[str, Any]] = []
+        for arg in call_args:
+            value = scope.get(arg.name)
+            if value is None:
+                value = scope_defaults.get(arg.name, "")
+            # Coerce to declared type
+            utype = arg.type.upper()
+            if utype == "INT":
+                value = int(value)
+            elif utype == "FLOAT":
+                value = float(value)
+            elif utype == "STRING":
+                value = str(value)
+            # JSON left as-is
+            raw_values.append((utype, value))
 
         if MODEL_RUNNER_PROTO_AVAILABLE:
-            return ([
-                Argument(position=1, data=Variant(type=VariantType.STRING, value=encode_data(VariantType.STRING, subject))),
-                Argument(position=2, data=Variant(type=VariantType.INT, value=encode_data(VariantType.INT, horizon))),
-                Argument(position=3, data=Variant(type=VariantType.INT, value=encode_data(VariantType.INT, step))),
-            ], [])
-        return (subject, horizon, step)
+            arguments = []
+            for position, (utype, value) in enumerate(raw_values, start=1):
+                vtype = self._get_variant_type(utype)
+                arguments.append(
+                    Argument(
+                        position=position,
+                        data=Variant(type=vtype, value=encode_data(vtype, value)),
+                    )
+                )
+            return (arguments, [])
+
+        return tuple(v for _, v in raw_values)

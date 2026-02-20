@@ -33,7 +33,10 @@ services:
     <<: *common-build
     environment:
       <<: *common-db-env
+      PYTHONUNBUFFERED: "1"
       SCHEDULED_PREDICTION_CONFIGS_PATH: ${SCHEDULED_PREDICTION_CONFIGS_PATH:-}
+    stdin_open: false
+    tty: false
     command: ["python", "-m", "coordinator_node.db.init_db"]
     depends_on:
       postgres:
@@ -55,8 +58,8 @@ services:
     restart: always
     command: ["python", "-m", "coordinator_node.workers.feed_data_worker"]
     depends_on:
-      init-db:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     networks: [coordinator-net]
 
   predict-worker:
@@ -77,8 +80,8 @@ services:
     restart: always
     command: ["python", "-m", "coordinator_node.workers.predict_worker"]
     depends_on:
-      init-db:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
       feed-data-worker:
         condition: service_started
     networks: [coordinator-net]
@@ -96,8 +99,8 @@ services:
     restart: always
     command: ["python", "-m", "coordinator_node.workers.score_worker"]
     depends_on:
-      init-db:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
       feed-data-worker:
         condition: service_started
     networks: [coordinator-net]
@@ -110,8 +113,8 @@ services:
     restart: always
     command: ["python", "-m", "coordinator_node.workers.checkpoint_worker"]
     depends_on:
-      init-db:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     networks: [coordinator-net]
 
   report-worker:
@@ -126,8 +129,8 @@ services:
     volumes:
       - ./data/backfill:/app/data/backfill
     depends_on:
-      init-db:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     networks: [coordinator-net]
 
   report-ui:

@@ -114,10 +114,28 @@ class TestLoadConfig(unittest.TestCase):
 class TestBackwardCompat(unittest.TestCase):
     """Verify old import paths still work."""
 
+    def setUp(self):
+        reset_cache()
+
+    def tearDown(self):
+        reset_cache()
+
     def test_import_from_contracts(self):
         from coordinator_node.contracts import CrunchContract
         from coordinator_node.crunch_config import CrunchConfig
-        self.assertIs(CrunchContract, CrunchConfig)
+        # CrunchContract now resolves via config_loader → returns an instance
+        self.assertIsInstance(CrunchContract, CrunchConfig)
+
+    def test_crunch_contract_returns_same_cached_instance(self):
+        from coordinator_node import contracts
+        a = contracts.CrunchContract
+        b = contracts.CrunchContract
+        self.assertIs(a, b)
+
+    def test_crunch_config_class_still_importable(self):
+        from coordinator_node.contracts import CrunchConfig
+        # The raw class must still be importable for subclassing
+        self.assertTrue(isinstance(CrunchConfig, type))
 
     def test_import_load_contract(self):
         from coordinator_node.contract_loader import load_contract

@@ -202,7 +202,12 @@ def build_service() -> CheckpointService:
 
 async def main() -> None:
     configure_logging()
-    logging.getLogger(__name__).info("coordinator checkpoint worker bootstrap")
+    logger = logging.getLogger(__name__)
+    logger.info("coordinator checkpoint worker bootstrap")
+
+    from coordinator_node.db.init_db import auto_migrate
+    auto_migrate()
+
     service = build_service()
     await service.run()
 

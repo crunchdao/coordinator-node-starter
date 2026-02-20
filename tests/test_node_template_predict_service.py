@@ -255,5 +255,63 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(inp.resolvable_at, now)
 
 
+    async def test_custom_call_method_uses_configured_method_name(self):
+        """Finding F: CallMethodConfig controls which gRPC method is called."""
+        from coordinator_node.crunch_config import CallMethodConfig, CallMethodArg
+
+        class CapturingRunner(FakeRunner):
+            def __init__(self):
+                super().__init__()
+                self.captured_method = None
+                self.captured_args = None
+
+            async def call(self, method, args):
+                self.captured_method = method
+                self.captured_args = args
+                return {FakeModelRun("m1"): FakePredictionResult()}
+
+        runner = CapturingRunner()
+        contract = CrunchConfig(
+            call_method=CallMethodConfig(
+                method="trade",
+                args=[
+                    CallMethodArg(name="symbol", type="STRING"),
+                    CallMethodArg(name="side", type="STRING"),
+                ],
+            ),
+        )
+        repo = InMemoryPredictionRepository()
+        # Provide scope_template values that match the custom args
+        repo.fetch_active_configs = lambda: [{
+            "id": "CFG_T",
+            "scope_key": "BTC-trade",
+            "scope_template": {"symbol": "BTCUSDT", "side": "LONG"},
+            "schedule": {"prediction_interval_seconds": 60, "resolve_after_seconds": 60},
+            "active": True,
+            "order": 1,
+        }]
+        service = _make_service(
+            prediction_repo=repo,
+            runner=runner,
+            contract=contract,
+        )
+
+        await service.run_once(raw_input={"symbol": "BTC"}, now=datetime.now(timezone.utc))
+
+        self.assertEqual(runner.captured_method, "trade")
+        self.assertGreaterEqual(len(repo.saved_predictions), 1)
+
+    async def test_default_call_method_is_predict(self):
+        """Default CallMethodConfig calls 'predict' with (subject, horizon, step)."""
+        from coordinator_node.crunch_config import CallMethodConfig
+
+        contract = CrunchConfig()
+        self.assertEqual(contract.call_method.method, "predict")
+        self.assertEqual(len(contract.call_method.args), 3)
+        self.assertEqual(contract.call_method.args[0].name, "subject")
+        self.assertEqual(contract.call_method.args[1].name, "horizon_seconds")
+        self.assertEqual(contract.call_method.args[2].name, "step_seconds")
+
+
 if __name__ == "__main__":
     unittest.main()

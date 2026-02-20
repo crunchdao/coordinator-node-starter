@@ -145,7 +145,19 @@ def auto_migrate() -> None:
 
 if __name__ == "__main__":
     import sys
+
+    # Ensure stdout/stderr are line-buffered even when piped (avoids TTY hangs
+    # in Docker containers where there is no allocating terminal).
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(line_buffering=True)
+
     if "--reset" in sys.argv:
         reset_db()
     else:
         migrate()
+
+    # Explicit exit — prevents the process from hanging when run inside
+    # ``docker compose run`` without a TTY.
+    sys.exit(0)
