@@ -16,6 +16,7 @@ x-common-build: &common-build
 services:
   postgres:
     image: postgres:15
+    container_name: crunch-node-${CRUNCH_ID:-starter}-postgres
     environment: *common-db-env
     restart: always
     ports:
@@ -32,6 +33,7 @@ services:
 
   init-db:
     <<: *common-build
+    container_name: crunch-node-${CRUNCH_ID:-starter}-init-db
     environment:
       <<: *common-db-env
       PYTHONUNBUFFERED: "1"
@@ -46,6 +48,7 @@ services:
 
   feed-data-worker:
     <<: *common-build
+    container_name: crunch-node-${CRUNCH_ID:-starter}-feed-data-worker
     environment:
       <<: *common-db-env
       FEED_SOURCE: ${FEED_SOURCE:-pyth}
@@ -65,6 +68,7 @@ services:
 
   predict-worker:
     <<: *common-build
+    container_name: crunch-node-${CRUNCH_ID:-starter}-predict-worker
     environment:
       <<: *common-db-env
       MODEL_RUNNER_NODE_HOST: ${MODEL_RUNNER_NODE_HOST:-model-orchestrator}
@@ -91,6 +95,7 @@ services:
 
   score-worker:
     <<: *common-build
+    container_name: crunch-node-${CRUNCH_ID:-starter}-score-worker
     environment:
       <<: *common-db-env
       CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-60}
@@ -110,6 +115,7 @@ services:
 
   checkpoint-worker:
     <<: *common-build
+    container_name: crunch-node-${CRUNCH_ID:-starter}-checkpoint-worker
     environment:
       <<: *common-db-env
       CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-604800}
@@ -122,6 +128,7 @@ services:
 
   report-worker:
     <<: *common-build
+    container_name: crunch-node-${CRUNCH_ID:-starter}-report-worker
     environment:
       <<: *common-db-env
       BACKFILL_DATA_DIR: ${BACKFILL_DATA_DIR:-/app/data/backfill}
@@ -139,6 +146,7 @@ services:
   model-orchestrator:
     build:
       context: ./base/node/deployment/model-orchestrator-local
+    container_name: crunch-node-${CRUNCH_ID:-starter}-model-orchestrator
     restart: unless-stopped
     init: true
     ports:
@@ -170,6 +178,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://report-worker:8000}"
         NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR: "${NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR:-http://model-orchestrator:8001}"
+    container_name: crunch-node-${CRUNCH_ID:-starter}-report-ui
     restart: always
     ports:
       - "3000:3000"
