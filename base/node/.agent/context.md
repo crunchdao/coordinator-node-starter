@@ -1,0 +1,74 @@
+# Node Context — starter-challenge
+
+## What this is
+
+Standalone node runtime workspace. Contains docker-compose, workers, config, and the report API. Runs the `coordinator-node` engine from PyPI.
+
+## Primary commands
+
+```bash
+make deploy                                                    # Build and start all services
+make verify-e2e                                                # End-to-end validation
+make logs                                                      # Stream all service logs
+make logs-capture                                              # Write structured logs to runtime-services.jsonl
+make down                                                      # Tear down all services
+make backfill SOURCE=pyth SUBJECT=BTC FROM=2026-01-01 TO=2026-02-01  # Backfill historical data
+```
+
+## Workers
+
+| Container | Purpose |
+|---|---|
+| `feed-data-worker` | Ingests feed data (Pyth, Binance) |
+| `predict-worker` | Event-driven: feed → models → predictions |
+| `score-worker` | Resolves actuals → scores → snapshots → leaderboard |
+| `checkpoint-worker` | Aggregates snapshots → EmissionCheckpoint |
+| `report-worker` | FastAPI serving all report endpoints |
+
+## Report API
+
+| Endpoint | Description |
+|---|---|
+| `http://localhost:8000/healthz` | Health check |
+| `http://localhost:8000/reports/models` | Registered models |
+| `http://localhost:8000/reports/leaderboard` | Current leaderboard |
+| `http://localhost:8000/reports/predictions` | Prediction history |
+| `http://localhost:8000/reports/feeds` | Active feed subscriptions |
+| `http://localhost:8000/reports/snapshots` | Per-model period summaries (enriched with metrics) |
+| `http://localhost:8000/reports/checkpoints` | Checkpoint history |
+| `http://localhost:8000/reports/emissions/latest` | Latest emission |
+| `http://localhost:8000/reports/checkpoints/{id}/emission` | Raw emission (frac64) |
+| `http://localhost:8000/reports/checkpoints/{id}/emission/cli-format` | Coordinator-CLI JSON format |
+
+## API Security
+
+Set `API_KEY` in `.local.env` to enable authentication.
+
+- **Admin endpoints** (backfill, checkpoints, `/custom/*`) always require the key when set
+- **Public endpoints** (leaderboard, schema, models) stay open
+- **Read endpoints** optionally gated via `API_READ_AUTH=true`
+
+## Custom API endpoints
+
+Drop `.py` files in `api/` with a `router = APIRouter()`. Auto-mounted at report-worker startup. Full DB access via `Depends`.
+
+Config: `API_ROUTES_DIR` (default `api/`), `API_ROUTES` (explicit `module:attr` paths).
+
+## Edit boundaries
+
+| What | Where |
+|---|---|
+| Node env config | `.local.env`, `.env` |
+| Callable paths | `config/callables.env` |
+| Prediction schedules | `config/scheduled_prediction_configs.json` |
+| Competition types & behavior | `runtime_definitions/crunch_config.py` (preferred), `runtime_definitions/contracts.py` (backward compat) |
+| Custom API endpoints | `api/` |
+| Custom extensions | `extensions/` |
+| Deployment config | `deployment/` |
+| Challenge implementation | Mounted from `../challenge` |
+
+## Logs and artifacts
+
+- `make logs` streams all service logs from docker compose
+- `make logs-capture` writes structured logs to `runtime-services.jsonl`
+- Known failure modes and recovery: `RUNBOOK.md`
