@@ -16,13 +16,6 @@ def database_url() -> str:
 
 engine = create_engine(database_url())
 
-_migrated = False
-
 
 def create_session() -> Session:
-    global _migrated
-    if not _migrated:
-        from coordinator_node.db.init_db import auto_migrate
-        auto_migrate()
-        _migrated = True
     return Session(engine)

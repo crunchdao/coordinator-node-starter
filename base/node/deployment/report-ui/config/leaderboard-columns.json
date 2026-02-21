@@ -41,5 +41,55 @@
     "tooltip": "The score of the player over the last 7 days.",
     "nativeConfiguration": null,
     "order": 40
+  },
+  {
+    "id": 5,
+    "type": "VALUE",
+    "property": "ic",
+    "format": "decimal-4",
+    "displayName": "IC",
+    "tooltip": "Information Coefficient — Spearman rank correlation between predictions and realized returns",
+    "nativeConfiguration": null,
+    "order": 100
+  },
+  {
+    "id": 6,
+    "type": "VALUE",
+    "property": "ic_sharpe",
+    "format": "decimal-4",
+    "displayName": "IC Sharpe",
+    "tooltip": "IC Sharpe — mean(IC) / std(IC), rewards consistency",
+    "nativeConfiguration": null,
+    "order": 110
+  },
+  {
+    "id": 7,
+    "type": "VALUE",
+    "property": "hit_rate",
+    "format": "decimal-4",
+    "displayName": "Hit Rate",
+    "tooltip": "Percentage of predictions with correct directional sign",
+    "nativeConfiguration": null,
+    "order": 120
+  },
+  {
+    "id": 8,
+    "type": "VALUE",
+    "property": "max_drawdown",
+    "format": "decimal-4",
+    "displayName": "Max Drawdown",
+    "tooltip": "Worst peak-to-trough on cumulative score",
+    "nativeConfiguration": null,
+    "order": 130
+  },
+  {
+    "id": 9,
+    "type": "VALUE",
+    "property": "model_correlation",
+    "format": "decimal-4",
+    "displayName": "Model Corr",
+    "tooltip": "Mean pairwise Spearman correlation against other models",
+    "nativeConfiguration": null,
+    "order": 140
   }
 ]

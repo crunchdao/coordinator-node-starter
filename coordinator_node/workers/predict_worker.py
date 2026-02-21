@@ -44,9 +44,6 @@ async def main() -> None:
     logger = logging.getLogger(__name__)
     logger.info("predict worker bootstrap")
 
-    from coordinator_node.db.init_db import auto_migrate
-    auto_migrate()
-
     service = build_service()
     await service.run()
 

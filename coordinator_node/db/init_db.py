@@ -62,9 +62,18 @@ def load_scheduled_prediction_configs() -> list[dict[str, Any]]:
 
 
 def _run_alembic_upgrade() -> None:
-    """Run Alembic migrations programmatically."""
+    """Run Alembic migrations programmatically.
+
+    Sets a lock_timeout so DDL that needs AccessExclusiveLock won't hang
+    indefinitely if another session holds a conflicting lock.
+    """
     from alembic.config import Config
     from alembic import command
+
+    # Set a lock timeout so ALTER TABLE won't block forever on concurrent reads
+    with engine.connect() as conn:
+        conn.execute(text("SET lock_timeout = '30s'"))
+        conn.commit()
 
     alembic_cfg = Config()
     alembic_cfg.set_main_option("script_location", str(Path(__file__).resolve().parent.parent.parent / "alembic"))
@@ -146,7 +155,12 @@ def _stamp_alembic_if_needed() -> None:
 
 
 def auto_migrate() -> None:
-    """Run migrate if tables don't exist yet. Called by workers on boot."""
+    """Run Alembic migrations if needed.
+
+    Only called by the dedicated init-db container (not by workers).
+    Workers depend on init-db completing before they start via
+    docker-compose ``service_completed_successfully``.
+    """
     try:
         from sqlalchemy import inspect as sa_inspect
         inspector = sa_inspect(engine)

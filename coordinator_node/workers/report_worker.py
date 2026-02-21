@@ -12,7 +12,6 @@ from sqlmodel import Session
 from coordinator_node.config.runtime import RuntimeSettings
 from coordinator_node.config_loader import load_config
 from coordinator_node.crunch_config import CrunchConfig
-from coordinator_node.db.init_db import auto_migrate
 from coordinator_node.entities.prediction import CheckpointStatus
 from coordinator_node.schemas import ReportSchemaEnvelope
 from coordinator_node.db import (
@@ -28,8 +27,6 @@ from coordinator_node.db import (
     create_session,
 )
 from coordinator_node.merkle.service import MerkleService
-
-auto_migrate()
 
 app = FastAPI(title="Node Template Report Worker")
 

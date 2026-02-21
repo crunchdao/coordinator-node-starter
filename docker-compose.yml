@@ -12,15 +12,21 @@ x-common-build: &common-build
   build:
     context: .
     dockerfile: Dockerfile
+  deploy:
+    resources:
+      limits:
+        memory: 512M
+      reservations:
+        memory: 256M
 
 services:
   postgres:
-    image: postgres:15
+    image: postgres:15-alpine
     container_name: crunch-node-${CRUNCH_ID:-starter}-postgres
     environment: *common-db-env
     restart: always
-    ports:
-      - "5432:5432"
+    expose:
+      - "5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d ${POSTGRES_DB:-starter} -U ${POSTGRES_USER:-starter}"]
       interval: 2s
@@ -28,8 +34,14 @@ services:
       retries: 20
       start_period: 10s
     volumes:
-      - ./data/postgres_data:/var/lib/postgresql/data
-    networks: [coordinator-net]
+      - postgres_data:/var/lib/postgresql/data
+    networks: [backend]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
 
   init-db:
     <<: *common-build
@@ -44,11 +56,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [coordinator-net]
+    networks: [backend]
 
   feed-data-worker:
     <<: *common-build
     container_name: crunch-node-${CRUNCH_ID:-starter}-feed-data-worker
+    healthcheck:
+      disable: true
     environment:
       <<: *common-db-env
       FEED_SOURCE: ${FEED_SOURCE:-pyth}
@@ -60,15 +74,20 @@ services:
       FEED_RECORD_TTL_DAYS: ${FEED_RECORD_TTL_DAYS:-90}
       FEED_RETENTION_CHECK_SECONDS: ${FEED_RETENTION_CHECK_SECONDS:-3600}
     restart: always
+    stop_grace_period: 5s
     command: ["python", "-m", "coordinator_node.workers.feed_data_worker"]
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [coordinator-net]
+      init-db:
+        condition: service_completed_successfully
+    networks: [backend]
 
   predict-worker:
     <<: *common-build
     container_name: crunch-node-${CRUNCH_ID:-starter}-predict-worker
+    healthcheck:
+      disable: true
     environment:
       <<: *common-db-env
       MODEL_RUNNER_NODE_HOST: ${MODEL_RUNNER_NODE_HOST:-model-orchestrator}
@@ -83,19 +102,24 @@ services:
       FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
       SCORING_FUNCTION: ${SCORING_FUNCTION:-coordinator_node.extensions.default_callables:default_score_prediction}
     restart: always
+    stop_grace_period: 5s
     command: ["python", "-m", "coordinator_node.workers.predict_worker"]
     depends_on:
       postgres:
         condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
       feed-data-worker:
         condition: service_started
       model-orchestrator:
         condition: service_started
-    networks: [coordinator-net]
+    networks: [backend]
 
   score-worker:
     <<: *common-build
     container_name: crunch-node-${CRUNCH_ID:-starter}-score-worker
+    healthcheck:
+      disable: true
     environment:
       <<: *common-db-env
       CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-60}
@@ -105,26 +129,34 @@ services:
       FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
       SCORING_FUNCTION: ${SCORING_FUNCTION:-coordinator_node.extensions.default_callables:default_score_prediction}
     restart: always
+    stop_grace_period: 5s
     command: ["python", "-m", "coordinator_node.workers.score_worker"]
     depends_on:
       postgres:
         condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
       feed-data-worker:
         condition: service_started
-    networks: [coordinator-net]
+    networks: [backend]
 
   checkpoint-worker:
     <<: *common-build
     container_name: crunch-node-${CRUNCH_ID:-starter}-checkpoint-worker
+    healthcheck:
+      disable: true
     environment:
       <<: *common-db-env
       CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-604800}
     restart: always
+    stop_grace_period: 5s
     command: ["python", "-m", "coordinator_node.workers.checkpoint_worker"]
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [coordinator-net]
+      init-db:
+        condition: service_completed_successfully
+    networks: [backend]
 
   report-worker:
     <<: *common-build
@@ -133,6 +165,7 @@ services:
       <<: *common-db-env
       BACKFILL_DATA_DIR: ${BACKFILL_DATA_DIR:-/app/data/backfill}
     restart: always
+    stop_grace_period: 5s
     command: ["python", "-m", "coordinator_node.workers.report_worker"]
     ports:
       - "8000:8000"
@@ -141,7 +174,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [coordinator-net]
+      init-db:
+        condition: service_completed_successfully
+    networks: [frontend, backend]
 
   model-orchestrator:
     build:
@@ -149,16 +184,16 @@ services:
     container_name: crunch-node-${CRUNCH_ID:-starter}-model-orchestrator
     restart: unless-stopped
     init: true
-    ports:
-      - "9091:9091"
+    stop_grace_period: 5s
+    expose:
+      - "9091"
     environment:
-      DOCKER_NETWORK_NAME: crunch-node-${CRUNCH_ID:-starter}-net
+      DOCKER_NETWORK_NAME: crunch-node-${CRUNCH_ID:-starter}-backend
       DOCKER_COMPOSE_PROJECT: crunch-node-${CRUNCH_ID:-starter}
     volumes:
       - ./base/node/deployment/model-orchestrator-local/data:/app/data
       - ./base/node/deployment/model-orchestrator-local/config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock
-    privileged: true
     entrypoint: ["sh", "/app/config/docker-entrypoint.sh"]
     command:
       [
@@ -169,7 +204,7 @@ services:
         "--rebuild",
         "if-code-modified",
       ]
-    networks: [coordinator-net]
+    networks: [backend]
 
   report-ui:
     build:
@@ -180,6 +215,7 @@ services:
         NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR: "${NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR:-http://model-orchestrator:8001}"
     container_name: crunch-node-${CRUNCH_ID:-starter}-report-ui
     restart: always
+    stop_grace_period: 5s
     ports:
       - "3000:3000"
     volumes:
@@ -187,10 +223,24 @@ services:
       - ./base/node/deployment/report-ui/config:/app/apps/${REPORT_UI_APP:-starter}/config
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
-      - report-worker
-    networks: [coordinator-net]
+      report-worker:
+        condition: service_healthy
+    networks: [frontend, backend]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
 
 networks:
-  coordinator-net:
+  frontend:
     driver: bridge
     name: crunch-node-${CRUNCH_ID:-starter}-net
+  backend:
+    driver: bridge
+    internal: true
+    name: crunch-node-${CRUNCH_ID:-starter}-backend
+
+volumes:
+  postgres_data:
