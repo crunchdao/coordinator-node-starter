@@ -129,13 +129,31 @@ For detailed edit boundaries, see `node/.agent/context.md` and `challenge/.agent
 
 ---
 
-## Extension points
+## Where to put new code
+
+| I want to… | Put it in |
+|---|---|
+| Add a new API endpoint | `node/api/` — drop a `.py` file with `router = APIRouter(prefix="/custom")`. Auto-mounted at report-worker startup. |
+| Override scoring, ground truth, aggregation, or emission logic | `node/runtime_definitions/crunch_config.py` — override the relevant `CrunchConfig` callable field |
+| Add a custom feed provider or external API integration | `node/plugins/` — for node-side integrations that need secrets or call private APIs |
+| Add a scoring helper or custom callable module | `node/extensions/` — for edge-case Python modules needed by the runtime (custom feed providers, specialized scoring helpers) |
+| Change the scoring function path | `node/config/callables.env` — set `SCORING_FUNCTION=module.path:function` |
+| Change prediction schedule or scope | `node/config/scheduled_prediction_configs.json` |
+| Change feed source, subjects, kind, granularity | `node/.local.env` — `FEED_SOURCE`, `FEED_SUBJECTS`, `FEED_KIND`, `FEED_GRANULARITY` |
+| Change the model interface participants implement | `challenge/starter_challenge/tracker.py` |
+| Change local self-eval scoring | `challenge/starter_challenge/scoring.py` |
+| Add a quickstarter example | `challenge/starter_challenge/examples/` |
+| Customize local deployment (model-orchestrator, report-ui) | `node/deployment/` |
+| Customize environment for production | `node/.production.env.example` (template only — actual prod env is not committed) |
+
+## Extension points (detailed)
 
 ### To add a new API endpoint
 
 1. Create a `.py` file in `node/api/` with a `router = APIRouter(prefix="/custom")`
 2. Deploy: `cd node && make deploy`
 3. Endpoint auto-mounts at report-worker startup
+4. Full DB access via FastAPI `Depends` — see `node/api/README.md` for examples
 
 ### To add a custom metric
 
@@ -146,6 +164,18 @@ For detailed edit boundaries, see `node/.agent/context.md` and `challenge/.agent
 
 1. Define strategy function: `(model_metrics, predictions) → {model_id: weight}`
 2. Add `EnsembleConfig(name="...", strategy=your_fn)` to `CrunchConfig.ensembles`
+
+### To add a custom feed provider or external integration
+
+1. Create a module in `node/plugins/`
+2. Wire it into the runtime via `CrunchConfig` callables or env vars
+3. Keep secrets in `node/.local.env`, never in the challenge package
+
+### To add a scoring helper or callable override
+
+1. Create a module in `node/extensions/`
+2. Reference it from `node/config/callables.env` or `CrunchConfig`
+3. Most customization should go directly in `CrunchConfig` — use `extensions/` only for edge cases
 
 ### To change the scoring function
 

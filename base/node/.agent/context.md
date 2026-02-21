@@ -54,6 +54,18 @@ Drop `.py` files in `api/` with a `router = APIRouter()`. Auto-mounted at report
 
 Config: `API_ROUTES_DIR` (default `api/`), `API_ROUTES` (explicit `module:attr` paths).
 
+## Folder map — where to put things
+
+| Folder | Purpose | When to use |
+|---|---|---|
+| `api/` | Custom FastAPI endpoints | Add any `.py` file with `router = APIRouter()` — auto-discovered at startup. See `api/README.md` for examples with DB access and metrics. |
+| `extensions/` | Node-specific callable overrides | Edge-case Python modules needed by the runtime (custom feed providers, specialized scoring helpers). Most customization should go in `runtime_definitions/crunch_config.py` instead. |
+| `plugins/` | Node-side integrations | Custom feed providers beyond built-in Pyth/Binance, external API integrations, data enrichment. Use when code needs secrets or calls private APIs that shouldn't be in the challenge package. |
+| `runtime_definitions/` | Competition contract | `crunch_config.py` is the primary file — defines all type shapes, callables, and behavior. `contracts.py` is backward compat. |
+| `config/` | Runtime configuration | `callables.env` for scoring function path, `scheduled_prediction_configs.json` for prediction schedule and scope. |
+| `deployment/` | Local deployment assets | `model-orchestrator-local/` for local model runner config, `report-ui/` for dashboard settings. |
+| `scripts/` | Utility scripts (do not edit) | `verify_e2e.py`, `backfill.py`, `check_models.py`, `capture_runtime_logs.py` — called by Makefile targets. |
+
 ## Edit boundaries
 
 | What | Where |
@@ -63,8 +75,9 @@ Config: `API_ROUTES_DIR` (default `api/`), `API_ROUTES` (explicit `module:attr` 
 | Prediction schedules | `config/scheduled_prediction_configs.json` |
 | Competition types & behavior | `runtime_definitions/crunch_config.py` (preferred), `runtime_definitions/contracts.py` (backward compat) |
 | Custom API endpoints | `api/` |
-| Custom extensions | `extensions/` |
-| Deployment config | `deployment/` |
+| Custom callable modules | `extensions/` |
+| External integrations / feed providers | `plugins/` |
+| Local deployment config | `deployment/` |
 | Challenge implementation | Mounted from `../challenge` |
 
 ## Logs and artifacts
