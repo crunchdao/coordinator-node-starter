@@ -41,7 +41,6 @@ The following changes require explicit human approval before proceeding. Do not 
 - GitHub Actions / CI workflows
 
 ### Cryptography / wallet operations
-- Solana keypair handling
 - Merkle tree logic (`coordinator_node/merkle/`)
 
 See `approvals.yml` for machine-readable gate definitions.
@@ -60,14 +59,6 @@ make logs-capture
 make down
 make backfill SOURCE=<source> SUBJECT=<subject> FROM=<date> TO=<date>
 uv run python -m pytest tests/ -x -q
-```
-
-### Commands that require approval
-
-```bash
-rm -rf ...              # destructive filesystem operations
-terraform apply         # infrastructure provisioning
-docker system prune     # destructive docker operations
 ```
 
 ### File operations

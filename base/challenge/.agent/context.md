@@ -22,13 +22,20 @@ The backtest module provides:
 - **BacktestRunner** — replays historical data through models (tick → predict → score)
 - **BacktestResult** — notebook-friendly output (DataFrames, rolling window metrics + multi-metric enrichment)
 
+Key questions that need to be clarified if extending this: 
+- The Base Model interface in `tracker.py`. This includes the model input and output objects/
+- Where backtest data is located
+- If there is live data and from where it would come
+- What the scoring function is.
+- How many examples/quickstarter or benchmark models should be created.
+
+
 Key design decisions:
 
 - Coordinator URL and feed dimensions are baked into `config.py` at package build time
 - Data auto-pulls on first backtest run (transparent caching)
-- Model code is identical between backtest and production
 - Scoring and rolling window metrics match production exactly
-- Multi-metric enrichment (IC, IC Sharpe, hit rate, Sortino, max drawdown, turnover, mean return) is computed using the same metrics registry as the coordinator
+- Multi-metric enrichment is computed using the same metrics registry as the coordinator
 - `result.metrics` returns both rolling windows and portfolio-level metrics in a single dict
 
 ## Cross-references
@@ -45,9 +52,13 @@ Key design decisions:
 
 ## Validation
 
-From the node workspace:
+Quick validation is that the backtest should work from the Challenge repository. 
+
+
+E2E validation from the node workspace:
 
 ```bash
 cd ../node
 make verify-e2e
 ```
+And verify that models are running.
