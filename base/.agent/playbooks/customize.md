@@ -35,23 +35,53 @@ Examples:
 
 ## Workflow
 
-### 1. Types and shapes
+### 1. Scoring function (do this FIRST)
+
+The scoring function is the most important file in the competition. It defines
+what "good" means. **Do not leave it as a stub that returns 0.0** — a pipeline
+that scores everything as zero produces meaningless leaderboards silently.
+
+**Steps:**
+1. Ask the user: "How should predictions be scored against actuals?" Do not guess.
+2. Implement real scoring logic in `challenge/starter_challenge/scoring.py`
+3. Wire it in `node/config/callables.env`: `SCORING_FUNCTION=starter_challenge.scoring:score_prediction`
+4. Write a unit test that feeds a known prediction + ground truth and asserts a **non-zero** score
+5. Ensure `node/runtime_definitions/crunch_config.py` ScoreResult fields match what the function returns
+
+**The scoring function receives:**
+- `prediction` — dict with the model's output (matches `InferenceOutput` shape)
+- `ground_truth` — dict from `resolve_ground_truth` (see step 3 below)
+
+**It must return:** a dict matching `ScoreResult` — at minimum `{"value": float, "success": bool, "failed_reason": str | None}`
+
+### 2. Ground truth resolution
+
+`resolve_ground_truth` determines what "actually happened" from feed data.
+This is the second most important function — if it returns None or zero,
+all scores will be zero regardless of model quality.
+
+**Sanity check:** after implementing, verify that the resolver produces
+non-zero returns with your configured feed granularity. A 60s horizon with
+1m candles can produce 0.0 returns if only one candle falls in the window.
+
+- Default: compares first/last record's close price → returns `entry_price`, `resolved_price`, `return`, `direction_up`
+- Override in `CrunchConfig.resolve_ground_truth` for custom logic (VWAP, cross-venue, labels, etc.)
+
+### 3. Types and shapes
 
 Edit `node/runtime_definitions/crunch_config.py`:
 - `RawInput` — what the feed produces
 - `InferenceInput` — what models receive (can differ from RawInput via transform)
 - `InferenceOutput` — what models return
-- `ScoreResult` — what scoring produces
+- `ScoreResult` — what scoring produces (must match scoring function output)
 - `PredictionScope` — prediction context (subject, horizon, step)
 
-### 2. Scoring
+### 4. Multi-metric scoring
 
-- Default scoring callable: set in `node/config/callables.env` (`SCORING_FUNCTION=...`)
-- Or override directly in `CrunchConfig.resolve_ground_truth`, `CrunchConfig.aggregate_snapshot`
-- Multi-metric: add/remove metric names in `CrunchConfig.metrics`
+- Add/remove metric names in `CrunchConfig.metrics`
 - Custom metrics: register via `get_default_registry().register("name", fn)`
 
-### 3. Feeds
+### 6. Feeds
 
 Edit `node/.local.env`:
 - `FEED_SOURCE` (pyth, binance, etc.)
@@ -59,21 +89,21 @@ Edit `node/.local.env`:
 - `FEED_KIND` (tick, candle)
 - `FEED_GRANULARITY` (1s, 1m, etc.)
 
-### 4. Emission (requires approval)
+### 7. Emission (requires approval)
 
 Edit `CrunchConfig`:
 - `crunch_pubkey` — on-chain crunch account
 - `compute_provider`, `data_provider` — wallet pubkeys
 - `build_emission` — reward distribution logic
 
-### 5. Challenge package
+### 8. Challenge package
 
 Edit `challenge/starter_challenge/`:
 - `tracker.py` — model interface participants implement
 - `scoring.py` — local self-eval scoring (should match runtime scoring)
 - `examples/` — quickstarter implementations
 
-### 6. Validate
+### 9. Validate
 
 ```bash
 cd node
@@ -81,7 +111,7 @@ make deploy
 make verify-e2e
 ```
 
-### 7. Complete
+### 10. Complete
 
 Produce:
 - Summary of what was customized
