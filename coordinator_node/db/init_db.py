@@ -61,12 +61,62 @@ def load_scheduled_prediction_configs() -> list[dict[str, Any]]:
     return payload
 
 
-def _run_alembic_upgrade() -> None:
+# ---------------------------------------------------------------------------
+# Alembic migrations directory resolution
+# ---------------------------------------------------------------------------
+
+def _find_alembic_dir() -> Path | None:
+    """Locate the Alembic migrations directory.
+
+    Checks (in order):
+      1. ``ALEMBIC_DIR`` env var (explicit override)
+      2. Repo-root layout: ``<repo>/coordinator_node/db/init_db.py`` → ``<repo>/alembic/``
+      3. Inside the package: ``coordinator_node/alembic/`` (if bundled in wheel)
+
+    Returns ``None`` when no valid migrations directory is found (e.g. when
+    ``coordinator-node`` is pip-installed and the ``alembic/`` directory was
+    not included in the wheel).  Callers should fall back to
+    ``SQLModel.metadata.create_all()`` in that case.
+    """
+    def _is_valid(p: Path) -> bool:
+        return p.is_dir() and (p / "env.py").exists() and (p / "versions").is_dir()
+
+    # 1. Explicit env var
+    env_dir = os.getenv("ALEMBIC_DIR")
+    if env_dir:
+        p = Path(env_dir)
+        if _is_valid(p):
+            return p
+
+    # 2. Repo-root layout (3 levels up from this file)
+    repo_dir = Path(__file__).resolve().parent.parent.parent / "alembic"
+    if _is_valid(repo_dir):
+        return repo_dir
+
+    # 3. Inside the package (coordinator_node/alembic/)
+    pkg_dir = Path(__file__).resolve().parent.parent / "alembic"
+    if _is_valid(pkg_dir):
+        return pkg_dir
+
+    return None
+
+
+def _run_alembic_upgrade(alembic_dir: Path | None = None) -> None:
     """Run Alembic migrations programmatically.
 
     Sets a lock_timeout so DDL that needs AccessExclusiveLock won't hang
     indefinitely if another session holds a conflicting lock.
+
+    Raises ``FileNotFoundError`` when no migrations directory is available.
     """
+    if alembic_dir is None:
+        alembic_dir = _find_alembic_dir()
+    if alembic_dir is None:
+        raise FileNotFoundError(
+            "Alembic migrations directory not found. "
+            "Set ALEMBIC_DIR or ensure the alembic/ directory is alongside the package."
+        )
+
     from alembic.config import Config
     from alembic import command
 
@@ -76,7 +126,7 @@ def _run_alembic_upgrade() -> None:
         conn.commit()
 
     alembic_cfg = Config()
-    alembic_cfg.set_main_option("script_location", str(Path(__file__).resolve().parent.parent.parent / "alembic"))
+    alembic_cfg.set_main_option("script_location", str(alembic_dir))
     alembic_cfg.set_main_option("sqlalchemy.url", str(engine.url))
     command.upgrade(alembic_cfg, "head")
 
@@ -84,11 +134,16 @@ def _run_alembic_upgrade() -> None:
 def migrate() -> None:
     """Run Alembic migrations and upsert prediction configs.
     Safe to run on every boot — never drops data."""
-    print("➡️  Running Alembic migrations...")
-    try:
-        _run_alembic_upgrade()
-    except Exception as exc:
-        print(f"⚠️  Alembic migration failed ({exc}), falling back to create_all...")
+    alembic_dir = _find_alembic_dir()
+    if alembic_dir is not None:
+        print(f"➡️  Running Alembic migrations from {alembic_dir} ...")
+        try:
+            _run_alembic_upgrade(alembic_dir)
+        except Exception as exc:
+            print(f"⚠️  Alembic migration failed ({exc}), falling back to create_all...")
+            SQLModel.metadata.create_all(engine)
+    else:
+        print("➡️  No Alembic migrations directory found, using SQLModel create_all...")
         SQLModel.metadata.create_all(engine)
 
     print("➡️  Upserting scheduled prediction configs...")
@@ -138,6 +193,10 @@ def _stamp_alembic_if_needed() -> None:
     Alembic was introduced.  Without the stamp, ``alembic upgrade head`` tries
     to re-create every table and fails.
     """
+    alembic_dir = _find_alembic_dir()
+    if alembic_dir is None:
+        return  # No migrations available — nothing to stamp
+
     from alembic.config import Config
     from alembic import command
 
@@ -146,10 +205,7 @@ def _stamp_alembic_if_needed() -> None:
     if inspector.has_table("models") and not inspector.has_table("alembic_version"):
         print("➡️  Stamping existing DB at Alembic revision 001...")
         alembic_cfg = Config()
-        alembic_cfg.set_main_option(
-            "script_location",
-            str(Path(__file__).resolve().parent.parent.parent / "alembic"),
-        )
+        alembic_cfg.set_main_option("script_location", str(alembic_dir))
         alembic_cfg.set_main_option("sqlalchemy.url", str(engine.url))
         command.stamp(alembic_cfg, "001")
 
