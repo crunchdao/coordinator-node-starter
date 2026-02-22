@@ -1,0 +1,142 @@
+"""Ensemble signal endpoint — serves the latest ensemble predictions.
+
+Rename to `ensemble_signals.py` (remove `.disabled`) to activate.
+Then redeploy: `make deploy`
+
+This is the "product" of the collective intelligence system — downstream
+consumers (trading systems, dashboards, other services) call this endpoint
+to get the combined signal from all models.
+
+Endpoints:
+  GET /signals/ensemble                → list available ensembles
+  GET /signals/ensemble/{name}         → latest prediction for a named ensemble
+  GET /signals/ensemble/{name}/history → recent prediction history
+"""
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlmodel import Session
+
+router = APIRouter(prefix="/signals", tags=["signals"])
+
+
+def _get_db_session():
+    from coordinator_node.db import create_session
+    with create_session() as session:
+        yield session
+
+
+def _get_prediction_repo(session: Annotated[Session, Depends(_get_db_session)]):
+    from coordinator_node.db import DBPredictionRepository
+    return DBPredictionRepository(session)
+
+
+def _get_snapshot_repo(session: Annotated[Session, Depends(_get_db_session)]):
+    from coordinator_node.db import DBSnapshotRepository
+    return DBSnapshotRepository(session)
+
+
+ENSEMBLE_PREFIX = "__ensemble_"
+
+
+@router.get("/ensemble")
+def list_ensembles(
+    snapshot_repo=Depends(_get_snapshot_repo),
+) -> list[dict[str, Any]]:
+    """List available ensembles with their latest metrics."""
+    snapshots = snapshot_repo.find(limit=500)
+
+    # Find the latest snapshot per ensemble
+    latest: dict[str, Any] = {}
+    for snap in snapshots:
+        if not snap.model_id.startswith(ENSEMBLE_PREFIX):
+            continue
+        name = snap.model_id[len(ENSEMBLE_PREFIX):].rstrip("_")
+        if name not in latest or snap.period_end > latest[name]["period_end"]:
+            latest[name] = {
+                "name": name,
+                "model_id": snap.model_id,
+                "period_end": snap.period_end,
+                "prediction_count": snap.prediction_count,
+                "metrics": snap.result_summary,
+            }
+
+    return list(latest.values())
+
+
+@router.get("/ensemble/{name}")
+def get_ensemble_signal(
+    name: str,
+    prediction_repo=Depends(_get_prediction_repo),
+) -> dict[str, Any]:
+    """Get the latest ensemble prediction for a named ensemble.
+
+    This is the primary consumption endpoint for downstream systems.
+    Returns the most recent weighted-average prediction.
+    """
+    from coordinator_node.entities.prediction import PredictionStatus
+
+    model_id = f"{ENSEMBLE_PREFIX}{name}__"
+    predictions = prediction_repo.find(status=PredictionStatus.SCORED)
+
+    # Filter to this ensemble's predictions
+    ens_preds = [p for p in predictions if p.model_id == model_id]
+    if not ens_preds:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No predictions found for ensemble '{name}'",
+        )
+
+    # Return the most recent prediction
+    latest = max(ens_preds, key=lambda p: p.performed_at)
+
+    return {
+        "ensemble": name,
+        "model_id": model_id,
+        "signal": latest.inference_output,
+        "performed_at": latest.performed_at,
+        "scope": latest.scope,
+        "scope_key": latest.scope_key,
+        "weights": latest.meta.get("weights", {}),
+        "input_id": latest.input_id,
+    }
+
+
+@router.get("/ensemble/{name}/history")
+def get_ensemble_history(
+    name: str,
+    prediction_repo=Depends(_get_prediction_repo),
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    since: Annotated[datetime | None, Query()] = None,
+) -> list[dict[str, Any]]:
+    """Get recent ensemble predictions for a named ensemble.
+
+    Use this for charting ensemble signal over time or feeding
+    into a downstream system that needs historical context.
+    """
+    from coordinator_node.entities.prediction import PredictionStatus
+
+    model_id = f"{ENSEMBLE_PREFIX}{name}__"
+    predictions = prediction_repo.find(status=PredictionStatus.SCORED)
+
+    ens_preds = [p for p in predictions if p.model_id == model_id]
+
+    if since:
+        ens_preds = [p for p in ens_preds if p.performed_at >= since]
+
+    ens_preds.sort(key=lambda p: p.performed_at, reverse=True)
+    ens_preds = ens_preds[:limit]
+
+    return [
+        {
+            "signal": p.inference_output,
+            "performed_at": p.performed_at,
+            "scope_key": p.scope_key,
+            "weights": p.meta.get("weights", {}),
+            "input_id": p.input_id,
+        }
+        for p in ens_preds
+    ]

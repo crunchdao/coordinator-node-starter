@@ -1,2 +1,38 @@
+# Version control
+.git
+.github
+
+# Python artifacts
+__pycache__
+*.py[cod]
+*.egg-info
+build/
+dist/
+wheels/
 .venv
+
+# Tool caches
+.mypy_cache
+.pytest_cache
+.ruff_cache
+
+# Data & deployment (not needed in app image)
+data/
 deployment
+
+# Environment & secrets
+.env
+.env.*
+
+# IDE & OS
+.idea
+.vscode
+*.DS_Store
+
+# Docs
+README.md
+LICENSE
+docs/
+
+# Node (if any frontend assets)
+node_modules

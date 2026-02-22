@@ -1,0 +1,11 @@
+[project]
+name = "starter-challenge-node"
+version = "0.1.0"
+description = "Coordinator node — runs the competition infrastructure"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "starter-challenge",
+]
+
+[tool.uv.sources]
+starter-challenge = { path = "../challenge", editable = true }

@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "starter-challenge"
+version = "0.1.0"
+description = "Challenge package — participant-facing model interface and scoring"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pandas>=2.0",
+    "pyarrow>=15.0",
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["starter_challenge"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

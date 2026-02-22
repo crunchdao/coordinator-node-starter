@@ -1,0 +1,299 @@
+name: crunch-node-${CRUNCH_ID:-starter-challenge}
+
+x-common-env:
+  environment: &common-db-env
+    POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+    POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+    POSTGRES_USER: ${POSTGRES_USER:-${CRUNCH_ID:-starter-challenge}}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-${CRUNCH_ID:-starter-challenge}}
+    POSTGRES_DB: ${POSTGRES_DB:-${CRUNCH_ID:-starter-challenge}}
+
+x-common-build: &common-build
+  build:
+    context: ..
+    dockerfile: node/Dockerfile
+  deploy:
+    resources:
+      limits:
+        memory: 512M
+      reservations:
+        memory: 256M
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: crunch-node-${CRUNCH_ID:-starter-challenge}-postgres
+    environment: *common-db-env
+    restart: always
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d ${POSTGRES_DB:-${CRUNCH_ID:-starter-challenge}} -U ${POSTGRES_USER:-${CRUNCH_ID:-starter-challenge}}"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [backend]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  init-db:
+    <<: *common-build
+    container_name: crunch-node-${CRUNCH_ID:-starter-challenge}-init-db
+    environment:
+      <<: *common-db-env
+      PYTHONUNBUFFERED: "1"
+      SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
+    stdin_open: false
+    tty: false
+    command: ["python", "-m", "coordinator_node.db.init_db"]
+    volumes:
+      - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [backend]
+
+  reset-db:
+    <<: *common-build
+    container_name: crunch-node-${CRUNCH_ID:-starter-challenge}-reset-db
+    environment:
+      <<: *common-db-env
+      PYTHONUNBUFFERED: "1"
+      SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
+    stdin_open: false
+    tty: false
+    command: ["python", "-m", "coordinator_node.db.init_db", "--reset"]
+    profiles: [reset]
+    volumes:
+      - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [backend]
+
+  feed-data-worker:
+    <<: *common-build
+    container_name: crunch-node-${CRUNCH_ID:-starter-challenge}-feed-data-worker
+    healthcheck:
+      disable: true
+    environment:
+      <<: *common-db-env
+      FEED_SOURCE: ${FEED_SOURCE:-pyth}
+      FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
+      FEED_KIND: ${FEED_KIND:-tick}
+      FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
+      FEED_POLL_SECONDS: ${FEED_POLL_SECONDS:-5}
+      FEED_BACKFILL_MINUTES: ${FEED_BACKFILL_MINUTES:-180}
+      FEED_RECORD_TTL_DAYS: ${FEED_RECORD_TTL_DAYS:-90}
+      FEED_RETENTION_CHECK_SECONDS: ${FEED_RETENTION_CHECK_SECONDS:-3600}
+      SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
+      PYTHONPATH: /app:/app/challenge
+    restart: always
+    stop_grace_period: 30s
+    command: ["python", "-m", "coordinator_node.workers.feed_data_worker"]
+    volumes:
+      - ../challenge:/app/challenge
+      - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
+    networks: [backend, external]
+
+  predict-worker:
+    <<: *common-build
+    container_name: crunch-node-${CRUNCH_ID:-starter-challenge}-predict-worker
+    healthcheck:
+      disable: true
+    environment:
+      <<: *common-db-env
+      MODEL_RUNNER_NODE_HOST: ${MODEL_RUNNER_NODE_HOST:-model-orchestrator}
+      MODEL_RUNNER_NODE_PORT: ${MODEL_RUNNER_NODE_PORT:-9091}
+      MODEL_RUNNER_TIMEOUT_SECONDS: ${MODEL_RUNNER_TIMEOUT_SECONDS:-60}
+      CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-60}
+      CRUNCH_ID: ${CRUNCH_ID:-starter-challenge}
+      MODEL_BASE_CLASSNAME: ${MODEL_BASE_CLASSNAME:-tracker.TrackerBase}
+      FEED_SOURCE: ${FEED_SOURCE:-pyth}
+      FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
+      FEED_KIND: ${FEED_KIND:-tick}
+      FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
+      SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
+      PYTHONPATH: /app:/app/challenge
+    restart: always
+    stop_grace_period: 30s
+    command: ["python", "-m", "coordinator_node.workers.predict_worker"]
+    volumes:
+      - ../challenge:/app/challenge
+      - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
+      model-orchestrator:
+        condition: service_started
+      feed-data-worker:
+        condition: service_started
+    networks: [backend]
+
+  score-worker:
+    <<: *common-build
+    container_name: crunch-node-${CRUNCH_ID:-starter-challenge}-score-worker
+    healthcheck:
+      disable: true
+    environment:
+      <<: *common-db-env
+      CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-60}
+      SCORE_INTERVAL_SECONDS: ${SCORE_INTERVAL_SECONDS:-60}
+      FEED_SOURCE: ${FEED_SOURCE:-pyth}
+      FEED_SUBJECTS: ${FEED_SUBJECTS:-BTC}
+      FEED_KIND: ${FEED_KIND:-tick}
+      FEED_GRANULARITY: ${FEED_GRANULARITY:-1s}
+      SCORING_FUNCTION: ${SCORING_FUNCTION}
+      SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
+      PYTHONPATH: /app:/app/challenge
+    restart: always
+    stop_grace_period: 30s
+    command: ["python", "-m", "coordinator_node.workers.score_worker"]
+    volumes:
+      - ../challenge:/app/challenge
+      - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
+      feed-data-worker:
+        condition: service_started
+    networks: [backend]
+
+  checkpoint-worker:
+    <<: *common-build
+    container_name: crunch-node-${CRUNCH_ID:-starter-challenge}-checkpoint-worker
+    healthcheck:
+      disable: true
+    environment:
+      <<: *common-db-env
+      CHECKPOINT_INTERVAL_SECONDS: ${CHECKPOINT_INTERVAL_SECONDS:-604800}
+      SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
+      PYTHONPATH: /app:/app/challenge
+    restart: always
+    stop_grace_period: 30s
+    command: ["python", "-m", "coordinator_node.workers.checkpoint_worker"]
+    volumes:
+      - ../challenge:/app/challenge
+      - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
+    networks: [backend]
+
+  report-worker:
+    <<: *common-build
+    container_name: crunch-node-${CRUNCH_ID:-starter-challenge}-report-worker
+    environment:
+      <<: *common-db-env
+      CRUNCH_ID: ${CRUNCH_ID:-starter-challenge}
+      CRUNCH_PUBKEY: ${CRUNCH_PUBKEY:-}
+      NETWORK: ${NETWORK:-devnet}
+      API_KEY: ${API_KEY:-}
+      API_READ_AUTH: ${API_READ_AUTH:-false}
+      API_ROUTES_DIR: /app/api
+      SCHEDULED_PREDICTION_CONFIGS_PATH: /app/config/scheduled_prediction_configs.json
+      PYTHONPATH: /app:/app/challenge
+    restart: always
+    stop_grace_period: 15s
+    command: ["python", "-m", "coordinator_node.workers.report_worker"]
+    ports:
+      - "${REPORT_API_PORT:-8000}:8000"
+    volumes:
+      - ../challenge:/app/challenge
+      - ./api:/app/api
+      - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
+    networks: [frontend, backend]
+
+  model-orchestrator:
+    build:
+      context: ./deployment/model-orchestrator-local
+    container_name: crunch-node-${CRUNCH_ID:-starter-challenge}-model-orchestrator
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    expose:
+      - "9091"
+    environment:
+      DOCKER_NETWORK_NAME: crunch-node-${CRUNCH_ID:-starter-challenge}-backend
+      DOCKER_COMPOSE_PROJECT: crunch-node-${CRUNCH_ID:-starter-challenge}
+      CRUNCH_ID: ${CRUNCH_ID:-starter-challenge}
+    volumes:
+      - ./deployment/model-orchestrator-local/data:/app/data
+      - ./deployment/model-orchestrator-local/config:/app/config
+      - ../challenge:/app/challenge:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    entrypoint: ["sh", "/app/config/docker-entrypoint.sh"]
+    command:
+      [
+        "model-orchestrator",
+        "dev",
+        "--configuration-file",
+        "/app/config/orchestrator.dev.yml",
+        "--rebuild",
+        "if-code-modified",
+      ]
+    networks: [backend]
+
+  report-ui:
+    build:
+      context: ${REPORT_UI_BUILD_CONTEXT:-https://github.com/crunchdao/coordinator-webapp.git}
+      dockerfile: ${REPORT_UI_DOCKERFILE:-apps/starter/Dockerfile}
+      args:
+        NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://report-worker:8000}"
+        NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR: "${NEXT_PUBLIC_API_URL_MODEL_ORCHESTRATOR:-http://model-orchestrator:8001}"
+    container_name: crunch-node-${CRUNCH_ID:-starter-challenge}-report-ui
+    restart: always
+    stop_grace_period: 15s
+    ports:
+      - "${REPORT_UI_PORT:-3000}:3000"
+    volumes:
+      - ./deployment/report-ui/config:/app/config
+      - ./deployment/report-ui/config:/app/apps/${REPORT_UI_APP:-starter}/config
+    depends_on:
+      report-worker:
+        condition: service_healthy
+    networks: [frontend]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+networks:
+  frontend:
+    driver: bridge
+    name: crunch-node-${CRUNCH_ID:-starter-challenge}-net
+  backend:
+    driver: bridge
+    internal: true
+    name: crunch-node-${CRUNCH_ID:-starter-challenge}-backend
+  external:
+    driver: bridge
+    name: crunch-node-${CRUNCH_ID:-starter-challenge}-external
+
+volumes:
+  postgres-data:

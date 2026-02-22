@@ -1,29 +1,25 @@
-site_name: Condor Game Documentation
+site_name: Coordinator Node Starter Docs
+
 theme:
   name: material
   features:
     - navigation.instant
     - navigation.sections
-    - navigation.expand
     - content.code.copy
-    - content.action.edit
 
 nav:
   - Home: index.md
   - Getting Started:
       - Introduction: INTRODUCTION.md
-      - Architecture Overview: ARCHITECTURE_OVERVIEW.md
+      - Onboarding: ONBOARDING.md
+      - Build Your Own Challenge: BUILD_YOUR_OWN_CHALLENGE.md
       - Running Locally: RUNNING_LOCALLY.md
-
-  - Core Mechanics:
+      - Deployment: DEPLOYMENT.md
+  - Architecture:
       - Core Concepts: CORE_CONCEPTS.md
+      - Entities: ENTITIES.md
+      - Database Schema: DATABASE_SCHEMA.md
       - Predict Worker: PREDICT_WORKER.md
       - Score Worker: SCORE_WORKER.md
       - Report Worker: REPORT_WORKER.md
-      - Entities: ENTITIES.md
-
-  - Build Your Challenge: BUILD_YOUR_OWN_CHALLENGE.md
-
-  - Operations:
-      - Deployment: DEPLOYMENT.md
-      - FAQ: FAQ.md
+  - FAQ: FAQ.md

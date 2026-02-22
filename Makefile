@@ -1,107 +1,32 @@
-# ---------------------------------------------------------
-# Condor Backend Deployment Makefile
-# ---------------------------------------------------------
+COMPOSE := docker compose -f docker-compose.yml --env-file .local.env
 
-# Optional CLI override:
-#   make deploy dev SERVICES="predict-worker score-worker"
-SERVICES ?=
+.PHONY: deploy down logs test init-db reset-db migrate migration
 
-# List of backend services only (edit here if needed)
-BACKEND_SERVICES = \
-    init-db \
-    predict-worker \
-    score-worker \
-    report-worker
-
-IS_ALL := $(filter all,$(MAKECMDGOALS))
-IS_DEV := $(filter dev,$(MAKECMDGOALS))
-IS_PRODUCTION := $(filter production,$(MAKECMDGOALS))
-
-# Compose files
-COMPOSE_FILES := -f docker-compose.yml
-ifeq ($(IS_PRODUCTION),production)
-	COMPOSE_FILES += -f docker-compose-prod.yml --env-file .production.env --profile production
-else ifeq ($(IS_DEV),dev)
-	COMPOSE_FILES += -f docker-compose-local.yml --env-file .dev.env
-else
-    # used during dev or local testing
-	COMPOSE_FILES += -f docker-compose-local.yml --env-file .local.env
-endif
-
-# Decide the list of services
-# If SERVICES is provided on the command line, we keep it as-is.
-# Otherwise, we fall back to your default logic.
-ifeq ($(SERVICES),)
-	ifeq ($(IS_ALL),all)
-		SERVICES :=
-	else ifeq ($(IS_DEV),dev)
-        SERVICES_EXCLUDE := $(BACKEND_SERVICES) documentation
-		SERVICES := $(filter-out $(SERVICES_EXCLUDE),$(shell docker compose $(COMPOSE_FILES) config --services))
-	else ifeq ($(IS_PRODUCTION),production)
-		SERVICES := $(BACKEND_SERVICES)
-	else
-		SERVICES :=
-	endif
-endif
-
-# ---------------------------------------------------------
-# Commands
-# ---------------------------------------------------------
-
-## Build + deploy
 deploy:
-	docker compose $(COMPOSE_FILES) up -d --build $(SERVICES)
+	$(COMPOSE) build
+	$(COMPOSE) up -d postgres
+	$(COMPOSE) run --rm init-db
+	$(COMPOSE) up -d
 
-## Restart services
-restart:
-ifneq ($(SERVICES),)
-	docker compose $(COMPOSE_FILES) restart $(SERVICES)
-else
-	docker compose $(COMPOSE_FILES) restart
-endif
+init-db:
+	$(COMPOSE) run --rm init-db
 
-## Stop services
-stop:
-ifneq ($(SERVICES),)
-	docker compose $(COMPOSE_FILES) stop $(SERVICES)
-else
-	docker compose $(COMPOSE_FILES) stop
-endif
+reset-db:
+	$(COMPOSE) run --rm reset-db
 
-## Logs (follow)
-logs:
-ifneq ($(SERVICES),)
-	docker compose $(COMPOSE_FILES) logs -f $(SERVICES)
-else
-	docker compose $(COMPOSE_FILES) logs -f
-endif
-
-## Stop & remove
 down:
-ifneq ($(SERVICES),)
-	docker compose $(COMPOSE_FILES) down $(SERVICES)
-else
-	docker compose $(COMPOSE_FILES) down
-endif
+	$(COMPOSE) down
 
-## Build images
-build:
-ifneq ($(SERVICES),)
-	docker compose $(COMPOSE_FILES) build $(SERVICES)
-else
-	docker compose $(COMPOSE_FILES) build
-endif
+logs:
+	$(COMPOSE) logs -f
 
-# ---------------------------------------------------------
-# Tell make "all" is not a target, it's an argument
-# ---------------------------------------------------------
-.PHONY: deploy restart stop logs down build all dev production
+test:
+	PYTHONPATH=base/challenge:base/node uv run python -m pytest tests/ -x -q
 
-all:
-	@true   # do nothing
+# Database migrations (Alembic)
+migrate:
+	$(COMPOSE) run --rm init-db
 
-dev:
-	@true   # do nothing
-
-production:
-	@true   # do nothing
+migration:
+	@read -p "Migration message: " msg; \
+	$(COMPOSE) run --rm init-db alembic revision --autogenerate -m "$$msg"

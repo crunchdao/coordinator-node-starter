@@ -12,3 +12,12 @@ wheels/
 .idea
 
 data/
+
+# Local challenge implementations/workspaces
+crunch-implementations/
+*.DS_Store
+
+# Environment files (may contain secrets)
+.env
+.env.*
+!.env.example

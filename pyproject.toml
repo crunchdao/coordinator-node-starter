@@ -1,16 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
 [project]
-name = "condorgame-backend"
-version = "0.1.0"
-description = "Add your description here"
+name = "coordinator-node"
+version = "0.1.74"
+description = "Runtime engine for Crunch coordinator nodes"
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12"
+license = "MIT"
 dependencies = [
-    "densitypdf>=0.1.4",
-    "fastapi>=0.121.3",
+    "alembic>=1.13,<2",
+    "fastapi>=0.100.0,<1",
     "model-runner-client>=0.10.0",
-    "numpy>=2.3.4",
-    "psycopg2-binary>=2.9.11",
-    "requests>=2.32.5",
-    "sqlmodel>=0.0.27",
-    "uvicorn>=0.38.0",
+    "psycopg2-binary>=2.9,<3",
+    "pyarrow>=15.0,<19",
+    "python-binance>=1.0,<2",
+    "requests>=2.28,<3",
+    "sqlmodel>=0.0.14,<1",
+    "uvicorn>=0.20,<1",
+]
+
+[project.urls]
+Homepage = "https://github.com/crunchdao/coordinator-node-starter"
+Repository = "https://github.com/crunchdao/coordinator-node-starter"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["coordinator_node"]
+
+[tool.uv]
+package = true
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0",
 ]
