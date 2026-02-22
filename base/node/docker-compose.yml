@@ -53,7 +53,6 @@ services:
     stdin_open: false
     tty: false
     command: ["python", "-m", "coordinator_node.db.init_db"]
-    profiles: [init]
     volumes:
       - ./config/scheduled_prediction_configs.json:/app/config/scheduled_prediction_configs.json:ro
     depends_on:
@@ -105,6 +104,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
     networks: [backend, external]
 
   predict-worker:
@@ -135,6 +136,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
       model-orchestrator:
         condition: service_started
       feed-data-worker:
@@ -166,6 +169,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
       feed-data-worker:
         condition: service_started
     networks: [backend]
@@ -189,6 +194,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
     networks: [backend]
 
   report-worker:
@@ -216,6 +223,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
     networks: [frontend, backend]
 
   model-orchestrator:

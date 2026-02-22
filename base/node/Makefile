@@ -3,7 +3,10 @@ COMPOSE := docker compose -f docker-compose.yml --env-file .local.env
 .PHONY: deploy down logs logs-capture verify-e2e check-models starter platform backfill init-db reset-db
 
 deploy:
-	$(COMPOSE) up -d --build
+	$(COMPOSE) build
+	$(COMPOSE) up -d postgres
+	$(COMPOSE) run --rm init-db
+	$(COMPOSE) up -d
 
 init-db:
 	$(COMPOSE) run --rm init-db
