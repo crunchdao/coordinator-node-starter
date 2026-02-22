@@ -76,6 +76,15 @@ Edit `node/runtime_definitions/crunch_config.py`:
 - `ScoreResult` — what scoring produces (must match scoring function output)
 - `PredictionScope` — prediction context (subject, horizon, step)
 
+**Critical: `InferenceOutput` keys must be consistent across all three places:**
+1. `InferenceOutput` class fields (e.g. `value: float`)
+2. The scoring function reads from `prediction` dict using the same keys (e.g. `prediction["value"]`)
+3. The tracker's `predict()` method in `challenge/` returns a dict with those same keys
+
+A mismatch (e.g. `InferenceOutput.value` vs model returning `{"score": 0.5}`)
+silently produces wrong results — the scoring function reads a missing key
+and falls back to 0.0 without error. **Verify all three match before deploying.**
+
 ### 4. Multi-metric scoring
 
 - Add/remove metric names in `CrunchConfig.metrics`
