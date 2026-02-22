@@ -64,6 +64,12 @@ async def main() -> None:
     logger.info("score worker bootstrap")
 
     service = build_service()
+
+    # Validate scoring IO at startup — catches field-name mismatches
+    # between InferenceOutput, GroundTruth, and the scoring function
+    # before any real predictions are scored.
+    service.validate_scoring_io()
+
     await service.run()
 
 

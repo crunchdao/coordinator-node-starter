@@ -241,5 +241,233 @@ class TestScoreServiceRunLoop(unittest.IsolatedAsyncioTestCase):
             await service.run()
 
 
+# ---------------------------------------------------------------------------
+# InferenceOutput coercion & scoring IO validation
+# ---------------------------------------------------------------------------
+
+
+class TestCoerceOutput(unittest.TestCase):
+    """ScoreService._coerce_output should parse raw dicts through output_type."""
+
+    def test_default_output_fills_missing_fields(self):
+        """If model returns {} the default InferenceOutput(value=0.0) fills it."""
+        service = _build_service()
+        result = service._coerce_output({})
+        self.assertEqual(result, {"value": 0.0})
+
+    def test_coercion_preserves_model_values(self):
+        service = _build_service()
+        result = service._coerce_output({"value": 1.23})
+        self.assertAlmostEqual(result["value"], 1.23)
+
+    def test_coercion_preserves_extra_keys(self):
+        """Extra keys from the model (not in InferenceOutput) are kept."""
+        service = _build_service()
+        result = service._coerce_output({"value": 0.5, "confidence": 0.9})
+        self.assertAlmostEqual(result["value"], 0.5)
+        self.assertAlmostEqual(result["confidence"], 0.9)
+
+    def test_coercion_with_custom_output_type(self):
+        from pydantic import BaseModel, Field
+
+        class TradingOutput(BaseModel):
+            order_type: str = "HOLD"
+            leverage: float = Field(default=1.0)
+
+        contract = CrunchConfig(output_type=TradingOutput)
+        service = _build_service(contract=contract)
+
+        # Model returns partial output — defaults should fill in
+        result = service._coerce_output({"order_type": "LONG"})
+        self.assertEqual(result["order_type"], "LONG")
+        self.assertEqual(result["leverage"], 1.0)
+
+    def test_coercion_type_coerces_values(self):
+        """String '0.5' should be coerced to float 0.5."""
+        service = _build_service()
+        result = service._coerce_output({"value": "0.5"})
+        self.assertAlmostEqual(result["value"], 0.5)
+
+    def test_coercion_falls_back_on_validation_error(self):
+        from pydantic import BaseModel, Field
+
+        class StrictOutput(BaseModel):
+            value: float = Field(ge=0.0, le=1.0)
+
+        contract = CrunchConfig(output_type=StrictOutput)
+        service = _build_service(contract=contract)
+
+        # value=999 violates ge/le constraint — should fall back to raw dict
+        with self.assertLogs("coordinator_node.services.score", level="WARNING"):
+            result = service._coerce_output({"value": 999})
+        self.assertEqual(result["value"], 999)
+
+
+class TestScoringReceivesTypedOutput(unittest.TestCase):
+    """The scoring function should receive a coerced dict, not raw model output."""
+
+    def test_scorer_receives_typed_dict_with_defaults(self):
+        from pydantic import BaseModel
+
+        class CustomOutput(BaseModel):
+            direction: str = "HOLD"
+            confidence: float = 0.5
+
+        captured = {}
+
+        def capturing_scorer(prediction, ground_truth):
+            captured.update(prediction)
+            return {"value": 0.0, "success": True, "failed_reason": None}
+
+        contract = CrunchConfig(output_type=CustomOutput)
+        service = ScoreService(
+            checkpoint_interval_seconds=60,
+            scoring_function=capturing_scorer,
+            feed_reader=FakeFeedReader(records=_make_feed_records()),
+            input_repository=MemInputRepository([_make_input()]),
+            prediction_repository=MemPredictionRepository([
+                PredictionRecord(
+                    id="pre-1", input_id="inp-1", model_id="m1",
+                    prediction_config_id="CFG_1",
+                    scope_key="BTC-60", scope={"subject": "BTC"},
+                    status="PENDING", exec_time_ms=10.0,
+                    # Model only returned direction — confidence should get its default
+                    inference_output={"direction": "LONG"},
+                    performed_at=now - timedelta(minutes=5),
+                    resolvable_at=now - timedelta(minutes=1),
+                ),
+            ]),
+            score_repository=MemScoreRepository(),
+            snapshot_repository=MemSnapshotRepository(),
+            model_repository=MemModelRepository(),
+            leaderboard_repository=MemLeaderboardRepository(),
+            contract=contract,
+        )
+
+        service.run_once()
+
+        # Scorer should have received the coerced dict with defaults
+        self.assertEqual(captured["direction"], "LONG")
+        self.assertEqual(captured["confidence"], 0.5)
+
+
+class TestValidateScoringIO(unittest.TestCase):
+    """ScoreService.validate_scoring_io() catches mismatches at startup."""
+
+    def test_passes_for_compatible_types(self):
+        """Default InferenceOutput + default scorer should pass."""
+        service = _build_service()
+        # Should not raise
+        service.validate_scoring_io()
+
+    def test_passes_for_custom_compatible_types(self):
+        from pydantic import BaseModel
+
+        class TradeOutput(BaseModel):
+            order_type: str = "HOLD"
+            leverage: float = 1.0
+
+        def trade_scorer(prediction, ground_truth):
+            ot = prediction["order_type"]  # noqa: F841
+            lev = prediction["leverage"]  # noqa: F841
+            return {"value": 0.0, "success": True, "failed_reason": None}
+
+        service = ScoreService(
+            checkpoint_interval_seconds=60,
+            scoring_function=trade_scorer,
+            feed_reader=FakeFeedReader(),
+            input_repository=MemInputRepository(),
+            prediction_repository=MemPredictionRepository(),
+            score_repository=MemScoreRepository(),
+            snapshot_repository=MemSnapshotRepository(),
+            model_repository=MemModelRepository(),
+            leaderboard_repository=MemLeaderboardRepository(),
+            contract=CrunchConfig(output_type=TradeOutput),
+        )
+
+        # Should not raise
+        service.validate_scoring_io()
+
+    def test_catches_key_mismatch(self):
+        """Scorer reads 'order_type' but InferenceOutput only has 'value'."""
+
+        def bad_scorer(prediction, ground_truth):
+            return {"value": prediction["order_type"]}  # KeyError!
+
+        service = ScoreService(
+            checkpoint_interval_seconds=60,
+            scoring_function=bad_scorer,
+            feed_reader=FakeFeedReader(),
+            input_repository=MemInputRepository(),
+            prediction_repository=MemPredictionRepository(),
+            score_repository=MemScoreRepository(),
+            snapshot_repository=MemSnapshotRepository(),
+            model_repository=MemModelRepository(),
+            leaderboard_repository=MemLeaderboardRepository(),
+        )
+
+        with self.assertRaises(RuntimeError) as ctx:
+            service.validate_scoring_io()
+
+        self.assertIn("KeyError", str(ctx.exception))
+        self.assertIn("order_type", str(ctx.exception))
+
+    def test_catches_bad_score_result(self):
+        """Scorer returns keys that don't match ScoreResult."""
+        from pydantic import BaseModel, ConfigDict
+
+        class StrictScoreResult(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            value: float = 0.0
+            success: bool = True
+            failed_reason: str | None = None
+
+        def scorer_with_typo(prediction, ground_truth):
+            return {"valeu": 0.5, "success": True}  # typo in 'value'
+
+        service = ScoreService(
+            checkpoint_interval_seconds=60,
+            scoring_function=scorer_with_typo,
+            feed_reader=FakeFeedReader(),
+            input_repository=MemInputRepository(),
+            prediction_repository=MemPredictionRepository(),
+            score_repository=MemScoreRepository(),
+            snapshot_repository=MemSnapshotRepository(),
+            model_repository=MemModelRepository(),
+            leaderboard_repository=MemLeaderboardRepository(),
+            contract=CrunchConfig(score_type=StrictScoreResult),
+        )
+
+        with self.assertRaises(RuntimeError) as ctx:
+            service.validate_scoring_io()
+
+        self.assertIn("ScoreResult", str(ctx.exception))
+
+    def test_warns_on_non_keyerror_exceptions(self):
+        """Non-KeyError exceptions in the scorer produce a warning, not a crash."""
+
+        def scorer_needs_real_data(prediction, ground_truth):
+            # This scorer needs real prices that defaults don't provide
+            return {"value": prediction["value"] / ground_truth["entry_price"]}
+
+        service = ScoreService(
+            checkpoint_interval_seconds=60,
+            scoring_function=scorer_needs_real_data,
+            feed_reader=FakeFeedReader(),
+            input_repository=MemInputRepository(),
+            prediction_repository=MemPredictionRepository(),
+            score_repository=MemScoreRepository(),
+            snapshot_repository=MemSnapshotRepository(),
+            model_repository=MemModelRepository(),
+            leaderboard_repository=MemLeaderboardRepository(),
+        )
+
+        # Should warn but not crash (ZeroDivisionError or KeyError depending on GroundTruth defaults)
+        # GroundTruth defaults have extra="allow" so empty dict → KeyError for entry_price
+        with self.assertRaises(RuntimeError) as ctx:
+            service.validate_scoring_io()
+        self.assertIn("entry_price", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

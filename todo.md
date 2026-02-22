@@ -31,13 +31,15 @@
 
  V4's resolver hacks around single-subject ground truth by querying the DB directly. This is a pattern that should be a first-class feature: FEED_SUBJECTS=BTCUSDT,ETHUSDT → ground truth automatically resolves for all subjects.
 
- 5. The InferenceOutput type matters more than you'd think.
+ 5. ~~The InferenceOutput type matters more than you'd think.~~ ✅ DONE
 
- V3 uses {"value": float} (from the starter template) but the model examples return {"score": 0.5} — a key mismatch that would silently produce wrong results. V4 uses {"orders": dict} which is harder to mess up.
+ ~~V3 uses {"value": float} (from the starter template) but the model examples return {"score": 0.5} — a key mismatch that would silently produce wrong results. V4 uses {"orders": dict} which is harder to mess up.~~
+ Fixed: ScoreService now coerces raw inference_output dicts through contract.output_type before passing to the scoring function (fills defaults, coerces types). Added validate_scoring_io() startup check that dry-runs the scoring function with default InferenceOutput/GroundTruth to catch KeyError mismatches at boot time.
 
- 6. make deploy should include make init-db automatically.
+ 6. ~~make deploy should include make init-db automatically.~~ ✅ DONE
 
- Both V3 and V4 hit the same issue: fresh postgres volume → tables don't exist → workers crash. The deploy target should handle this.
+ ~~Both V3 and V4 hit the same issue: fresh postgres volume → tables don't exist → workers crash. The deploy target should handle this.~~
+ Fixed: Removed `profiles: [init]` from init-db service, added `depends_on: init-db: condition: service_completed_successfully` to all workers, and updated Makefile deploy to explicitly run init-db before bringing up services.
 
  7. The backtest harness (V3) should be a standard feature, not competition-specific.
 
@@ -59,7 +61,7 @@
  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
  │ Extract BaseCrunchConfig into coordinator-node so competitions only override what's different                       │ Eliminates 150+ lines of boilerplate per competition                    │
  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
- │ Add make init-db to make deploy recipe                                                                              │ Prevents "tables don't exist" crash on fresh deploy                     │
+ │ ~~Add make init-db to make deploy recipe~~  ✅ DONE                                                                  │ Prevents "tables don't exist" crash on fresh deploy                     │
  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
  │ Add a make smoke-test that checks: API healthy, predictions flowing, scores non-zero, ground truth returns non-zero │ Catches the 0.0-scoring and 0.0-ground-truth bugs immediately           │
  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤

@@ -62,6 +62,94 @@ class ScoreService:
         self.logger = logging.getLogger(__name__)
         self.stop_event = asyncio.Event()
 
+    # ── typed output coercion ──
+
+    def _coerce_output(self, raw: dict[str, Any]) -> dict[str, Any]:
+        """Parse a raw inference_output dict through ``contract.output_type``.
+
+        This ensures the scoring function always receives a dict whose keys
+        exactly match the ``InferenceOutput`` fields (with defaults filled in
+        and types coerced).  Extra keys from the model that are not part of
+        ``InferenceOutput`` are preserved so no data is silently lost.
+        """
+        try:
+            typed = self.contract.output_type(**raw)
+            # Start with the validated/coerced fields, then layer any extras
+            result = typed.model_dump()
+            for key, value in raw.items():
+                if key not in result:
+                    result[key] = value
+            return result
+        except Exception as exc:
+            self.logger.warning(
+                "InferenceOutput coercion failed (%s), passing raw dict to scorer", exc,
+            )
+            return raw
+
+    def validate_scoring_io(self) -> None:
+        """Dry-run the scoring function with default contract types at startup.
+
+        Catches field-name mismatches (e.g. scoring reads ``prediction["order_type"]``
+        but ``InferenceOutput`` only defines ``value``) before any real predictions
+        are scored.  Raises on hard errors; logs warnings on soft issues.
+        """
+        output_type = self.contract.output_type
+        ground_truth_type = self.contract.ground_truth_type
+        score_type = self.contract.score_type
+
+        # Build a sample prediction dict from InferenceOutput defaults
+        try:
+            sample_output = output_type().model_dump()
+        except Exception as exc:
+            raise RuntimeError(
+                f"Cannot construct a default InferenceOutput ({output_type.__name__}): {exc}. "
+                f"Ensure all fields have defaults or the model_config allows it."
+            ) from exc
+
+        # Build a sample ground truth dict
+        try:
+            sample_gt = ground_truth_type().model_dump()
+        except Exception as exc:
+            self.logger.warning(
+                "Cannot construct a default GroundTruth (%s): %s — "
+                "scoring dry-run skipped (ground truth requires runtime data)",
+                ground_truth_type.__name__, exc,
+            )
+            return
+
+        # Dry-run the scoring function
+        try:
+            result = self.scoring_function(sample_output, sample_gt)
+        except KeyError as exc:
+            raise RuntimeError(
+                f"Scoring function raised KeyError({exc}) when called with default "
+                f"InferenceOutput fields {set(sample_output.keys())} and default "
+                f"GroundTruth fields {set(sample_gt.keys())}. "
+                f"Ensure the scoring function only reads keys defined in InferenceOutput "
+                f"and GroundTruth."
+            ) from exc
+        except Exception as exc:
+            self.logger.warning(
+                "Scoring dry-run raised %s: %s — this may be OK if the function "
+                "requires real data, but check field names match InferenceOutput",
+                type(exc).__name__, exc,
+            )
+            return
+
+        # Validate the result against ScoreResult
+        try:
+            score_type(**result)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Scoring function returned {result!r} which does not match "
+                f"ScoreResult ({score_type.__name__}): {exc}"
+            ) from exc
+
+        self.logger.info(
+            "Scoring IO validation passed: InferenceOutput(%s) → scoring → ScoreResult(%s)",
+            list(sample_output.keys()), list(result.keys()),
+        )
+
     async def run(self) -> None:
         self.logger.info(
             "score service started (score_interval=%ds, checkpoint_interval=%ds)",
@@ -163,7 +251,8 @@ class ScoreService:
             if inp is None or inp.actuals is None:
                 continue  # actuals not yet available
 
-            result = self.scoring_function(prediction.inference_output, inp.actuals)
+            typed_output = self._coerce_output(prediction.inference_output)
+            result = self.scoring_function(typed_output, inp.actuals)
             validated = self.contract.score_type(**result)
 
             score = ScoreRecord(
@@ -361,7 +450,8 @@ class ScoreService:
                     inputs = self.input_repository.find(status=InputStatus.RESOLVED)
                     inp = next((i for i in inputs if i.id == ep.input_id), None)
                     if inp and inp.actuals:
-                        result = self.scoring_function(ep.inference_output, inp.actuals)
+                        typed_output = self._coerce_output(ep.inference_output)
+                        result = self.scoring_function(typed_output, inp.actuals)
                         validated = self.contract.score_type(**result)
                         score = ScoreRecord(
                             id=f"SCR_{ep.id}",
