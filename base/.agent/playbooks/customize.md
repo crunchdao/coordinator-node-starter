@@ -85,9 +85,37 @@ Edit `node/runtime_definitions/crunch_config.py`:
 
 Edit `node/.local.env`:
 - `FEED_SOURCE` (pyth, binance, etc.)
-- `FEED_SUBJECTS` (BTC, ETH, etc.)
+- `FEED_SUBJECTS` (BTC, ETH, etc. — comma-separated for multi-asset)
 - `FEED_KIND` (tick, candle)
 - `FEED_GRANULARITY` (1s, 1m, etc.)
+
+#### Multi-asset competitions
+
+Multi-asset is **natively supported** — do NOT query the DB directly for
+ground truth or build custom feed ingestion per subject.
+
+**How it works end-to-end:**
+
+1. Set `FEED_SUBJECTS=BTCUSDT,ETHUSDT,SOLUSDT` in `node/.local.env`
+2. The feed-data-worker automatically ingests all subjects into `feed_records`
+3. `scheduled_prediction_configs.json` defines scopes per subject (or a single
+   scope with subject as a template variable):
+   ```json
+   [
+     {"scope_key": "BTCUSDT-60", "scope_template": {"subject": "BTCUSDT", "horizon": 60, "step": 60}, ...},
+     {"scope_key": "ETHUSDT-60", "scope_template": {"subject": "ETHUSDT", "horizon": 60, "step": 60}, ...}
+   ]
+   ```
+4. The predict-worker creates separate predictions per scope, each tagged with `subject`
+5. The score-worker resolves ground truth **per prediction** using `inp.scope["subject"]`
+   to filter feed records — it calls `feed_reader.fetch_window(subject=inp.scope["subject"], ...)`
+6. `resolve_ground_truth` receives only the feed records for that specific subject
+
+**Common mistakes to avoid:**
+- Do NOT write a custom `resolve_ground_truth` that queries the DB for other subjects — the framework already filters by subject
+- Do NOT use a single scope_key for all subjects — each subject needs its own scope entry
+- Do NOT hardcode a subject in `resolve_ground_truth` — it receives pre-filtered records for the correct subject
+- Ensure `FEED_SUBJECTS` in `.local.env` matches the subjects in `scheduled_prediction_configs.json`
 
 ### 7. Emission (requires approval)
 
