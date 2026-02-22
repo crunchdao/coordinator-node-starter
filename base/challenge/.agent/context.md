@@ -67,15 +67,54 @@ See `../.agent/playbooks/customize.md` for the full placeholder table.
 - When publishing, set `COORDINATOR_URL` in `config.py` to the actual coordinator address
 - `config.py` is auto-generated — only edit `COORDINATOR_URL` for publishing
 
+## Tests
+
+Run from workspace root: `make test` (or `cd challenge && uv run --extra dev python -m pytest tests/ -v`).
+
+### Test files
+
+| File | Purpose |
+|---|---|
+| `tests/test_tracker.py` | TrackerBase per-subject data isolation, `_default` fallback, edge cases |
+| `tests/test_scoring.py` | Scoring contract (shape/types) + behavioral stub detection |
+| `tests/test_examples.py` | All example trackers: contract compliance, boundaries, multi-subject |
+
+### Scoring stub detection pattern
+
+`test_scoring.py` has two test classes:
+
+- **`TestScoringContract`** — shape/type checks that pass for ANY valid implementation (always green).
+- **`TestScoringBehavior`** — behavioral tests marked `xfail(strict=True)` that **intentionally fail against the 0.0 stub**. These are TDD targets:
+  - `test_correct_prediction_scores_positive` — bullish prediction + price up = positive score
+  - `test_wrong_prediction_scores_negative` — bullish prediction + price down = negative score
+  - `test_different_inputs_produce_different_scores` — different ground truths ≠ same score
+
+**When you implement real scoring:**
+1. Remove the `@pytest.mark.xfail(...)` decorators from these tests
+2. Adjust the assertions to match your scoring logic
+3. Add more tests for your specific scoring edge cases
+
+If you implement scoring but forget to remove the xfail markers, pytest will
+report XPASS (unexpected pass) as a **failure** — this is intentional. It forces
+you to update the tests to match your implementation.
+
 ## Validation
 
-Quick validation is that the backtest should work from the Challenge repository. 
+Quick validation is that the backtest should work from the Challenge repository.
 
+```bash
+# Unit tests (no Docker)
+make test
+
+# Or from workspace root
+cd .. && make test
+```
 
 E2E validation from the node workspace:
 
 ```bash
 cd ../node
+make deploy
 make verify-e2e
 ```
 And verify that models are running.

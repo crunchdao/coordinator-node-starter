@@ -81,7 +81,8 @@ def _read_predict_worker_logs() -> str:
 
 
 def main() -> int:
-    base_url = os.getenv("REPORT_API_URL", "http://localhost:8000")
+    port = os.getenv("REPORT_API_PORT", "8000")
+    base_url = os.getenv("REPORT_API_URL", f"http://localhost:{port}")
     timeout_seconds = int(os.getenv("E2E_VERIFY_TIMEOUT_SECONDS", "240"))
     poll_seconds = int(os.getenv("E2E_VERIFY_POLL_SECONDS", "5"))
 
@@ -128,6 +129,14 @@ def main() -> int:
 
             scored = [row for row in predictions if row.get("score_value") is not None and row.get("score_failed") is False]
             if scored and leaderboard:
+                # Fail if all scores are zero — catches stub scoring / broken ground truth
+                score_values = [row["score_value"] for row in scored]
+                if all(v == 0.0 for v in score_values):
+                    raise FatalVerificationError(
+                        "all scores are 0.0 — scoring function may be a stub "
+                        "or ground truth resolver returns zero. "
+                        "Implement real scoring in scoring.py before deploying."
+                    )
                 print(
                     "[verify-e2e] success "
                     f"models={len(models)} scored_predictions={len(scored)} leaderboard_entries={len(leaderboard)}"

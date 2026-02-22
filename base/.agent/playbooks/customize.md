@@ -60,6 +60,47 @@ Examples:
 
 ## Workflow
 
+### 0. Run scaffold integration tests FIRST
+
+Before writing any code, run the tests that verify the scaffold wiring:
+
+```bash
+# From workspace root (base/):
+make test
+
+# Or from the repo root to include CrunchConfig integration tests:
+cd .. && PYTHONPATH=base/challenge:base/node make test
+```
+
+**Two test suites exist:**
+
+#### Challenge tests (`challenge/tests/`)
+
+| File | What it checks |
+|---|---|
+| `test_tracker.py` | TrackerBase per-subject data isolation, fallback, edge cases |
+| `test_scoring.py` | Scoring function contract (shape/types) + **stub detection** |
+| `test_examples.py` | Example trackers: contract compliance, boundary cases, multi-subject isolation |
+
+The scoring tests use `xfail(strict=True)` markers for behavioral expectations
+(e.g. "correct prediction scores positive"). **These are designed to fail against
+the 0.0 stub.** When you implement real scoring, remove the `xfail` markers —
+if you forget, the tests will break (strict xfail that unexpectedly passes = failure).
+
+#### Scaffold integration tests (`tests/test_scaffold_integration.py`)
+
+| Class | What it catches |
+|---|---|
+| `TestConfigFileValid` | Malformed `scheduled_prediction_configs.json`, typos in schedule keys |
+| `TestScopeTemplateAlignment` | `scope_template` keys that don't match `PredictionScope` fields; `CallMethodConfig.args` that can't resolve from the merged scope |
+| `TestGroundTruthResolution` | `resolve_ground_truth` returning None for valid data, missing keys, zero returns |
+| `TestScoringPipelineRoundtrip` | Scoring function KeyErrors on `InferenceOutput` defaults; output that doesn't validate as `ScoreResult` |
+| `TestAggregationRoundtrip` | Empty aggregation; ranking_key not in any known source |
+| `TestTrackerOutputMatchesInferenceOutput` | Tracker `predict()` output doesn't validate as `InferenceOutput`; full roundtrip tracker→scoring KeyError |
+
+**Use these as TDD targets:** read which tests are failing or xfailing, implement
+the customization to make them pass, then verify all green before deploying.
+
 ### 1. Scoring function (do this FIRST)
 
 The scoring function is the most important file in the competition. It defines
@@ -136,8 +177,8 @@ ground truth or build custom feed ingestion per subject.
    scope with subject as a template variable):
    ```json
    [
-     {"scope_key": "BTCUSDT-60", "scope_template": {"subject": "BTCUSDT", "horizon": 60, "step": 60}, ...},
-     {"scope_key": "ETHUSDT-60", "scope_template": {"subject": "ETHUSDT", "horizon": 60, "step": 60}, ...}
+     {"scope_key": "BTCUSDT-60", "scope_template": {"subject": "BTCUSDT", "horizon_seconds": 60, "step_seconds": 60}, ...},
+     {"scope_key": "ETHUSDT-60", "scope_template": {"subject": "ETHUSDT", "horizon_seconds": 60, "step_seconds": 60}, ...}
    ]
    ```
 4. The predict-worker creates separate predictions per scope, each tagged with `subject`
@@ -168,10 +209,23 @@ Edit `challenge/starter_challenge/`:
 ### 9. Validate
 
 ```bash
+# Unit + integration tests (no Docker required)
+make test
+cd .. && PYTHONPATH=base/challenge:base/node make test
+
+# Full E2E (requires Docker)
 cd node
 make deploy
 make verify-e2e
 ```
+
+**All three must pass:**
+1. `make test` in `base/` — challenge tests green, scoring xfails removed
+2. `make test` at repo root — scaffold integration tests green
+3. `make verify-e2e` — full pipeline produces non-zero scores
+
+If scoring xfail tests still pass as xfail, you haven't implemented real scoring yet.
+If scaffold integration tests fail, the pipeline will break at runtime.
 
 ### 10. Complete
 

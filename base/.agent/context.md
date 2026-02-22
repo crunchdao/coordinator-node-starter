@@ -193,6 +193,42 @@ For detailed edit boundaries, see `node/.agent/context.md` and `challenge/.agent
 
 ---
 
+## Tests — scaffold health checks
+
+Two test suites verify the scaffold is wired correctly. Run them before and
+after any customization.
+
+### Challenge tests (`challenge/tests/`)
+
+```bash
+make test          # from workspace root (base/)
+```
+
+Tests the participant-facing package: tracker data isolation, scoring contract,
+example model compliance. Scoring behavioral tests are `xfail(strict=True)` —
+they fail against the 0.0 stub and must be updated when real scoring is implemented.
+
+### Scaffold integration tests (`tests/test_scaffold_integration.py`)
+
+```bash
+cd .. && PYTHONPATH=base/challenge:base/node make test    # from repo root
+```
+
+Tests CrunchConfig wiring end-to-end without Docker:
+
+- `scheduled_prediction_configs.json` validates as `ScheduledPredictionConfigEnvelope`
+- `scope_template` keys match `PredictionScope` fields
+- `CallMethodConfig.args` resolvable from merged scope
+- `resolve_ground_truth` returns non-None for valid feed data
+- Scoring function accepts `InferenceOutput` defaults, output validates as `ScoreResult`
+- `aggregate_snapshot` produces data, `ranking_key` exists in pipeline output
+- Example tracker `predict()` output validates as `InferenceOutput`
+- Full roundtrip: tracker → scoring function (no KeyError)
+
+**These are TDD targets for customization.** When changing types, scoring,
+scopes, or feeds, check which tests break and fix them as part of the work.
+All must be green before deploying.
+
 ## Do-not-edit zones
 
 - `node/docker-compose.yml` internal service wiring — modify env vars instead

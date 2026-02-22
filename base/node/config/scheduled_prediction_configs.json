@@ -1,7 +1,11 @@
 [
   {
     "scope_key": "realtime-btc",
-    "scope_template": {},
+    "scope_template": {
+      "subject": "BTC",
+      "horizon_seconds": 60,
+      "step_seconds": 15
+    },
     "schedule": {
       "prediction_interval_seconds": 15,
       "resolve_after_seconds": 60

@@ -9,7 +9,7 @@ class VolatilityRegimeTracker(TrackerBase):
     """Dampens directional signal when short-term volatility spikes."""
 
     def predict(self, subject: str, horizon_seconds: int, step_seconds: int) -> dict:
-        prices = _extract_prices(getattr(self, "_latest_data", None))
+        prices = _extract_prices(self._get_data(subject))
         returns = _returns(prices)
         if len(returns) < 3:
             return {"value": 0.0}

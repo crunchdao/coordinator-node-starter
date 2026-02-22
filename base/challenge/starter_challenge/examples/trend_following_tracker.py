@@ -7,7 +7,7 @@ class TrendFollowingTracker(TrackerBase):
     """Projects recent direction forward with conservative scaling."""
 
     def predict(self, subject: str, horizon_seconds: int, step_seconds: int) -> dict:
-        prices = _extract_prices(getattr(self, "_latest_data", None))
+        prices = _extract_prices(self._get_data(subject))
         if len(prices) < 3:
             return {"value": 0.0}
 

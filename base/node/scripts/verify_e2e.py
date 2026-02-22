@@ -61,7 +61,8 @@ def _print_model_failure_context(log_text: str) -> None:
 
 
 def main() -> int:
-    base_url = os.getenv("REPORT_API_URL", "http://localhost:8000")
+    port = os.getenv("REPORT_API_PORT", "8000")
+    base_url = os.getenv("REPORT_API_URL", f"http://localhost:{port}")
     timeout_seconds = int(os.getenv("E2E_VERIFY_TIMEOUT_SECONDS", "240"))
     poll_seconds = int(os.getenv("E2E_VERIFY_POLL_SECONDS", "5"))
 
@@ -121,9 +122,11 @@ def main() -> int:
                 )
                 if all_zero:
                     print(
-                        "[verify-e2e] ⚠️  WARNING: all scores are 0.0 — "
-                        "scoring function may be a stub or ground truth resolver returns zero"
+                        "[verify-e2e] FAILED: all scores are 0.0 — "
+                        "scoring function may be a stub or ground truth resolver returns zero. "
+                        "Implement real scoring in scoring.py before deploying."
                     )
+                    return 1
                 elif all_identical:
                     print(
                         f"[verify-e2e] ⚠️  WARNING: all scores are identical ({score_values[0]}) — "

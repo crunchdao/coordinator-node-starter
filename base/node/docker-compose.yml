@@ -4,9 +4,9 @@ x-common-env:
   environment: &common-db-env
     POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
     POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-    POSTGRES_USER: ${POSTGRES_USER:-starter}
-    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-starter}
-    POSTGRES_DB: ${POSTGRES_DB:-starter}
+    POSTGRES_USER: ${POSTGRES_USER:-${CRUNCH_ID:-starter-challenge}}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-${CRUNCH_ID:-starter-challenge}}
+    POSTGRES_DB: ${POSTGRES_DB:-${CRUNCH_ID:-starter-challenge}}
 
 x-common-build: &common-build
   build:
@@ -28,7 +28,7 @@ services:
     expose:
       - "5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -d ${POSTGRES_DB:-starter} -U ${POSTGRES_USER:-starter}"]
+      test: ["CMD-SHELL", "pg_isready -d ${POSTGRES_DB:-${CRUNCH_ID:-starter-challenge}} -U ${POSTGRES_USER:-${CRUNCH_ID:-starter-challenge}}"]
       interval: 2s
       timeout: 5s
       retries: 20
@@ -215,7 +215,7 @@ services:
     stop_grace_period: 15s
     command: ["python", "-m", "coordinator_node.workers.report_worker"]
     ports:
-      - "8000:8000"
+      - "${REPORT_API_PORT:-8000}:8000"
     volumes:
       - ../challenge:/app/challenge
       - ./api:/app/api
@@ -268,7 +268,7 @@ services:
     restart: always
     stop_grace_period: 15s
     ports:
-      - "3000:3000"
+      - "${REPORT_UI_PORT:-3000}:3000"
     volumes:
       - ./deployment/report-ui/config:/app/config
       - ./deployment/report-ui/config:/app/apps/${REPORT_UI_APP:-starter}/config

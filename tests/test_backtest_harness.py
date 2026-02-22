@@ -161,17 +161,21 @@ class TestBacktestClient(unittest.TestCase):
         self.assertEqual(client.list_cached(), [])
 
     def test_list_cached_finds_files(self):
-        # Create a cached file
+        # Create a cached file using explicit dimensions
         cached_path = Path(self.cache_dir) / "binance" / "BTC" / "candle" / "1m" / "2026-01-15.parquet"
         cached_path.parent.mkdir(parents=True, exist_ok=True)
         cached_path.write_bytes(b"fake")
 
         client = BacktestClient("http://test:8000", cache_dir=self.cache_dir)
-        files = client.list_cached()
+        files = client.list_cached(source="binance", subject="BTC", kind="candle", granularity="1m")
         self.assertEqual(len(files), 1)
 
 
 class TestBacktestRunner(unittest.TestCase):
+    # Test data uses binance/BTC/candle/1m — pass explicitly so tests don't
+    # depend on config.py defaults (which may differ per scaffold).
+    _FEED_DIMS = dict(source="binance", kind="candle", granularity="1m")
+
     def setUp(self):
         self.cache_dir = tempfile.mkdtemp()
         # Write test data: 2 days, 60 records each (1 per minute)
@@ -186,6 +190,7 @@ class TestBacktestRunner(unittest.TestCase):
         result = runner.run(
             subject="BTC", start="2026-01-15", end="2026-01-16",
             window_size=10, prediction_interval_seconds=60, horizon_seconds=60,
+            **self._FEED_DIMS,
         )
 
         self.assertGreater(model.tick_count, 0)
@@ -198,6 +203,7 @@ class TestBacktestRunner(unittest.TestCase):
         result = runner.run(
             subject="BTC", start="2026-01-15", end="2026-01-16",
             window_size=10, prediction_interval_seconds=60, horizon_seconds=60,
+            **self._FEED_DIMS,
         )
 
         self.assertGreater(len(result._predictions), 0)
@@ -211,6 +217,7 @@ class TestBacktestRunner(unittest.TestCase):
         result = runner.run(
             subject="BTC", start="2026-01-15", end="2026-01-16",
             window_size=10, prediction_interval_seconds=60, horizon_seconds=60,
+            **self._FEED_DIMS,
         )
 
         self.assertIn("score_recent", result.metrics)
@@ -229,7 +236,7 @@ class TestBacktestRunner(unittest.TestCase):
         model = DummyTracker()
         runner = BacktestRunner(model=model, cache_dir=self.cache_dir)
         with self.assertRaises(FileNotFoundError):
-            runner.run(subject="ETH", start="2026-01-15", end="2026-01-16")
+            runner.run(subject="ETH", start="2026-01-15", end="2026-01-16", **self._FEED_DIMS)
 
     def test_predictions_df_returns_dataframe(self):
         model = DummyTracker()
@@ -237,6 +244,7 @@ class TestBacktestRunner(unittest.TestCase):
         result = runner.run(
             subject="BTC", start="2026-01-15", end="2026-01-16",
             window_size=10, prediction_interval_seconds=60, horizon_seconds=60,
+            **self._FEED_DIMS,
         )
 
         df = result.predictions_df
@@ -256,6 +264,7 @@ class TestBacktestRunner(unittest.TestCase):
         result = runner.run(
             subject="BTC", start="2026-01-15", end="2026-01-16",
             window_size=10, prediction_interval_seconds=60, horizon_seconds=60,
+            **self._FEED_DIMS,
         )
 
         scored = [p for p in result._predictions if p["score"] is not None]
@@ -279,6 +288,7 @@ class TestBacktestRunner(unittest.TestCase):
         result = runner.run(
             subject="BTC", start="2026-01-15", end="2026-01-16",
             window_size=10, prediction_interval_seconds=60, horizon_seconds=60,
+            **self._FEED_DIMS,
         )
 
         # Both should produce valid outputs with "value" key

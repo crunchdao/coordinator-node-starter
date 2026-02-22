@@ -21,7 +21,7 @@ logs:
 	$(COMPOSE) logs -f
 
 test:
-	uv run python -m pytest tests/ -x -q
+	PYTHONPATH=base/challenge:base/node uv run python -m pytest tests/ -x -q
 
 # Database migrations (Alembic)
 migrate:

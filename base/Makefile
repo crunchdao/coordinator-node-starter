@@ -1,5 +1,5 @@
 # Workspace-level convenience — proxies to node/
-.PHONY: deploy down logs logs-capture verify-e2e check-models init-db reset-db starter platform backfill
+.PHONY: deploy down logs logs-capture verify-e2e check-models init-db reset-db starter platform backfill test test-challenge
 
 deploy:
 	cd node && make deploy
@@ -30,6 +30,11 @@ starter:
 
 platform:
 	cd node && make platform
+
+test: test-challenge
+
+test-challenge:
+	cd challenge && uv run --extra dev python -m pytest tests/ -x -q
 
 backfill:
 	cd node && make backfill SOURCE=$(SOURCE) SUBJECT=$(SUBJECT) KIND=$(KIND) GRANULARITY=$(GRANULARITY) FROM=$(FROM) TO=$(TO) PAGE_SIZE=$(PAGE_SIZE)

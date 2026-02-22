@@ -18,13 +18,32 @@ class TrackerBase:
     and must return a dict matching ``InferenceOutput`` (e.g. ``{"value": 0.5}``).
     """
 
+    def __init__(self) -> None:
+        self._latest_data_by_subject: dict[str, dict[str, Any]] = {}
+
     def tick(self, data: dict[str, Any]) -> None:
         """Receive latest market data. Override to maintain state.
+
+        Data is stored per-subject so multi-asset competitions work correctly.
+        The subject key is read from ``data["symbol"]``; if missing the data
+        is stored under the key ``"_default"``.
 
         Args:
             data: Feed data dict (shape matches ``RawInput``).
         """
-        self._latest_data = data
+        subject_key = data.get("symbol", "_default") if isinstance(data, dict) else "_default"
+        self._latest_data_by_subject[subject_key] = data
+
+    def _get_data(self, subject: str) -> dict[str, Any] | None:
+        """Return the latest tick data for *subject*.
+
+        Falls back to ``"_default"`` when no exact match exists (single-asset
+        competitions typically don't set ``symbol`` in the data dict).
+        """
+        return self._latest_data_by_subject.get(
+            subject,
+            self._latest_data_by_subject.get("_default"),
+        )
 
     def predict(self, subject: str, horizon_seconds: int, step_seconds: int) -> dict[str, Any]:
         """Return a prediction for the given scope.
