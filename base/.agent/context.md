@@ -138,7 +138,7 @@ For detailed edit boundaries, see `node/.agent/context.md` and `challenge/.agent
 | Add a custom feed provider or external API integration | `node/plugins/` — for node-side integrations that need secrets or call private APIs |
 | Add a scoring helper or custom callable module | `node/extensions/` — for edge-case Python modules needed by the runtime (custom feed providers, specialized scoring helpers) |
 | Change the scoring function path | `node/config/callables.env` — set `SCORING_FUNCTION=module.path:function` |
-| Change prediction schedule or scope | `node/config/scheduled_prediction_configs.json` |
+| Change prediction schedule or scope | `node/config/scheduled_prediction_configs.json` — **`resolve_after_seconds` must be > feed data interval** (see `node/.agent/context.md`) |
 | Change feed source, subjects, kind, granularity | `node/.local.env` — `FEED_SOURCE`, `FEED_SUBJECTS`, `FEED_KIND`, `FEED_GRANULARITY` |
 | Change the model interface participants implement | `challenge/starter_challenge/tracker.py` |
 | Change local self-eval scoring | `challenge/starter_challenge/scoring.py` |

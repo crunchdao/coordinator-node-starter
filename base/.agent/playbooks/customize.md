@@ -16,10 +16,22 @@ Before implementing, confirm these are defined:
 1. **Model interface** — tracker class that participants implement
 2. **Scoring function** — how predictions are scored against actuals
 3. **Feed configuration** — source, subjects, kind, granularity
-4. **Ground truth resolution** — how actuals are derived from feed data
-5. **Emission config** — crunch pubkey, provider wallets, tier distribution
+4. **Prediction schedule** — `prediction_interval_seconds` and `resolve_after_seconds`
+5. **Ground truth resolution** — how actuals are derived from feed data
+6. **Emission config** — crunch pubkey, provider wallets, tier distribution
 
 If any are missing, ask the user before proceeding.
+
+### Critical: `resolve_after_seconds` must exceed feed granularity
+
+`resolve_after_seconds` defines how long the score-worker waits before looking up ground truth from the feed. If this value is shorter than the feed's data interval (`FEED_GRANULARITY` / `FEED_POLL_SECONDS`), **no ground truth data will exist yet** and all predictions will fail to score.
+
+**Rule:** `resolve_after_seconds` must be **strictly greater** than the feed's effective data interval. Ask the user what value makes sense for their use case — do not guess.
+
+Examples:
+- Feed granularity `1s`, poll every `5s` → `resolve_after_seconds` must be > 5
+- Feed granularity `1m` → `resolve_after_seconds` must be > 60
+- Feed granularity `5m` → `resolve_after_seconds` must be > 300
 
 ## Workflow
 

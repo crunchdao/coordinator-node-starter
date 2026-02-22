@@ -72,13 +72,23 @@ Config: `API_ROUTES_DIR` (default `api/`), `API_ROUTES` (explicit `module:attr` 
 |---|---|
 | Node env config | `.local.env`, `.env` |
 | Callable paths | `config/callables.env` |
-| Prediction schedules | `config/scheduled_prediction_configs.json` |
+| Prediction schedules | `config/scheduled_prediction_configs.json` — **`resolve_after_seconds` must be > feed data interval** (see below) |
 | Competition types & behavior | `runtime_definitions/crunch_config.py` (preferred), `runtime_definitions/contracts.py` (backward compat) |
 | Custom API endpoints | `api/` |
 | Custom callable modules | `extensions/` |
 | External integrations / feed providers | `plugins/` |
 | Local deployment config | `deployment/` |
 | Challenge implementation | Mounted from `../challenge` |
+
+## Prediction schedule constraint
+
+`resolve_after_seconds` in `config/scheduled_prediction_configs.json` controls how long the score-worker waits before fetching ground truth from the feed. **It must be strictly greater than the feed's effective data interval**, otherwise no feed data will exist yet when scoring runs, and all predictions fail to score silently.
+
+- Feed granularity `1s` + poll every `5s` → `resolve_after_seconds` > 5
+- Feed granularity `1m` → `resolve_after_seconds` > 60
+- Feed granularity `5m` → `resolve_after_seconds` > 300
+
+Always ask the user what `resolve_after_seconds` should be — do not assume a default.
 
 ## Logs and artifacts
 
