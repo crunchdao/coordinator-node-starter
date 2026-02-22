@@ -105,7 +105,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [backend]
+    networks: [backend, external]
 
   predict-worker:
     <<: *common-build
@@ -280,6 +280,9 @@ networks:
     driver: bridge
     internal: true
     name: crunch-node-${CRUNCH_ID:-starter-challenge}-backend
+  external:
+    driver: bridge
+    name: crunch-node-${CRUNCH_ID:-starter-challenge}-external
 
 volumes:
   postgres-data:

@@ -81,7 +81,7 @@ services:
         condition: service_healthy
       init-db:
         condition: service_completed_successfully
-    networks: [backend]
+    networks: [backend, external]
 
   predict-worker:
     <<: *common-build
@@ -241,6 +241,9 @@ networks:
     driver: bridge
     internal: true
     name: crunch-node-${CRUNCH_ID:-starter}-backend
+  external:
+    driver: bridge
+    name: crunch-node-${CRUNCH_ID:-starter}-external
 
 volumes:
   postgres_data:

@@ -1606,4 +1606,5 @@ async def _run_backfill_async(job_id: str, body: BackfillRequestBody) -> None:
 
 if __name__ == "__main__":
     logging.getLogger(__name__).info("coordinator report worker bootstrap")
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
