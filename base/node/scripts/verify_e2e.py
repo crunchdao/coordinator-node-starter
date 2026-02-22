@@ -110,10 +110,25 @@ def main() -> int:
                 if row.get("score_value") is not None and row.get("score_failed") is False
             ]
             if scored and leaderboard:
+                # Sanity: check scores are not all zero (catches stub scoring / broken ground truth)
+                score_values = [row["score_value"] for row in scored]
+                all_zero = all(v == 0.0 for v in score_values)
+                all_identical = len(set(score_values)) <= 1
+
                 print(
                     "[verify-e2e] success "
                     f"models={len(models)} scored_predictions={len(scored)} leaderboard_entries={len(leaderboard)}"
                 )
+                if all_zero:
+                    print(
+                        "[verify-e2e] ⚠️  WARNING: all scores are 0.0 — "
+                        "scoring function may be a stub or ground truth resolver returns zero"
+                    )
+                elif all_identical:
+                    print(
+                        f"[verify-e2e] ⚠️  WARNING: all scores are identical ({score_values[0]}) — "
+                        "scoring may not be differentiating predictions"
+                    )
                 return 0
 
             raise RuntimeError(
