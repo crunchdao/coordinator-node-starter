@@ -318,7 +318,7 @@ wheels = [
 
 [[package]]
 name = "coordinator-node"
-version = "0.1.73"
+version = "0.1.74"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -342,7 +342,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.13,<2" },
     { name = "fastapi", specifier = ">=0.100.0,<1" },
-    { name = "model-runner-client", git = "https://github.com/crunchdao/model-runner-client.git?rev=master" },
+    { name = "model-runner-client", specifier = ">=0.10.0" },
     { name = "psycopg2-binary", specifier = ">=2.9,<3" },
     { name = "pyarrow", specifier = ">=15.0,<19" },
     { name = "python-binance", specifier = ">=1.0,<2" },
@@ -760,7 +760,7 @@ wheels = [
 [[package]]
 name = "model-runner-client"
 version = "0.11.0"
-source = { git = "https://github.com/crunchdao/model-runner-client.git?rev=master#401de6182370a240e916a9205aaa11c64ce5878b" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "base58" },
     { name = "cryptography" },
@@ -768,6 +768,10 @@ dependencies = [
     { name = "grpcio-health-checking" },
     { name = "pandas" },
     { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/12/f3/d52e9120eea64320c33920f7451be390788c4bcbc2025410ab41ec0ab96b/model_runner_client-0.11.0.tar.gz", hash = "sha256:302ca73eb1b144ee46d82e9813ff9da7cecdc1af890ddcf0f3b21d43e01979d9", size = 26264 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f1/2e/501000f5e3f752362d9fbe3f0d0c7e35653126ffd69aa255a1dae58545a9/model_runner_client-0.11.0-py3-none-any.whl", hash = "sha256:3f5f1576da7518a9a31a3d66de91eee5bef92b834f93d2d2b86f5749a106eb6e", size = 36874 },
 ]
 
 [[package]]

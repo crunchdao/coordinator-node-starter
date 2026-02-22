@@ -8,8 +8,8 @@ from starter_challenge.tracker import TrackerBase
 class VolatilityRegimeTracker(TrackerBase):
     """Dampens directional signal when short-term volatility spikes."""
 
-    def predict(self, **kwargs):
-        prices = _extract_prices(kwargs, getattr(self, "_latest_data", None))
+    def predict(self, subject: str, horizon_seconds: int, step_seconds: int) -> dict:
+        prices = _extract_prices(getattr(self, "_latest_data", None))
         returns = _returns(prices)
         if len(returns) < 3:
             return {"value": 0.0}
@@ -25,19 +25,9 @@ class VolatilityRegimeTracker(TrackerBase):
         return {"value": momentum / dampening}
 
 
-def _extract_prices(kwargs, latest_data):
-    for key in ("prices", "series"):
-        values = kwargs.get(key)
-        if isinstance(values, list):
-            return _to_numeric(values)
-
-    candles = kwargs.get("candles_1m")
-    if isinstance(candles, list):
-        return _closes(candles)
-
+def _extract_prices(latest_data):
     if isinstance(latest_data, dict) and isinstance(latest_data.get("candles_1m"), list):
         return _closes(latest_data["candles_1m"])
-
     return []
 
 
@@ -72,13 +62,3 @@ def _closes(candles):
         except Exception:
             continue
     return closes
-
-
-def _to_numeric(values):
-    numeric = []
-    for value in values:
-        try:
-            numeric.append(float(value))
-        except Exception:
-            continue
-    return numeric

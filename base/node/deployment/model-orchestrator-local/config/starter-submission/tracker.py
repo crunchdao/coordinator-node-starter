@@ -1,18 +1,23 @@
 from __future__ import annotations
 
-from collections import defaultdict
-from dataclasses import dataclass, field
+from typing import Any
 
 
-@dataclass
 class TrackerBase:
-    history: dict[str, list[tuple[int, float]]] = field(default_factory=lambda: defaultdict(list))
+    """Base class for participant models.
 
-    def tick(self, data: dict[str, list[tuple[int, float]]]) -> None:
-        for asset, points in (data or {}).items():
-            if not isinstance(points, (list, tuple)):
-                continue
-            self.history.setdefault(asset, []).extend(points)
+    The ``predict()`` signature must match the coordinator's
+    ``CallMethodConfig``. Default: ``predict(subject, horizon_seconds, step_seconds)``.
+    """
 
-    def predict(self, asset: str, horizon: int, step: int):
-        raise NotImplementedError
+    def tick(self, data: dict[str, Any]) -> None:
+        """Receive latest market data. Override to maintain state."""
+        self._latest_data = data
+
+    def predict(self, subject: str, horizon_seconds: int, step_seconds: int) -> dict[str, Any]:
+        """Return a prediction for the given scope.
+
+        Returns:
+            Dict matching ``InferenceOutput`` fields (e.g. ``{"value": 0.5}``).
+        """
+        raise NotImplementedError("Implement predict() in your model")

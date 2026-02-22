@@ -42,6 +42,23 @@ Key design decisions:
 
 - Runtime contract (node-private): `../node/runtime_definitions/crunch_config.py` — CrunchConfig defining types, scoring, emission
 
+## ⚠️ Starter placeholder values
+
+The tracker, scoring function, and examples ship with placeholder values
+(subject="BTC", horizon_seconds=60, `{"value": float}`, etc.) that make
+the scaffold run out of the box. **These are not real defaults.**
+
+When customizing for a new competition:
+- Do NOT copy the starter `predict()` signature as-is — ask the user what
+  arguments and return shape their competition needs
+- Do NOT keep `{"value": float}` as InferenceOutput unless confirmed — it
+  must match what the scoring function reads and what models return
+- Do NOT keep the example models unchanged — update them to use the real
+  prediction shape and signal logic for the new competition
+- The scoring stub (`return 0.0`) must be replaced with real logic FIRST
+
+See `../.agent/playbooks/customize.md` for the full placeholder table.
+
 ## Development guidance
 
 - Keep participant-facing challenge logic in this package

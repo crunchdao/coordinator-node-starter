@@ -9,6 +9,31 @@ Use this when changing the competition's types, scoring, feeds, emission, or mod
 3. Read `node/.agent/context.md` for node-specific edit boundaries
 4. Read `challenge/.agent/context.md` for challenge-specific guidance
 
+## ⚠️ Starter placeholder values — do NOT carry over
+
+The scaffold ships with placeholder values that make it run out of the box.
+**These are NOT sensible defaults for any real competition.** Every value
+below must be explicitly confirmed with the user before proceeding:
+
+| Placeholder | Where | What to ask |
+|---|---|---|
+| `subject: "BTC"` | PredictionScope, tracker, examples, env | What asset(s) is this competition about? |
+| `horizon_seconds: 60` | PredictionScope, scheduled_prediction_configs | What prediction horizon makes sense? |
+| `step_seconds: 15` | PredictionScope | What time step between predictions? |
+| `prediction_interval_seconds: 60` | scheduled_prediction_configs.json | How often should models predict? |
+| `resolve_after_seconds: 60` | scheduled_prediction_configs.json | How long to wait for ground truth? (must exceed feed interval) |
+| `FEED_SOURCE: pyth` | .local.env | What data source? |
+| `FEED_GRANULARITY: 1s` | .local.env | What data granularity? |
+| `InferenceOutput.value: float` | crunch_config.py, tracker, scoring | What should models return? |
+| `scoring: return 0.0` | scoring.py | How should predictions be scored? |
+| `metrics: [ic, ic_sharpe, ...]` | CrunchConfig.metrics | Which metrics matter for this competition? |
+| `ranking_key: score_recent` | Aggregation | What metric determines leaderboard rank? |
+| `tiers: 1st=35%, 2-5=10%, ...` | build_emission | How should rewards be distributed? |
+
+**Rule:** Do not copy these values into a new competition. Ask the user for
+each one. If the user says "use the defaults," confirm explicitly which
+defaults they mean — the starter values may not match their domain.
+
 ## Design checklist
 
 Before implementing, confirm these are defined:

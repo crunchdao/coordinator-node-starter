@@ -80,6 +80,14 @@ Config: `API_ROUTES_DIR` (default `api/`), `API_ROUTES` (explicit `module:attr` 
 | Local deployment config | `deployment/` |
 | Challenge implementation | Mounted from `../challenge` |
 
+## ⚠️ Starter placeholder values
+
+All values in `config/`, `.local.env`, `runtime_definitions/crunch_config.py`,
+and `scheduled_prediction_configs.json` are starter placeholders (BTC, 60s
+horizon, 1s granularity, etc.). They exist to make the scaffold bootable.
+**Ask the user for every competition-specific value before customizing.**
+See `../.agent/playbooks/customize.md` for the full placeholder table.
+
 ## Prediction schedule constraint
 
 `resolve_after_seconds` in `config/scheduled_prediction_configs.json` controls how long the score-worker waits before fetching ground truth from the feed. **It must be strictly greater than the feed's effective data interval**, otherwise no feed data will exist yet when scoring runs, and all predictions fail to score silently.
