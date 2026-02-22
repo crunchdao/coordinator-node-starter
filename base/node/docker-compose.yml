@@ -239,9 +239,11 @@ services:
     environment:
       DOCKER_NETWORK_NAME: crunch-node-${CRUNCH_ID:-starter-challenge}-backend
       DOCKER_COMPOSE_PROJECT: crunch-node-${CRUNCH_ID:-starter-challenge}
+      CRUNCH_ID: ${CRUNCH_ID:-starter-challenge}
     volumes:
       - ./deployment/model-orchestrator-local/data:/app/data
       - ./deployment/model-orchestrator-local/config:/app/config
+      - ../challenge:/app/challenge:ro
       - /var/run/docker.sock:/var/run/docker.sock
     entrypoint: ["sh", "/app/config/docker-entrypoint.sh"]
     command:

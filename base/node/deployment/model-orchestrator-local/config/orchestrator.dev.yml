@@ -21,7 +21,7 @@ watcher:
   interval: 1
   poller:
     type: yaml
-    path: "/app/config/models.dev.yml"
+    path: "/app/data/models.dev.yml"
 
 crunches:
   - id: "starter-challenge"
