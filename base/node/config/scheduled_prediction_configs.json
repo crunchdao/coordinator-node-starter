@@ -11,6 +11,13 @@
       "resolve_after_seconds": 60
     },
     "active": true,
-    "order": 0
+    "order": 0,
+    "meta": {
+      "_docs": {
+        "step_seconds": "Time granularity within a prediction horizon, passed to model.predict()",
+        "prediction_interval_seconds": "How often the coordinator calls models (scheduling interval)",
+        "resolve_after_seconds": "How long to wait before resolving ground truth (must be > 0, typically = horizon_seconds)"
+      }
+    }
   }
 ]

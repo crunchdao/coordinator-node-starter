@@ -17,6 +17,34 @@ class RealtimePredictService(PredictService):
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
         self._next_run: dict[str, datetime] = {}
 
+    @staticmethod
+    def validate_prediction_configs(
+        configs: list[dict[str, Any]],
+        feed_poll_seconds: float,
+    ) -> None:
+        """Validate prediction configs against feed timing constraints.
+
+        Raises ValueError if any active config has resolve_after_seconds
+        that is too low to accumulate feed data for ground truth resolution.
+        Must be called at startup to fail fast.
+        """
+        for config in configs:
+            if not config.get("active", True):
+                continue
+
+            schedule = config.get("schedule") or {}
+            resolve_after = schedule.get("resolve_after_seconds", 0)
+            scope_key = config.get("scope_key", "<unknown>")
+
+            if resolve_after < feed_poll_seconds:
+                raise ValueError(
+                    f"Config '{scope_key}': resolve_after_seconds={resolve_after} "
+                    f"is less than feed_poll_seconds={feed_poll_seconds}. "
+                    f"Predictions will never accumulate enough feed data to "
+                    f"resolve ground truth. All scores will be 0. "
+                    f"Set resolve_after_seconds >= {feed_poll_seconds}."
+                )
+
     # ── main loop ──
 
     async def run(self) -> None:

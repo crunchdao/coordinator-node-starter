@@ -12,8 +12,23 @@ class ScheduleEnvelope(BaseModel):
     immediately instead of being silently swallowed with defaults.
     """
 
-    prediction_interval_seconds: int = Field(default=60, ge=1)
-    resolve_after_seconds: int = Field(default=0, ge=0)
+    prediction_interval_seconds: int = Field(
+        default=60, ge=1,
+        description=(
+            "How often the coordinator calls models to produce predictions (seconds). "
+            "This is the scheduling interval — NOT the step_seconds passed to "
+            "model.predict(). Example: 15 means 'call models every 15 seconds'."
+        ),
+    )
+    resolve_after_seconds: int = Field(
+        default=0, ge=0,
+        description=(
+            "Seconds after a prediction is made before ground truth is resolved. "
+            "Must be > 0 for scoring to work (feed data needs time to accumulate). "
+            "Typically matches horizon_seconds in PredictionScope. "
+            "Example: 60 means 'resolve ground truth 60 seconds after prediction'."
+        ),
+    )
 
     model_config = ConfigDict(extra="forbid")
 

@@ -33,23 +33,72 @@ class InferenceInput(RawInput):
 
 
 class InferenceOutput(BaseModel):
-    """What models must return. Customize fields to match your prediction format."""
+    """What models must return. Customize fields to match your prediction format.
 
-    value: float = Field(default=0.0)
+    The default schema has a single 'value' float — suitable for directional
+    predictions (positive=up, negative=down). For richer predictions, replace
+    this class entirely::
+
+        class InferenceOutput(BaseModel):
+            direction: str = "hold"       # "long", "short", "hold"
+            confidence: float = 0.0       # 0.0 to 1.0
+            size: float = 0.0             # position size
+
+    Then set ``output_type = InferenceOutput`` in your CrunchConfig.
+    """
+
+    value: float = Field(
+        default=0.0,
+        description=(
+            "Prediction value. Positive=up, negative=down, magnitude=confidence. "
+            "Replace this field (or the whole class) for your prediction format."
+        ),
+    )
 
 
 class ScoreResult(BaseModel):
     """What scoring produces. Customize metrics fields for your challenge.
 
+    The default schema has a single 'value' float plus success/failure tracking.
     Extra fields from the scoring function (e.g. actual_return, direction_correct)
     are preserved in the DB via ``extra="allow"``, enabling richer analysis.
+
+    Example — custom ScoreResult with additional metrics::
+
+        class ScoreResult(BaseModel):
+            model_config = ConfigDict(extra="allow")
+            value: float = 0.0
+            pnl: float = 0.0
+            sharpe: float = 0.0
+            max_drawdown: float = 0.0
+            success: bool = True
+            failed_reason: str | None = None
+
+    Then set ``score_type = ScoreResult`` in your CrunchConfig.
     """
 
     model_config = ConfigDict(extra="allow")
 
-    value: float = 0.0
-    success: bool = True
-    failed_reason: str | None = None
+    value: float = Field(
+        default=0.0,
+        description=(
+            "Primary score value used for ranking. Higher = better by default "
+            "(configure Aggregation.ranking_direction to change). "
+            "Your scoring function should set this to a meaningful metric."
+        ),
+    )
+    success: bool = Field(
+        default=True,
+        description=(
+            "Whether scoring succeeded. Set to False when scoring fails "
+            "(e.g. missing data, invalid prediction). Failed scores are "
+            "excluded from aggregation."
+        ),
+    )
+    failed_reason: str | None = Field(
+        default=None,
+        description="Human-readable reason when success=False.",
+    )
 
 
 class PredictionScope(BaseModel):
@@ -57,9 +106,32 @@ class PredictionScope(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    subject: str = "BTC"
-    horizon_seconds: int = Field(default=60, ge=1)
-    step_seconds: int = Field(default=15, ge=1)
+    subject: str = Field(
+        default="BTC",
+        description=(
+            "Asset or topic the model predicts. 'BTC' is an example — "
+            "replace with your competition's subject(s). For multi-asset, "
+            "use separate prediction configs per subject."
+        ),
+    )
+    horizon_seconds: int = Field(
+        default=60, ge=1,
+        description=(
+            "How far into the future the model predicts (seconds). "
+            "Ground truth is resolved after this window elapses. "
+            "Example: 60 means 'predict what happens in the next 60 seconds'."
+        ),
+    )
+    step_seconds: int = Field(
+        default=15, ge=1,
+        description=(
+            "Time granularity within a prediction horizon (seconds). "
+            "Passed to model.predict() as context — NOT the scheduling interval. "
+            "Example: with horizon=60 and step=15, the model knows it's producing "
+            "a 60s forecast at 15s resolution. See prediction_interval_seconds "
+            "in ScheduleEnvelope for how often the coordinator calls models."
+        ),
+    )
 
 
 class CallMethodArg(BaseModel):

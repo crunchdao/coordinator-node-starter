@@ -59,8 +59,23 @@ class InferenceInput(RawInput):
 
 
 class CrunchConfig(BaseCrunchConfig):
-    """Competition config — only overrides the data shapes."""
+    """Competition config — overrides all data-shape types.
+
+    All five types are listed explicitly so you see what needs customization:
+      - raw_input_type:    What the feed produces (market data shape)
+      - ground_truth_type: What the actual outcome looks like
+      - input_type:        What models receive (can transform from RawInput)
+      - output_type:       What models must return (prediction format)
+      - score_type:        What scoring produces (metrics/result fields)
+
+    Customize output_type when your models return something other than
+    a single float (e.g. trade orders, multi-field predictions).
+    Customize score_type when your scoring produces additional metrics
+    beyond the default 'value' field.
+    """
 
     raw_input_type: type[BaseModel] = RawInput
     ground_truth_type: type[BaseModel] = GroundTruth
     input_type: type[BaseModel] = InferenceInput
+    output_type: type[BaseModel] = InferenceOutput      # ← customize for your prediction format
+    score_type: type[BaseModel] = ScoreResult            # ← customize for your scoring metrics

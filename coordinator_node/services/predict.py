@@ -202,8 +202,29 @@ class PredictService:
         self.model_repository.save(model)
 
     def validate_output(self, output: dict[str, Any]) -> str | None:
+        """Validate model output against InferenceOutput schema.
+
+        Returns None if valid, or an error string if invalid.
+        Catches both type mismatches AND outputs where no keys match
+        the schema (model returning the wrong format entirely).
+        """
         try:
-            output.update(self.contract.output_type(**output).model_dump())
+            output_type = self.contract.output_type
+            schema_fields = set(output_type.model_fields.keys())
+
+            # Check that at least one output key matches a schema field
+            matching_keys = set(output.keys()) & schema_fields
+            if schema_fields and not matching_keys:
+                msg = (
+                    f"Model output keys {set(output.keys())} do not match any "
+                    f"InferenceOutput fields {schema_fields}. The model is likely "
+                    f"returning the wrong schema."
+                )
+                self.logger.error("INFERENCE_OUTPUT_VALIDATION_ERROR: %s", msg)
+                return msg
+
+            validated = output_type(**output)
+            output.update(validated.model_dump())
             return None
         except Exception as exc:
             self.logger.error("INFERENCE_OUTPUT_VALIDATION_ERROR: %s", exc)

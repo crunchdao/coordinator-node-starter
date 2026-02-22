@@ -80,6 +80,32 @@ def _read_predict_worker_logs() -> str:
     return (result.stdout or "") + "\n" + (result.stderr or "")
 
 
+def check_score_quality(scored: list[dict]) -> tuple[bool, str]:
+    """Check if scored predictions indicate a real scoring function.
+
+    Returns (passed, reason). Fails on all-zero or all-identical scores,
+    which indicate a stub scorer or broken ground truth.
+    """
+    if not scored:
+        return False, "no scored predictions"
+
+    score_values = [row["score_value"] for row in scored]
+
+    if all(v == 0.0 for v in score_values):
+        return False, (
+            "All scores are 0.0 — scoring function may be a stub "
+            "or ground truth resolver returns zero."
+        )
+
+    if len(set(score_values)) <= 1:
+        return False, (
+            f"All scores are identical ({score_values[0]}) — scoring function "
+            f"may be a stub returning a constant value."
+        )
+
+    return True, "ok"
+
+
 def main() -> int:
     port = os.getenv("REPORT_API_PORT", "8000")
     base_url = os.getenv("REPORT_API_URL", f"http://localhost:{port}")
@@ -129,12 +155,11 @@ def main() -> int:
 
             scored = [row for row in predictions if row.get("score_value") is not None and row.get("score_failed") is False]
             if scored and leaderboard:
-                # Fail if all scores are zero — catches stub scoring / broken ground truth
-                score_values = [row["score_value"] for row in scored]
-                if all(v == 0.0 for v in score_values):
+                # Fail if scores indicate a stub or broken ground truth
+                quality_ok, quality_reason = check_score_quality(scored)
+                if not quality_ok:
                     raise FatalVerificationError(
-                        "all scores are 0.0 — scoring function may be a stub "
-                        "or ground truth resolver returns zero. "
+                        f"{quality_reason}. "
                         "Implement real scoring in scoring.py before deploying."
                     )
                 print(

@@ -62,6 +62,48 @@ class ScoreService:
         self.logger = logging.getLogger(__name__)
         self.stop_event = asyncio.Event()
 
+    # ── scoring stub detection ──
+
+    @staticmethod
+    def detect_scoring_stub(
+        scoring_function: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]],
+    ) -> tuple[bool, str]:
+        """Probe the scoring function with varied inputs to detect stubs.
+
+        Returns (is_stub, reason). A function that returns identical scores
+        for significantly different inputs is likely a placeholder.
+        """
+        test_cases = [
+            (
+                {"value": 1.0},
+                {"entry_price": 40000, "resolved_price": 40100, "return": 0.0025, "direction_up": True},
+            ),
+            (
+                {"value": -1.0},
+                {"entry_price": 40000, "resolved_price": 39900, "return": -0.0025, "direction_up": False},
+            ),
+            (
+                {"value": 0.5},
+                {"entry_price": 40000, "resolved_price": 40500, "return": 0.0125, "direction_up": True},
+            ),
+        ]
+
+        results = []
+        for pred, gt in test_cases:
+            try:
+                result = scoring_function(pred, gt)
+                results.append(result.get("value", 0.0))
+            except Exception:
+                return False, "scoring function raised an exception during probe"
+
+        if len(set(results)) <= 1:
+            return True, (
+                f"Scoring function returns identical value ({results[0]}) for all "
+                f"test inputs. This looks like a stub — implement real scoring logic."
+            )
+
+        return False, "ok"
+
     # ── typed output coercion ──
 
     def _coerce_output(self, raw: dict[str, Any]) -> dict[str, Any]:

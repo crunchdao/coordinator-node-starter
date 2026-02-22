@@ -275,10 +275,56 @@ class BacktestRunner:
         model,
         scoring_fn: Callable[[dict, dict], dict] | None = None,
         cache_dir: str = ".cache/backtest",
+        output_type: type[Any] | None = None,
     ):
         self.model = model
         self.scoring_fn = scoring_fn or _default_scoring_fn()
         self.cache_dir = Path(cache_dir)
+        self._output_type = output_type or self._load_output_type()
+
+    @staticmethod
+    def _load_output_type() -> type[Any]:
+        """Try to load InferenceOutput from the coordinator config."""
+        try:
+            from coordinator_node.crunch_config import InferenceOutput
+            return InferenceOutput
+        except ImportError:
+            return None
+
+    def _coerce_output(self, output: Any) -> dict[str, Any]:
+        """Coerce model output to a dict matching InferenceOutput schema.
+
+        Handles raw scalars, dicts, and Pydantic model instances.
+        Uses InferenceOutput field names instead of hardcoding {"value": ...}.
+        """
+        if isinstance(output, dict):
+            return output
+
+        # Try to use InferenceOutput schema to determine the first field name
+        if self._output_type is not None and hasattr(self._output_type, "model_fields"):
+            fields = list(self._output_type.model_fields.keys())
+            if fields:
+                return {fields[0]: output}
+
+        # Fallback for when no schema is available
+        return {"value": output}
+
+    def _coerce_error_output(self, exc: Exception) -> dict[str, Any]:
+        """Build a default output dict for a failed prediction.
+
+        Uses InferenceOutput default values instead of hardcoding {"value": 0.0}.
+        """
+        defaults: dict[str, Any] = {}
+        if self._output_type is not None and hasattr(self._output_type, "model_fields"):
+            try:
+                defaults = self._output_type().model_dump()
+            except Exception:
+                defaults = {"value": 0.0}
+        else:
+            defaults = {"value": 0.0}
+
+        defaults["_error"] = str(exc)
+        return defaults
 
     def run(
         self,
@@ -369,10 +415,9 @@ class BacktestRunner:
                         horizon_seconds=horizon_seconds,
                         step_seconds=prediction_interval_seconds,
                     )
-                    if not isinstance(output, dict):
-                        output = {"value": output}
+                    output = self._coerce_output(output)
                 except Exception as exc:
-                    output = {"value": 0.0, "_error": str(exc)}
+                    output = self._coerce_error_output(exc)
 
                 # Find actual outcome at horizon
                 resolve_ts = current_ts + horizon

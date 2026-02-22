@@ -61,6 +61,29 @@ def load_scheduled_prediction_configs() -> list[dict[str, Any]]:
     return payload
 
 
+def validate_scheduled_configs(configs: list[dict[str, Any]]) -> None:
+    """Validate timing constraints in scheduled prediction configs.
+
+    Catches misconfiguration at deploy time instead of silently scoring 0.
+    Raises ValueError if any active config has invalid timing.
+    """
+    for config in configs:
+        if not config.get("active", True):
+            continue
+
+        schedule = config.get("schedule") or {}
+        resolve_after = schedule.get("resolve_after_seconds", 0)
+        scope_key = config.get("scope_key", "<unknown>")
+
+        if resolve_after <= 0:
+            raise ValueError(
+                f"Config '{scope_key}': resolve_after_seconds={resolve_after} "
+                f"must be > 0. With resolve_after_seconds=0, predictions have no "
+                f"time window to accumulate feed data for ground truth. "
+                f"All scores will be 0."
+            )
+
+
 # ---------------------------------------------------------------------------
 # Alembic migrations directory resolution
 # ---------------------------------------------------------------------------
@@ -146,6 +169,9 @@ def migrate() -> None:
         print("➡️  No Alembic migrations directory found, using SQLModel create_all...")
         SQLModel.metadata.create_all(engine)
 
+    configs = load_scheduled_prediction_configs()
+    validate_scheduled_configs(configs)
+
     print("➡️  Upserting scheduled prediction configs...")
     with create_session() as session:
         # Drop FK temporarily so we can replace prediction configs
@@ -153,7 +179,7 @@ def migrate() -> None:
             "ALTER TABLE predictions DROP CONSTRAINT IF EXISTS predictions_prediction_config_id_fkey"
         ))
         session.exec(delete(PredictionConfigRow))
-        for idx, config in enumerate(load_scheduled_prediction_configs(), start=1):
+        for idx, config in enumerate(configs, start=1):
             envelope = ScheduledPredictionConfigEnvelope.model_validate(config)
             session.add(
                 PredictionConfigRow(
