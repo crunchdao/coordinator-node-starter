@@ -8,7 +8,8 @@ import logging
 import newrelic.agent
 import numpy
 import numpy as np
-from densitypdf import density_pdf
+# from densitypdf import density_pdf
+from condorgame_backend.services.density_pdf import density_pdf_vectorized
 
 from condorgame_backend.entities.leaderboard import Leaderboard
 from condorgame_backend.entities.model import ModelScore, Model, ModelScoreSnapshot
@@ -90,7 +91,8 @@ def crps_integral(density_dict, x, t_min=-4000, t_max=4000, num_points=CRPS_BOUN
     dt = ts[1] - ts[0]
 
     # Vectorized PDF computation
-    pdfs = np.array([density_pdf(density_dict, t) for t in ts], dtype=float)
+    # pdfs = np.array([density_pdf(density_dict, t) for t in ts], dtype=float)
+    pdfs = density_pdf_vectorized(density_dict, ts)
 
     # Build CDF by cumulative integration
     cdfs = np.cumsum(pdfs) * dt
