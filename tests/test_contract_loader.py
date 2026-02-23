@@ -111,6 +111,44 @@ class TestLoadConfig(unittest.TestCase):
         self.assertIsNot(c1, c2)
 
 
+class TestPredictionScopeValidation(unittest.TestCase):
+    """PredictionScope must accept horizon_seconds=0 for order-based competitions."""
+
+    def test_horizon_zero_accepted(self):
+        from coordinator_node.crunch_config import PredictionScope
+        scope = PredictionScope(horizon_seconds=0)
+        self.assertEqual(scope.horizon_seconds, 0)
+
+    def test_horizon_negative_rejected(self):
+        from coordinator_node.crunch_config import PredictionScope
+        from pydantic import ValidationError
+        with self.assertRaises(ValidationError):
+            PredictionScope(horizon_seconds=-1)
+
+
+class TestTryLoadValidationError(unittest.TestCase):
+    """_try_load must log a warning (not debug) when instantiation fails."""
+
+    def test_validation_error_logs_warning(self):
+        """A config class whose __init__ raises should produce a warning log."""
+        mod = types.ModuleType("_test_bad_config")
+
+        class BadConfig:
+            def __init__(self):
+                raise ValueError("bad config value")
+
+        mod.BadConfig = BadConfig
+        sys.modules["_test_bad_config"] = mod
+
+        try:
+            with self.assertLogs("coordinator_node.config_loader", level="WARNING") as cm:
+                result = _try_load("_test_bad_config:BadConfig")
+            self.assertIsNone(result)
+            self.assertTrue(any("bad config value" in msg for msg in cm.output))
+        finally:
+            del sys.modules["_test_bad_config"]
+
+
 class TestBackwardCompat(unittest.TestCase):
     """Verify old import paths still work."""
 

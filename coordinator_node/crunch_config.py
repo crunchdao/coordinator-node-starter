@@ -115,11 +115,13 @@ class PredictionScope(BaseModel):
         ),
     )
     horizon_seconds: int = Field(
-        default=60, ge=1,
+        default=60, ge=0,
         description=(
             "How far into the future the model predicts (seconds). "
             "Ground truth is resolved after this window elapses. "
-            "Example: 60 means 'predict what happens in the next 60 seconds'."
+            "Example: 60 means 'predict what happens in the next 60 seconds'. "
+            "Use 0 for order-based or immediate-scoring competitions "
+            "where a forward-looking horizon is not applicable."
         ),
     )
     step_seconds: int = Field(

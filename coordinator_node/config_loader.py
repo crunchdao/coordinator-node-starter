@@ -101,7 +101,14 @@ def _try_load(path: str) -> Any:
     except (ImportError, AttributeError):
         return None
     except Exception as exc:
-        logger.debug("Failed to load config from %s: %s", path, exc)
+        # Surface validation errors (e.g. Pydantic) loudly — they indicate
+        # a real misconfiguration that must not be silently swallowed.
+        logger.warning(
+            "Failed to load config from %s: %s: %s",
+            path,
+            type(exc).__name__,
+            exc,
+        )
         return None
 
 
