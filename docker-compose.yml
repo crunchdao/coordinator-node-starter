@@ -222,7 +222,7 @@ services:
         "--rebuild",
         "if-code-modified",
       ]
-    networks: [backend]
+    networks: [backend, frontend]
 
   report-ui:
     build:
