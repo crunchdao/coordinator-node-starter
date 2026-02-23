@@ -23,6 +23,9 @@ logs:
 test:
 	PYTHONPATH=base/challenge:base/node uv run python -m pytest tests/ -x -q
 
+test-e2e:
+	bash tests/test_e2e_ui_smoke.sh
+
 # Database migrations (Alembic)
 migrate:
 	$(COMPOSE) run --rm init-db
