@@ -142,16 +142,35 @@ class DbPredictionRepository(PredictionRepository):
             return None
         return self._row_to_domain(row)
 
-    def fetch_ready_to_score(self) -> list[Prediction]:
-        stmt = (
-            select(PredictionRow)
-            .where(PredictionRow.resolvable_at.isnot(None))
-            .where(PredictionRow.resolvable_at <= datetime.now(timezone.utc))  # Fix comparison operator
-            .where(PredictionRow.score_scored_at.is_(None))
-            .order_by(PredictionRow.resolvable_at.asc())
-        )
-        rows = self._session.exec(stmt).all()
-        return [self._row_to_domain(row) for row in rows]
+    def fetch_ready_to_score(self, limit: int = 10) -> list[Prediction]:
+        now = datetime.now(timezone.utc)
+
+        # Limit by number of GROUPS, not individual predictions
+        # Group key: (asset, horizon, steps, performed_at)
+        sql = text("""
+            WITH limited_groups AS (
+                SELECT DISTINCT asset, horizon, steps, performed_at
+                FROM predictions
+                WHERE resolvable_at IS NOT NULL
+                  AND resolvable_at <= :now
+                  AND score_scored_at IS NULL
+                ORDER BY performed_at ASC
+                LIMIT :limit
+            )
+            SELECT p.*
+            FROM predictions p
+            INNER JOIN limited_groups lg
+                ON p.asset = lg.asset
+                AND p.horizon = lg.horizon
+                AND p.steps = lg.steps
+                AND p.performed_at = lg.performed_at
+            WHERE p.resolvable_at IS NOT NULL
+              AND p.resolvable_at <= :now
+              AND p.score_scored_at IS NULL
+            ORDER BY p.resolvable_at ASC
+        """).bindparams(now=now, limit=limit)
+        rows = self._session.connection().execute(sql).fetchall()
+        return [self._row_to_domain(PredictionRow(**dict(row._mapping))) for row in rows]
 
     def _save(self, prediction: Prediction, commit=True) -> None:
 

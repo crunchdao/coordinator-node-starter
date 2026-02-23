@@ -108,17 +108,20 @@ def crps_integral(density_dict, x, t_min=-4000, t_max=4000, num_points=CRPS_BOUN
     return float(trapezoid(integrand, ts))
 
 
-def _crps_worker(task: tuple) -> float:
+def _crps_worker(task: tuple) -> float | None:
     """Worker function for parallel CRPS computation.
 
     Args:
         task: (density_dict, delta, t_min, t_max, num_points)
 
     Returns:
-        CRPS value as float
+        CRPS value as float, or None if computation fails
     """
-    density_dict, delta, t_min, t_max, num_points = task
-    return crps_integral(density_dict, delta, t_min, t_max, num_points)
+    try:
+        density_dict, delta, t_min, t_max, num_points = task
+        return crps_integral(density_dict, delta, t_min, t_max, num_points)
+    except Exception:
+        return None
 
 
 # Process pool for parallel CRPS computation
@@ -201,15 +204,25 @@ class ScoreService:
     def score_predictions(self) -> bool:
         """
         Loop over cached predictions and score them using the `density_pdf` function.
+        Fetches in batches until no more predictions are ready to score.
         """
         self.logger.info("Scoring predictions.")
-        predictions = self.prediction_repository.fetch_ready_to_score()
-        if len(predictions) == 0:
+        total_scored = 0
+
+        while True:
+            predictions = self.prediction_repository.fetch_ready_to_score(limit=10)
+            if len(predictions) == 0:
+                break
+
+            self.logger.info(f"Fetched {len(predictions)} predictions to score.")
+            self._score_predictions(predictions)
+            total_scored += len(predictions)
+
+        if total_scored == 0:
             self.logger.info("No predictions to score.")
             return False
 
-        self._score_predictions(predictions)
-
+        self.logger.info(f"Scored {total_scored} predictions in total.")
         return True
 
     def _score_predictions(self, predictions: list[Prediction]):
@@ -342,6 +355,11 @@ class ScoreService:
             if crps_tasks:
                 pool = _get_process_pool()
                 crps_results = list(pool.map(_crps_worker, crps_tasks))
+
+                # Check for failed computations (None values)
+                if any(r is None for r in crps_results):
+                    return PredictionScore(None, False, "Scoring error: one or more CRPS computations failed")
+
                 total_score = sum(crps_results)
 
             # Normalize by asset-specific scale (keep scores comparable across asset)

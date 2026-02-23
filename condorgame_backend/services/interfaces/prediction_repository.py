@@ -33,7 +33,7 @@ class PredictionRepository(ABC):
         pass
 
     @abstractmethod
-    def fetch_ready_to_score(self) -> list[Prediction]:
+    def fetch_ready_to_score(self, limit: int = 10) -> list[Prediction]:
         pass
 
     @abstractmethod
