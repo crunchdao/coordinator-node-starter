@@ -126,6 +126,50 @@ class TestPredictionScopeValidation(unittest.TestCase):
             PredictionScope(horizon_seconds=-1)
 
 
+class TestAggregationWindowSchema(unittest.TestCase):
+    """AggregationWindow accepts only `hours` — rejects stale scaffold fields."""
+
+    def test_hours_only(self):
+        from coordinator_node.crunch_config import AggregationWindow
+        w = AggregationWindow(hours=24)
+        self.assertEqual(w.hours, 24)
+
+    def test_rejects_name_and_seconds(self):
+        """Scaffold bug #2: AggregationWindow(name='pnl_24h', seconds=86400)."""
+        from coordinator_node.crunch_config import AggregationWindow
+        from pydantic import ValidationError
+        with self.assertRaises(ValidationError):
+            AggregationWindow(name="pnl_24h", seconds=86400)
+
+    def test_rejects_extra_fields_even_with_hours(self):
+        from coordinator_node.crunch_config import AggregationWindow
+        from pydantic import ValidationError
+        with self.assertRaises(ValidationError):
+            AggregationWindow(hours=24, name="pnl_24h", seconds=86400)
+
+
+class TestAggregationSchema(unittest.TestCase):
+    """Aggregation.windows must be a dict, ranking field is ranking_direction."""
+
+    def test_windows_dict_accepted(self):
+        from coordinator_node.crunch_config import Aggregation, AggregationWindow
+        agg = Aggregation(windows={"w1": AggregationWindow(hours=12)})
+        self.assertIn("w1", agg.windows)
+
+    def test_rejects_ranking_order(self):
+        """Scaffold bug #4: ranking_order='desc' instead of ranking_direction."""
+        from coordinator_node.crunch_config import Aggregation
+        from pydantic import ValidationError
+        with self.assertRaises(ValidationError):
+            Aggregation(ranking_order="desc")
+
+    def test_rejects_extra_fields(self):
+        from coordinator_node.crunch_config import Aggregation
+        from pydantic import ValidationError
+        with self.assertRaises(ValidationError):
+            Aggregation(bogus="value")
+
+
 class TestTryLoadValidationError(unittest.TestCase):
     """_try_load must log a warning (not debug) when instantiation fails."""
 

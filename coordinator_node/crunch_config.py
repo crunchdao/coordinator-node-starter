@@ -167,13 +167,24 @@ class CallMethodConfig(BaseModel):
 
 
 class AggregationWindow(BaseModel):
-    """A rolling time window for score aggregation."""
+    """A rolling time window for score aggregation.
+
+    Only ``hours`` is accepted.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     hours: int = Field(ge=1)
 
 
 class Aggregation(BaseModel):
-    """How scores are rolled up per model and how the leaderboard is ranked."""
+    """How scores are rolled up per model and how the leaderboard is ranked.
+
+    ``windows`` is a **dict** keyed by window name
+    The ranking field is ``ranking_direction``
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     windows: dict[str, AggregationWindow] = Field(default_factory=lambda: {
         "score_recent": AggregationWindow(hours=24),
