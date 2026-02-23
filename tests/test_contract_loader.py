@@ -21,8 +21,9 @@ class TestTryLoad(unittest.TestCase):
         sys.modules["_test_config_mod"] = mod
 
         try:
-            result = _try_load("_test_config_mod:CrunchConfig")
-            self.assertIsInstance(result, CustomConfig)
+            config, found = _try_load("_test_config_mod:CrunchConfig")
+            self.assertIsInstance(config, CustomConfig)
+            self.assertTrue(found)
         finally:
             del sys.modules["_test_config_mod"]
 
@@ -35,19 +36,22 @@ class TestTryLoad(unittest.TestCase):
         sys.modules["_test_config_inst"] = mod
 
         try:
-            result = _try_load("_test_config_inst:CONTRACT")
-            self.assertIs(result, instance)
-            self.assertEqual(result.metrics, ["ic"])
+            config, found = _try_load("_test_config_inst:CONTRACT")
+            self.assertIs(config, instance)
+            self.assertTrue(found)
+            self.assertEqual(config.metrics, ["ic"])
         finally:
             del sys.modules["_test_config_inst"]
 
-    def test_missing_module_returns_none(self):
-        result = _try_load("nonexistent_module_xyz:CrunchConfig")
-        self.assertIsNone(result)
+    def test_missing_module_returns_none_not_found(self):
+        config, found = _try_load("nonexistent_module_xyz:CrunchConfig")
+        self.assertIsNone(config)
+        self.assertFalse(found)
 
-    def test_missing_attribute_returns_none(self):
-        result = _try_load("coordinator_node.crunch_config:NonExistentClass")
-        self.assertIsNone(result)
+    def test_missing_attribute_returns_none_not_found(self):
+        config, found = _try_load("coordinator_node.crunch_config:NonExistentClass")
+        self.assertIsNone(config)
+        self.assertFalse(found)
 
 
 class TestLoadConfig(unittest.TestCase):
@@ -173,8 +177,9 @@ class TestAggregationSchema(unittest.TestCase):
 class TestTryLoadValidationError(unittest.TestCase):
     """_try_load must log a warning (not debug) when instantiation fails."""
 
-    def test_validation_error_logs_warning(self):
-        """A config class whose __init__ raises should produce a warning log."""
+    def test_validation_error_logs_warning_and_reports_found(self):
+        """A config class whose __init__ raises should produce a warning log
+        and return found=True so the caller knows the module existed."""
         mod = types.ModuleType("_test_bad_config")
 
         class BadConfig:
@@ -186,11 +191,56 @@ class TestTryLoadValidationError(unittest.TestCase):
 
         try:
             with self.assertLogs("coordinator_node.config_loader", level="WARNING") as cm:
-                result = _try_load("_test_bad_config:BadConfig")
-            self.assertIsNone(result)
+                config, found = _try_load("_test_bad_config:BadConfig")
+            self.assertIsNone(config)
+            self.assertTrue(found)
             self.assertTrue(any("bad config value" in msg for msg in cm.output))
         finally:
             del sys.modules["_test_bad_config"]
+
+
+class TestResolveConfigFallbackMessage(unittest.TestCase):
+    """When an operator override is found but broken, the fallback message
+    must say so — not 'no operator override found'."""
+
+    def setUp(self):
+        reset_cache()
+
+    def tearDown(self):
+        reset_cache()
+        # Clean up injected module
+        sys.modules.pop("runtime_definitions", None)
+        sys.modules.pop("runtime_definitions.crunch_config", None)
+
+    def test_fallback_warns_when_override_exists_but_broken(self):
+        """Inject a broken runtime_definitions.crunch_config and verify the
+        fallback message mentions it failed, not 'no override found'."""
+        # Create runtime_definitions package
+        pkg = types.ModuleType("runtime_definitions")
+        pkg.__path__ = []
+        sys.modules["runtime_definitions"] = pkg
+
+        # Create crunch_config submodule with a broken CrunchConfig
+        mod = types.ModuleType("runtime_definitions.crunch_config")
+
+        class BrokenConfig:
+            def __init__(self):
+                raise ValueError("broken scope")
+
+        mod.CrunchConfig = BrokenConfig
+        sys.modules["runtime_definitions.crunch_config"] = mod
+
+        with self.assertLogs("coordinator_node.config_loader", level="WARNING") as cm:
+            config = load_config()
+
+        # Should still get a working config (engine default)
+        from coordinator_node.crunch_config import CrunchConfig
+        self.assertIsInstance(config, CrunchConfig)
+
+        # The WARNING must mention the failed path, not "no override found"
+        all_output = "\n".join(cm.output)
+        self.assertIn("runtime_definitions.crunch_config", all_output)
+        self.assertIn("failed to instantiate", all_output)
 
 
 class TestBackwardCompat(unittest.TestCase):

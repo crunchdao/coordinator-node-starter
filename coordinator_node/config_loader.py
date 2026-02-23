@@ -50,36 +50,51 @@ def _resolve_config() -> Any:
         # Backward compat
         explicit = os.getenv("CONTRACT_MODULE", "").strip()
     if explicit:
-        config = _try_load(explicit)
+        config, found = _try_load(explicit)
         if config is not None:
             logger.info("Loaded config from CRUNCH_CONFIG_MODULE=%s", explicit)
             return config
         logger.warning("CRUNCH_CONFIG_MODULE=%s failed to load, trying fallbacks", explicit)
 
     # 2. Operator's runtime_definitions (try multiple conventions)
+    failed_paths: list[str] = []
     for path in [
         "runtime_definitions.contracts:CrunchConfig",
         "runtime_definitions.contracts:CrunchContract",  # backward compat
         "runtime_definitions.contracts:CONTRACT",
         "runtime_definitions.crunch_config:CrunchConfig",
     ]:
-        config = _try_load(path)
+        config, found = _try_load(path)
         if config is not None:
             logger.info("Loaded config from %s", path)
             return config
+        if found:
+            failed_paths.append(path)
 
     # 3. Engine default
     from coordinator_node.crunch_config import CrunchConfig
-    logger.info("Using default CrunchConfig (no operator override found)")
+    if failed_paths:
+        logger.warning(
+            "Operator config found at %s but failed to instantiate — "
+            "falling back to engine default CrunchConfig. "
+            "Fix the validation errors above.",
+            ", ".join(failed_paths),
+        )
+    else:
+        logger.info("Using default CrunchConfig (no operator override found)")
     return CrunchConfig()
 
 
-def _try_load(path: str) -> Any:
+def _try_load(path: str) -> tuple[Any, bool]:
     """Try to import a config from a dotted path.
 
+    Returns ``(config, found)`` where *found* is True when the module and
+    attribute exist but instantiation failed (validation error, etc.).
+    This lets the caller distinguish "not installed" from "broken config".
+
     Supports two forms:
-    - `module.path:ClassName` — instantiates the class
-    - `module.path:INSTANCE` — uses the object directly
+    - ``module.path:ClassName`` — instantiates the class
+    - ``module.path:INSTANCE`` — uses the object directly
     """
     try:
         if ":" in path:
@@ -93,13 +108,13 @@ def _try_load(path: str) -> Any:
 
         # If it's a class, instantiate it
         if isinstance(target, type):
-            return target()
+            return target(), True
 
         # If it's already an instance, use it directly
-        return target
+        return target, True
 
     except (ImportError, AttributeError):
-        return None
+        return None, False
     except Exception as exc:
         # Surface validation errors (e.g. Pydantic) loudly — they indicate
         # a real misconfiguration that must not be silently swallowed.
@@ -109,7 +124,7 @@ def _try_load(path: str) -> Any:
             type(exc).__name__,
             exc,
         )
-        return None
+        return None, True
 
 
 def reset_cache() -> None:
