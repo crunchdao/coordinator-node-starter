@@ -1,7 +1,9 @@
 import asyncio
 import math
+import os
 import signal
 import traceback
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timedelta, timezone
 import logging
 
@@ -84,7 +86,7 @@ def crps_integral(density_dict, x, t_min=-4000, t_max=4000, num_points=CRPS_BOUN
     - single PDF evaluation per grid point
     - cumulative sum to get CDF
 
-    CRPS quantifies the accuracy of probabilistic forecasts by measuring the squared distance 
+    CRPS quantifies the accuracy of probabilistic forecasts by measuring the squared distance
     between the forecast CDF and the observed indicator function.
     """
     ts = np.linspace(t_min, t_max, num_points)
@@ -104,6 +106,33 @@ def crps_integral(density_dict, x, t_min=-4000, t_max=4000, num_points=CRPS_BOUN
     # Integrate squared error
     integrand = (cdfs - indicators) ** 2
     return float(trapezoid(integrand, ts))
+
+
+def _crps_worker(task: tuple) -> float:
+    """Worker function for parallel CRPS computation.
+
+    Args:
+        task: (density_dict, delta, t_min, t_max, num_points)
+
+    Returns:
+        CRPS value as float
+    """
+    density_dict, delta, t_min, t_max, num_points = task
+    return crps_integral(density_dict, delta, t_min, t_max, num_points)
+
+
+# Process pool for parallel CRPS computation
+_process_pool: ProcessPoolExecutor | None = None
+
+
+def _get_process_pool() -> ProcessPoolExecutor:
+    """Get or create the process pool for CRPS computation."""
+    global _process_pool
+    if _process_pool is None:
+        num_workers = os.cpu_count() - 1
+        logging.getLogger(__name__).info(f"Initializing CRPS process pool with {num_workers} workers")
+        _process_pool = ProcessPoolExecutor(max_workers=num_workers)
+    return _process_pool
 
 
 class ScoreService:
@@ -189,6 +218,7 @@ class ScoreService:
             key = (prediction.params, prediction.performed_at)
             grouped_predictions.setdefault(key, []).append(prediction)
 
+        # process_prediction_scoring(
         for group_key, group_predictions in grouped_predictions.items():
             group_failed = 0
 
@@ -267,7 +297,6 @@ class ScoreService:
 
     def score_prediction(self, prediction: Prediction):
         total_score = 0.0
-        # step = prediction.params.step
         ts = prediction.resolvable_at.timestamp()
         asset = prediction.params.asset
 
@@ -275,19 +304,16 @@ class ScoreService:
             return PredictionScore(None, False, f"Prediction failed: {prediction.status.name.lower()}")
 
         try:
-            # Score predictions at each temporal resolution independently
+            # Phase 1: Prepare all CRPS tasks (price lookups in main process)
+            crps_tasks = []
+
             for step in prediction.params.steps:
                 density_prediction = prediction.distributions[str(step)]
-
-                # Get timestamp of the first prediction step
                 ts_rolling = ts - step * (len(density_prediction) - 1)
 
-                scores_step = []
-
                 for i in range(len(density_prediction)):
-
-                    current_price_data = self.prices_cache.get_closest_price(asset, ts_rolling)
-                    previous_price_data = self.prices_cache.get_closest_price(asset, ts_rolling - step)
+                    current_price_data = self.prices_cache.get_closest_price(asset, int(ts_rolling))
+                    previous_price_data = self.prices_cache.get_closest_price(asset, int(ts_rolling - step))
 
                     ts_rolling += step
 
@@ -299,20 +325,24 @@ class ScoreService:
                     ts_prev, price_prev = previous_price_data
 
                     if ts_current != ts_prev:
-                        delta = (price_current - price_prev)
-
-                        # Step-dependent scaling coefficient for CRPS bounds
                         K = np.sqrt(step / CRPS_BOUNDS["base_step"]) if step > CRPS_BOUNDS["base_step"] else 1
+                        t_bound = K * CRPS_BOUNDS["t"][asset]
 
-                        crps_value = crps_integral(
-                            density_dict=density_prediction[i],
-                            x=delta,
-                            t_min=-K * CRPS_BOUNDS["t"][asset],
-                            t_max=K * CRPS_BOUNDS["t"][asset],
-                        )
-                        scores_step.append(crps_value)
+                        delta = price_current - price_prev
+                        # Task: (density_dict, delta, t_min, t_max, num_points)
+                        crps_tasks.append((
+                            density_prediction[i],
+                            delta,
+                            -t_bound,
+                            t_bound,
+                            CRPS_BOUNDS["num_points"]
+                        ))
 
-                total_score += np.sum(scores_step)
+            # Phase 2: Execute CRPS computations in parallel
+            if crps_tasks:
+                pool = _get_process_pool()
+                crps_results = list(pool.map(_crps_worker, crps_tasks))
+                total_score = sum(crps_results)
 
             # Normalize by asset-specific scale (keep scores comparable across asset)
             total_score = total_score / CRPS_BOUNDS["t"][asset]
