@@ -43,14 +43,7 @@ class FeedDataSettings:
             retention_check_seconds=int(os.getenv("FEED_RETENTION_CHECK_SECONDS", os.getenv("MARKET_RETENTION_CHECK_SECONDS", "3600"))),
         )
 
-    @property
-    def microstructure_enabled(self) -> bool:
-        """True when running against a provider that supports depth/funding feeds."""
-        return self.source in ("binance",)
 
-    @property
-    def microstructure_poll_seconds(self) -> float:
-        return float(os.getenv("FEED_MICRO_POLL_SECONDS", "5"))
 
 
 class FeedDataService:
@@ -90,21 +83,10 @@ class FeedDataService:
 
         retention_task = asyncio.create_task(self._retention_loop())
 
-        # Start microstructure polling (depth + funding) if supported
-        micro_task = None
-        if self.settings.microstructure_enabled:
-            micro_task = asyncio.create_task(self._microstructure_loop(feed))
-            self.logger.info(
-                "microstructure feed started (depth + funding) poll_seconds=%.1f",
-                self.settings.microstructure_poll_seconds,
-            )
-
         try:
             await self.stop_event.wait()
         finally:
             retention_task.cancel()
-            if micro_task is not None:
-                micro_task.cancel()
             for item in self._handles:
                 try:
                     await item.stop()
@@ -155,31 +137,6 @@ class FeedDataService:
                     )
                 )
                 self.logger.info("backfill subject=%s wrote=%d", subject, written)
-
-    async def _microstructure_loop(self, feed) -> None:
-        """Poll order book depth and funding rate data alongside primary feed."""
-        poll_seconds = self.settings.microstructure_poll_seconds
-        micro_kinds = ("depth", "funding")
-        micro_sink = _RepositorySink(self.feed_record_repository, label="micro")
-
-        while not self.stop_event.is_set():
-            for kind in micro_kinds:
-                try:
-                    req = FeedFetchRequest(
-                        subjects=self.settings.subjects,
-                        kind=kind,
-                        granularity=self.settings.granularity,
-                        limit=1,
-                    )
-                    records = await feed.fetch(req)
-                    for record in records:
-                        await micro_sink.on_record(record)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    self.logger.debug("microstructure %s fetch error: %s", kind, exc)
-
-            await asyncio.sleep(max(1.0, poll_seconds))
 
     async def _retention_loop(self) -> None:
         while not self.stop_event.is_set():
