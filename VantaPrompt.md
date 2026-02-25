@@ -43,6 +43,24 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
    ground truth. No feed query. Raises `RuntimeError` if `input_repository` is None
    (misconfiguration). Skips with warning if the input record is missing.
 
+ ### Aggregation
+ - `Aggregation.value_field` (default `"value"`) — the score field name to extract from
+   each snapshot's `result_summary` for windowed averaging. Must match a numeric key in
+   your ScoreResult type.
+ - `Aggregation.ranking_key` — which key in the final metrics dict to rank by. Can be a
+   window name (e.g. `"pnl_24h"`) or a score field name (e.g. `"net_pnl"`).
+ - Windows average `value_field` over their time range. Latest snapshot's numeric fields
+   are also merged into the leaderboard metrics, so custom score fields appear automatically.
+
+ ### Scoring → Snapshots → Leaderboard data flow
+ 1. `scoring_function(prediction, ground_truth)` → returns dict matching `score_type`
+ 2. `score_type.model_validate(result)` → `ScoreRecord.result` (JSONB)
+ 3. `aggregate_snapshot([results...])` → averages all numeric fields → `SnapshotRecord.result_summary`
+ 4. `_aggregate_from_snapshots()` → reads `value_field` from each snapshot for windows,
+    merges latest snapshot's numeric fields → leaderboard `metrics` dict
+ 5. `auto_report_schema()` → introspects `score_type.model_fields` → auto-generates
+    leaderboard columns for all numeric fields not already covered by windows
+
  ### Naming
  - `resolve_horizon_seconds` (not `resolve_after_seconds` or `horizon_seconds`)
  - `prediction_interval_seconds` (not `step_seconds` for scheduling)
@@ -73,7 +91,7 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
        __init__.py
        types.py                        # Order, Position, Candle, MarketData dataclasses
        tracker.py                      # TrackerBase with trade() interface
-       scoring.py                      # score_prediction() + risk metric functions
+       scoring.py                      # score_prediction() passthrough
        config.py                       # package metadata
 
    node/                               # coordinator infrastructure
@@ -281,7 +299,7 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
 
  ────────────────────────────────────────────────────────────────────────────────
 
- 6. Scoring — challenge/vanta/scoring.py
+ 6. Scoring & Snapshots
 
  ### Stateful scoring function
 
@@ -290,7 +308,8 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
 
  The score worker calls `scoring_function(prediction, ground_truth)` where:
  - `prediction` is the model's order dict (`VantaOutput` shape + injected `model_id`)
- - `ground_truth` is the latest feed data (current prices from `resolve_ground_truth`)
+ - `ground_truth` is the latest feed data (current prices from `InputRecord.raw_data`
+   for `resolve_horizon_seconds=0`)
 
  The scoring function does ALL the work:
  1. Extracts the order from `prediction` (action, trade_pair, leverage)
@@ -309,9 +328,6 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
 
      def __call__(self, prediction: dict, ground_truth: dict) -> dict:
          model_id = prediction["model_id"]
-
-         # ground_truth IS the raw input (VantaInput shape) for horizon=0.
-         # Extract latest close price from candles.
          prices = {}
          for candle in ground_truth.get("candles_1m", []):
              prices[ground_truth.get("symbol", "BTCUSDT")] = candle.get("close", 0.0)
@@ -333,23 +349,65 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
  This callable is instantiated once at worker startup and passed to `ScoreService`.
  The PositionManager maintains state across all scoring cycles.
 
- ### Risk metrics (secondary, all at 0% weight but computed):
+ ### VantaScore — what goes into each ScoreRecord
 
- All take list[float] of daily returns:
+ ```python
+ class VantaScore(ScoreResult):
+     """Point-in-time portfolio snapshot from PositionManager."""
+     value: float = 0.0              # = net_pnl (primary score value)
+     net_pnl: float = 0.0            # gross_pnl - total_fees
+     open_positions: int = 0          # count of open positions
+     total_leverage: float = 0.0      # sum of leverage across open positions
+     total_trades: int = 0            # cumulative closed position count
+     # internal fields (not displayed in leaderboard)
+     order_accepted: bool = False
+     order_rejected_reason: str | None = None
+     success: bool = True
+     failed_reason: str | None = None
+ ```
 
- - avg_daily_pnl(daily_returns) — recency-weighted mean (aggressive: half-life 15d)
- - calmar_ratio(daily_returns, max_drawdown) — annualized return / max DD, minus risk-free rate
- - sharpe_ratio(daily_returns) — annualized excess return / vol (1% vol floor)
- - omega_ratio(daily_returns) — Σ positive / |Σ negative| (1% floor)
- - sortino_ratio(daily_returns) — annualized excess return / downside vol (1% floor)
- - t_statistic(daily_returns) — mean / (std / √n)
+ Only 4 fields shown in the leaderboard: **PnL, Open Positions, Total Leverage, Total Trades**.
+ Sharpe ratio deferred — requires rolling window over historical snapshots, not a point-in-time field.
 
- ### Recency weighting:
+ ### Snapshots — what goes into each SnapshotRecord
 
- - Aggressive (for PnL): half-life 15 days → 10d=40%, 30d=70%, 70d=87%
- - Standard (for ratios): half-life 25 days → 10d=25%, 30d=50%, 70d=75%
+ Each score cycle, `aggregate_snapshot([score_results...])` averages all numeric fields
+ from that cycle's VantaScore results. For Vanta with `resolve_horizon_seconds=0`, there's
+ typically one score result per model per cycle, so the snapshot IS the score.
 
- RISK_FREE_RATE from env var (default 0.05 = 5% T-bill).
+ `SnapshotRecord.result_summary` contains:
+ ```json
+ {"value": 0.05, "net_pnl": 0.05, "open_positions": 1.0, "total_leverage": 1.5, "total_trades": 3.0, ...}
+ ```
+
+ This is the authoritative data source for the leaderboard and all report endpoints.
+
+ ### Leaderboard — how snapshots become rankings
+
+ `_aggregate_from_snapshots()` processes all snapshots per model:
+ 1. For each window (pnl_24h, pnl_72h, pnl_7d): average `value_field` (`"net_pnl"`)
+    from snapshots within the window's time range
+ 2. Merge ALL numeric fields from the latest snapshot (so `open_positions`,
+    `total_leverage`, `total_trades` appear directly)
+ 3. Rank by `ranking_key` (`"net_pnl"` — from latest snapshot, not a window)
+
+ `auto_report_schema()` introspects `VantaScore.model_fields` and auto-generates
+ leaderboard columns for all numeric fields not already covered by windows.
+
+ ### What the leaderboard shows
+
+ | Column          | Source                        | Type     |
+ |-----------------|-------------------------------|----------|
+ | Model           | model_id                      | MODEL    |
+ | PnL 24h         | window avg of net_pnl (24h)   | VALUE    |
+ | PnL 72h         | window avg of net_pnl (72h)   | VALUE    |
+ | PnL 7d          | window avg of net_pnl (7d)    | VALUE    |
+ | Net Pnl         | latest snapshot                | VALUE    |
+ | Open Positions  | latest snapshot                | VALUE    |
+ | Total Leverage  | latest snapshot                | VALUE    |
+ | Total Trades    | latest snapshot                | VALUE    |
+
+ Ranking: descending by `net_pnl` from latest snapshot.
 
  ────────────────────────────────────────────────────────────────────────────────
 
@@ -364,7 +422,6 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
  from coordinator_node.crunch_config import (
      CrunchConfig as BaseCrunchConfig,
      RawInput,
-     InferenceOutput as BaseInferenceOutput,
      ScoreResult as BaseScoreResult,
      PredictionScope,
      ScheduledPrediction,
@@ -387,22 +444,18 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
 
  class VantaOutput(BaseModel):
      """What models return — an order (or null fields for no action)."""
+     model_config = ConfigDict(extra="allow")
      action: str = "FLAT"          # LONG, SHORT, FLAT
      trade_pair: str = "BTCUSDT"
      leverage: float = 0.0
 
 
  class VantaScore(BaseScoreResult):
-     """What scoring produces — portfolio snapshot."""
-     portfolio_value: float = 0.0
-     unrealized_pnl: float = 0.0
-     realized_pnl: float = 0.0
-     total_fees: float = 0.0
-     gross_pnl: float = 0.0
-     net_pnl: float = 0.0
-     drawdown_pct: float = 0.0
-     portfolio_leverage: float = 0.0
-     open_positions: int = 0
+     """Point-in-time portfolio snapshot from PositionManager."""
+     net_pnl: float = 0.0            # gross_pnl - total_fees (= value)
+     open_positions: int = 0          # count of open positions
+     total_leverage: float = 0.0      # sum of leverage across open positions
+     total_trades: int = 0            # cumulative closed position count
      order_accepted: bool = False
      order_rejected_reason: str | None = None
 
@@ -413,9 +466,12 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
      input_type: type[BaseModel] = VantaInput       # models get raw feed
      output_type: type[BaseModel] = VantaOutput
      score_type: type[BaseModel] = VantaScore
-     # ground_truth_type stays default — just latest price for mark-to-market
+     # ground_truth_type stays default — for horizon=0, raw_data is used directly
 
-     # Prediction schedules (replaces scheduled_prediction_configs.json)
+     # Stateful scoring (takes precedence over SCORING_FUNCTION env var)
+     scoring_function: Any = Field(default_factory=VantaScoringFunction)
+
+     # Prediction schedules
      scheduled_predictions: list[ScheduledPrediction] = Field(
          default_factory=lambda: [
              ScheduledPrediction(
@@ -427,7 +483,7 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
          ],
      )
 
-     # Aggregation windows
+     # Aggregation — windowed PnL + leaderboard ranking
      aggregation: Aggregation = Field(
          default_factory=lambda: Aggregation(
              windows={
@@ -435,7 +491,8 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
                  "pnl_72h": AggregationWindow(hours=72),
                  "pnl_7d": AggregationWindow(hours=168),
              },
-             ranking_key="net_pnl",
+             value_field="net_pnl",        # score field to average in windows
+             ranking_key="net_pnl",         # rank by latest snapshot's net_pnl
              ranking_direction="desc",
          )
      )
@@ -443,29 +500,29 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
      scope: PredictionScope = Field(
          default_factory=lambda: PredictionScope(subject="BTCUSDT", step_seconds=60)
      )
+
+     # No default metrics (ic, hit_rate, etc.) — not applicable for trading
+     metrics: list[str] = []
  ```
 
  ### How the types flow through the system:
 
  1. **Feed → Input**: `predict.py` calls `VantaInput.model_validate(raw_feed_dict)` — blows up if feed data is wrong shape. Saved to `inputs.raw_data_jsonb`.
  2. **Model output → Prediction**: `predict.py` calls `VantaOutput.model_validate(output)` — catches models returning wrong schema. Saved to `predictions.inference_output_jsonb`.
- 3. **Ground truth → Scoring**: `score.py` calls `ground_truth_type.model_validate(actuals)` on resolved feed data.
+ 3. **Ground truth → Scoring**: For horizon=0, score worker passes `InputRecord.raw_data` directly as ground truth. No validation through `ground_truth_type` — the data is already validated VantaInput.
  4. **Scoring result → Score**: `score.py` calls `VantaScore.model_validate(result)` — guarantees all portfolio fields present. Saved to `scores.result_jsonb`.
+ 5. **Score → Snapshot**: `aggregate_snapshot([results])` averages numeric fields → `snapshots.result_summary_jsonb`.
+ 6. **Snapshot → Leaderboard**: `_aggregate_from_snapshots()` reads `value_field` from snapshots for windows, merges latest numeric fields → `leaderboards.entries_jsonb`.
 
  ### resolve_ground_truth:
-
- Receives `list[FeedRecord]` (dataclass with `.subject`, `.values`, `.ts_event` attributes — NOT `list[dict]`). Returns current prices for mark-to-market.
 
  With `resolve_horizon_seconds=0`, the score worker looks up the prediction's own
  `InputRecord.raw_data` and passes it directly as ground truth. No feed query needed —
  the feed data (prices, candles) was already captured when the prediction was made.
 
- The flow: predict stores input (feed snapshot) + prediction (order) → score worker
- looks up input by `prediction.input_id` → passes `raw_data` as ground truth →
- `scoring_function` extracts prices from it and processes the order via PositionManager.
-
- For `resolve_horizon_seconds > 0` (standard challenges), the score worker still uses
- `feed_reader.fetch_window()` → `resolve_ground_truth(records)` as before.
+ For `resolve_horizon_seconds > 0` (standard challenges), the score worker uses
+ `feed_reader.fetch_window()` → `resolve_ground_truth(records)` as before. The function
+ receives `list[FeedRecord]` (dataclass with `.subject`, `.values`, `.ts_event`).
 
  ### build_emission:
 
@@ -559,7 +616,6 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
 
    # Scoring
    RISK_FREE_RATE=0.05
-   SCORING_FUNCTION=vanta.scoring:score_prediction
  ```
 
  ────────────────────────────────────────────────────────────────────────────────
@@ -617,14 +673,7 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
 
  - score_prediction extracts net_pnl as value
  - Empty snapshot → value = 0.0
- - Recency weights sum to 1.0
- - Recent days weighted more than old days
- - avg_daily_pnl positive/negative/empty
- - calmar_ratio with zero drawdown → 0.0
- - sharpe_ratio volatility floor prevents division by zero
- - omega_ratio mixed positive/negative
- - sortino_ratio with no downside → uses floor
- - t_statistic near-zero mean
+ - VantaScore validates with all 4 leaderboard fields
 
  ### test_tracker.py
 
@@ -645,3 +694,7 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
  - No custom metrics registry integration (use defaults)
  - No position state persistence to DB (in-memory for now, DB integration is future)
  - No complex report worker customization beyond the API stubs
+ - No Sharpe ratio or rolling risk metrics (deferred — requires rolling window over
+   historical snapshots, not a point-in-time field. Will add when metrics infrastructure
+   is wired for Vanta)
+ - No `SCORING_FUNCTION` env var — use `CrunchConfig.scoring_function` (stateful callable)
