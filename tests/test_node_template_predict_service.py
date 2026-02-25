@@ -125,6 +125,9 @@ class InMemoryInputRepository:
                 return
         self.records.append(record)
 
+    def get(self, input_id: str):
+        return next((r for r in self.records if r.id == input_id), None)
+
     def find(self, **kwargs):
         return list(self.records)
 

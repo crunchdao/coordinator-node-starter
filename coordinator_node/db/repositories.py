@@ -109,6 +109,16 @@ class DBInputRepository:
     def __init__(self, session: Session):
         self._session = session
 
+    def get(self, input_id: str) -> InputRecord | None:
+        row = self._session.get(InputRow, input_id)
+        if row is None:
+            return None
+        return InputRecord(
+            id=row.id,
+            raw_data=row.raw_data_jsonb or {},
+            received_at=row.received_at,
+        )
+
     def save(self, record: InputRecord) -> None:
         row = InputRow(
             id=record.id,

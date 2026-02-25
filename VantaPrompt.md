@@ -7,10 +7,57 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
 
  ────────────────────────────────────────────────────────────────────────────────
 
+ Framework Context — coordinator-node-starter conventions
+
+ The coordinator-node-starter framework has specific conventions you MUST follow:
+
+ ### Config
+ - **Single source of truth**: `node/config/crunch_config.py` defines a `CrunchConfig` subclass
+ - **No separate JSON files** for prediction schedules — use `CrunchConfig.scheduled_predictions`
+ - **No `contracts.py`** or `contract_loader.py` — removed. Config loaded via `config_loader.load_config()`
+ - Config path: `config/crunch_config.py` (NOT `runtime_definitions/`)
+
+ ### Type-safe JSONB
+ CrunchConfig declares 5 Pydantic types that define the data shape at every JSONB boundary:
+ - `raw_input_type` — what the feed produces (validated on ingest)
+ - `input_type` — what models receive (can differ from raw_input_type)
+ - `output_type` — what models return (validated before DB write)
+ - `ground_truth_type` — what actuals look like (validated on resolution)
+ - `score_type` — what scoring produces (validated before DB write)
+
+ Services use these types directly: `config.output_type.model_validate(data)` to parse,
+ `validated.model_dump()` to serialize. No wrapper methods — the Pydantic models ARE the
+ parse/dump interface.
+
+ ### Input is a dumb log
+ - `InputRecord` has only: `id`, `raw_data`, `received_at` — NO status, actuals, scope, resolvable_at
+ - `InputRow` (DB) has only: `id`, `received_at`, `raw_data_jsonb`
+ - Input is saved once and never updated
+
+ ### Predictions own their resolution
+ - `PredictionRecord` carries: `scope` (with feed dimensions), `resolvable_at`, `performed_at`
+ - Score worker queries predictions by `status=PENDING, resolvable_before=now`
+ - Ground truth is resolved per-prediction using the prediction's own scope and time window
+ - For `resolve_horizon_seconds=0`: immediate resolution — score worker looks up the
+   prediction's `InputRecord.raw_data` via `input_repository.get()` and passes it as
+   ground truth. No feed query. Raises `RuntimeError` if `input_repository` is None
+   (misconfiguration). Skips with warning if the input record is missing.
+
+ ### Naming
+ - `resolve_horizon_seconds` (not `resolve_after_seconds` or `horizon_seconds`)
+ - `prediction_interval_seconds` (not `step_seconds` for scheduling)
+ - `step_seconds` is the feed granularity hint passed to models
+
+ ### No transform callable
+ - `PredictService` has no `transform` parameter — removed as dead code
+ - Raw feed data is validated through `raw_input_type.model_validate()` directly
+
+ ────────────────────────────────────────────────────────────────────────────────
+
  Design Principles
 
  1. Minimal core, extensible later. Only build what's specified. No backtesting harness, no miner layer, no ensemble logic.
- 2. Everything typed. Dataclasses for domain objects. Pydantic for framework contracts. Type hints on every function signature.
+ 2. Everything typed. Dataclasses for domain objects. Pydantic for framework contracts. Type hints on every function signature. All JSONB boundaries validated through CrunchConfig types.
  3. Stateful position tracking. The scoring function is a thin passthrough. All PnL computation happens in the PositionManager extension, which maintains per-model portfolio state across prediction cycles.
  4. Models can do nothing. trade() returns Order | None. None means no action this cycle — the model still gets a portfolio snapshot (mark-to-market update) but no order is executed.
  5. All constants from env vars. Every Vanta parameter (leverage limits, fee rates, lifecycle thresholds) is read from environment variables with sensible defaults. Nothing hardcoded in logic.
@@ -31,8 +78,7 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
 
    node/                               # coordinator infrastructure
      config/
-       crunch_config.py                # CrunchConfig (types, predictions, callables, behavior)
-       callables.env                   # scoring function callable path
+       crunch_config.py                # CrunchConfig subclass (types, predictions, callables)
      extensions/
        __init__.py
        position_manager.py             # Order → Position → Portfolio → Snapshot
@@ -237,11 +283,55 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
 
  6. Scoring — challenge/vanta/scoring.py
 
- ### score_prediction(prediction, ground_truth) → dict
+ ### Stateful scoring function
 
- This is a thin passthrough. The PositionManager has already computed the portfolio snapshot and injected it into prediction["portfolio_snapshot"]. This function extracts it and returns a ScoreResult-shaped dict with "value": net_pnl.
+ The scoring function is a **stateful callable** — a method on a class that wraps the
+ PositionManager. It's wired into `ScoreService` as the `scoring_function` parameter.
 
- The ground_truth parameter is not used by this function (position manager already marked to market).
+ The score worker calls `scoring_function(prediction, ground_truth)` where:
+ - `prediction` is the model's order dict (`VantaOutput` shape + injected `model_id`)
+ - `ground_truth` is the latest feed data (current prices from `resolve_ground_truth`)
+
+ The scoring function does ALL the work:
+ 1. Extracts the order from `prediction` (action, trade_pair, leverage)
+ 2. Extracts current prices from `ground_truth`
+ 3. Calls `position_manager.process_order(model_id, order, prices, ts)`
+ 4. PositionManager updates the trading book: validates order, executes trade,
+    applies fees (spread + slippage), marks all positions to market, computes PnL
+ 5. Returns a `VantaScore`-shaped dict with the full portfolio snapshot
+
+ ```python
+ class VantaScoringFunction:
+     """Stateful scoring callable wrapping the PositionManager."""
+
+     def __init__(self, position_manager: PositionManager):
+         self.pm = position_manager
+
+     def __call__(self, prediction: dict, ground_truth: dict) -> dict:
+         model_id = prediction["model_id"]
+
+         # ground_truth IS the raw input (VantaInput shape) for horizon=0.
+         # Extract latest close price from candles.
+         prices = {}
+         for candle in ground_truth.get("candles_1m", []):
+             prices[ground_truth.get("symbol", "BTCUSDT")] = candle.get("close", 0.0)
+
+         order = {
+             "action": prediction.get("action", "FLAT"),
+             "trade_pair": prediction.get("trade_pair", "BTCUSDT"),
+             "leverage": prediction.get("leverage", 0.0),
+         }
+         snapshot = self.pm.process_order(model_id, order, prices, datetime.now(UTC))
+         return {
+             "value": snapshot["net_pnl"],
+             **snapshot,
+             "success": True,
+             "failed_reason": None,
+         }
+ ```
+
+ This callable is instantiated once at worker startup and passed to `ScoreService`.
+ The PositionManager maintains state across all scoring cycles.
 
  ### Risk metrics (secondary, all at 0% weight but computed):
 
@@ -265,18 +355,117 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
 
  7. CrunchConfig — node/config/crunch_config.py
 
- Pydantic models for the framework contracts:
+ Subclass `CrunchConfig` from `coordinator_node.crunch_config`. Override the 5 Pydantic
+ types to define Vanta's data shapes. The framework validates all JSONB boundaries through
+ these types automatically (`Type.model_validate()` on read, `.model_dump()` on write).
 
- - RawInput / InferenceInput: symbol, asof_ts, candles_1m/5m/15m/1h, orderbook, funding
- - InferenceOutput: action (LONG/SHORT/FLAT), trade_pair, leverage
- - ScoreResult: value, portfolio_value, unrealized_pnl, realized_pnl, total_fees, gross_pnl, net_pnl, drawdown_pct, portfolio_leverage, open_positions, order_accepted, order_rejected_reason, success, failed_reason
- - PredictionScope: subject, step_seconds=15 (ge=1). resolve_horizon_seconds is injected from ScheduledPrediction.resolve_horizon_seconds
- - Aggregation: three windows as a **dict** (not a list) — `{"pnl_24h": AggregationWindow(hours=24), "pnl_72h": AggregationWindow(hours=72), "pnl_7d": AggregationWindow(hours=168)}`. AggregationWindow only accepts `hours` (no `name`, no `seconds`; extra="forbid"). Ranking by `ranking_key` + `ranking_direction="desc"` (NOT `ranking_order`).
- - Callables: resolve_ground_truth, aggregate_snapshot, build_emission, compute_metrics
+ ```python
+ from pydantic import BaseModel, ConfigDict, Field
+ from coordinator_node.crunch_config import (
+     CrunchConfig as BaseCrunchConfig,
+     RawInput,
+     InferenceOutput as BaseInferenceOutput,
+     ScoreResult as BaseScoreResult,
+     PredictionScope,
+     ScheduledPrediction,
+     Aggregation,
+     AggregationWindow,
+ )
+
+
+ class VantaInput(RawInput):
+     """What the feed produces AND what models receive."""
+     symbol: str = "BTCUSDT"
+     asof_ts: int = 0
+     candles_1m: list[dict] = Field(default_factory=list)
+     candles_5m: list[dict] = Field(default_factory=list)
+     candles_15m: list[dict] = Field(default_factory=list)
+     candles_1h: list[dict] = Field(default_factory=list)
+     orderbook: dict | None = None
+     funding: dict | None = None
+
+
+ class VantaOutput(BaseModel):
+     """What models return — an order (or null fields for no action)."""
+     action: str = "FLAT"          # LONG, SHORT, FLAT
+     trade_pair: str = "BTCUSDT"
+     leverage: float = 0.0
+
+
+ class VantaScore(BaseScoreResult):
+     """What scoring produces — portfolio snapshot."""
+     portfolio_value: float = 0.0
+     unrealized_pnl: float = 0.0
+     realized_pnl: float = 0.0
+     total_fees: float = 0.0
+     gross_pnl: float = 0.0
+     net_pnl: float = 0.0
+     drawdown_pct: float = 0.0
+     portfolio_leverage: float = 0.0
+     open_positions: int = 0
+     order_accepted: bool = False
+     order_rejected_reason: str | None = None
+
+
+ class CrunchConfig(BaseCrunchConfig):
+     # Type-safe JSONB boundaries
+     raw_input_type: type[BaseModel] = VantaInput
+     input_type: type[BaseModel] = VantaInput       # models get raw feed
+     output_type: type[BaseModel] = VantaOutput
+     score_type: type[BaseModel] = VantaScore
+     # ground_truth_type stays default — just latest price for mark-to-market
+
+     # Prediction schedules (replaces scheduled_prediction_configs.json)
+     scheduled_predictions: list[ScheduledPrediction] = Field(
+         default_factory=lambda: [
+             ScheduledPrediction(
+                 scope_key="crypto-live",
+                 scope={"subject": "BTCUSDT"},
+                 prediction_interval_seconds=60,
+                 resolve_horizon_seconds=0,  # immediate — live trading
+             ),
+         ],
+     )
+
+     # Aggregation windows
+     aggregation: Aggregation = Field(
+         default_factory=lambda: Aggregation(
+             windows={
+                 "pnl_24h": AggregationWindow(hours=24),
+                 "pnl_72h": AggregationWindow(hours=72),
+                 "pnl_7d": AggregationWindow(hours=168),
+             },
+             ranking_key="net_pnl",
+             ranking_direction="desc",
+         )
+     )
+
+     scope: PredictionScope = Field(
+         default_factory=lambda: PredictionScope(subject="BTCUSDT", step_seconds=60)
+     )
+ ```
+
+ ### How the types flow through the system:
+
+ 1. **Feed → Input**: `predict.py` calls `VantaInput.model_validate(raw_feed_dict)` — blows up if feed data is wrong shape. Saved to `inputs.raw_data_jsonb`.
+ 2. **Model output → Prediction**: `predict.py` calls `VantaOutput.model_validate(output)` — catches models returning wrong schema. Saved to `predictions.inference_output_jsonb`.
+ 3. **Ground truth → Scoring**: `score.py` calls `ground_truth_type.model_validate(actuals)` on resolved feed data.
+ 4. **Scoring result → Score**: `score.py` calls `VantaScore.model_validate(result)` — guarantees all portfolio fields present. Saved to `scores.result_jsonb`.
 
  ### resolve_ground_truth:
 
- Receives `list[FeedRecord]` (dataclass with `.subject`, `.values`, `.ts_event` attributes — NOT `list[dict]`). Returns latest price from feed records. For order-based scoring, ground truth is just the current market price for mark-to-market.
+ Receives `list[FeedRecord]` (dataclass with `.subject`, `.values`, `.ts_event` attributes — NOT `list[dict]`). Returns current prices for mark-to-market.
+
+ With `resolve_horizon_seconds=0`, the score worker looks up the prediction's own
+ `InputRecord.raw_data` and passes it directly as ground truth. No feed query needed —
+ the feed data (prices, candles) was already captured when the prediction was made.
+
+ The flow: predict stores input (feed snapshot) + prediction (order) → score worker
+ looks up input by `prediction.input_id` → passes `raw_data` as ground truth →
+ `scoring_function` extracts prices from it and processes the order via PositionManager.
+
+ For `resolve_horizon_seconds > 0` (standard challenges), the score worker still uses
+ `feed_reader.fetch_window()` → `resolve_ground_truth(records)` as before.
 
  ### build_emission:
 
@@ -456,4 +645,3 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
  - No custom metrics registry integration (use defaults)
  - No position state persistence to DB (in-memory for now, DB integration is future)
  - No complex report worker customization beyond the API stubs
-

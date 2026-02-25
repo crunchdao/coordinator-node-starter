@@ -275,9 +275,24 @@ class ScoreService:
         if prediction.resolvable_at is None:
             return None
 
-        # Immediate resolution (live trading)
+        # Immediate resolution (resolve_horizon_seconds=0):
+        # Use the prediction's own input as ground truth — the feed data
+        # (prices, candles, etc.) is already captured in raw_data.
         if prediction.resolvable_at <= prediction.performed_at:
-            return {}
+            if self.input_repository is None:
+                raise RuntimeError(
+                    "resolve_horizon_seconds=0 requires an input_repository "
+                    "to look up ground truth from the prediction's input"
+                )
+            inp = self.input_repository.get(prediction.input_id)
+            if inp is None:
+                self.logger.warning(
+                    "Input %s not found for prediction %s — skipping",
+                    prediction.input_id,
+                    prediction.id,
+                )
+                return None
+            return inp.raw_data
 
         if self.feed_reader is None:
             return None

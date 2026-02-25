@@ -23,6 +23,9 @@ class InMemoryRepo:
             getattr(i, "id", str(idx)): i for idx, i in enumerate(items or [])
         }
 
+    def get(self, item_id):
+        return self._items.get(item_id)
+
     def save(self, item):
         self._items[item.id] = item
 

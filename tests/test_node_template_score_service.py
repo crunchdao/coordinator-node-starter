@@ -26,6 +26,9 @@ class MemInputRepository:
                 return
         self._records.append(record)
 
+    def get(self, input_id: str) -> InputRecord | None:
+        return next((r for r in self._records if r.id == input_id), None)
+
     def find(self, **kwargs: Any) -> list[InputRecord]:
         return list(self._records)
 
