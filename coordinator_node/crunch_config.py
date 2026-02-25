@@ -333,19 +333,34 @@ def default_build_emission(
 
 
 def default_aggregate_snapshot(score_results: list[dict[str, Any]]) -> dict[str, Any]:
-    """Default aggregator: average all numeric values across score results in the period."""
+    """Default aggregator: average all numeric fields from score results in the period.
+
+    Iterates over ALL keys in each score result dict (not just 'value'),
+    so custom ScoreResult fields (net_pnl, drawdown_pct, etc.) are preserved
+    in the snapshot result_summary and flow through to the leaderboard.
+    Non-numeric fields (str, bool, None) are taken from the latest result.
+    """
     if not score_results:
         return {}
 
     totals: dict[str, float] = {}
     counts: dict[str, int] = {}
+    latest_non_numeric: dict[str, Any] = {}
+
     for result in score_results:
         for key, value in result.items():
             if isinstance(value, (int, float)):
                 totals[key] = totals.get(key, 0.0) + float(value)
                 counts[key] = counts.get(key, 0) + 1
+            elif value is not None:
+                latest_non_numeric[key] = value
 
-    return {key: totals[key] / counts[key] for key in totals}
+    summary = {key: totals[key] / counts[key] for key in totals}
+    # Include non-numeric fields from latest result (e.g. failed_reason)
+    for key, value in latest_non_numeric.items():
+        if key not in summary:
+            summary[key] = value
+    return summary
 
 
 def default_compute_metrics(
@@ -457,6 +472,16 @@ class CrunchConfig(BaseModel):
     )
 
     # Callables
+    scoring_function: (
+        Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]] | None
+    ) = Field(
+        default=None,
+        description=(
+            "Scoring callable: (prediction_dict, ground_truth_dict) → score_dict. "
+            "If set, takes precedence over the SCORING_FUNCTION env var. "
+            "Use for stateful scoring (e.g. PositionManager-backed trading)."
+        ),
+    )
     resolve_ground_truth: Callable[[list[FeedRecord]], dict[str, Any] | None] = (
         default_resolve_ground_truth
     )

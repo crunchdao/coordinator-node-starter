@@ -659,7 +659,7 @@ class ScoreService:
         for model_id, model_snapshots in by_model.items():
             metrics: dict[str, float] = {}
 
-            # Windowed aggregation of the ranking key
+            # Windowed aggregation: average the ranking key per window
             for window_name, window in aggregation.windows.items():
                 cutoff = now - timedelta(hours=window.hours)
                 window_snaps = [
@@ -676,12 +676,14 @@ class ScoreService:
                 else:
                     metrics[window_name] = 0.0
 
-            # Add latest multi-metric values from most recent snapshot
+            # Include ALL numeric fields from the latest snapshot so custom
+            # score_type fields (net_pnl, drawdown_pct, etc.) appear in the
+            # leaderboard and report endpoints.
             latest_snap = max(
                 model_snapshots, key=lambda s: self._ensure_utc(s.period_end)
             )
             for key, value in latest_snap.result_summary.items():
-                if key not in metrics and key in self.contract.metrics:
+                if key not in metrics:
                     try:
                         metrics[key] = float(value)
                     except (ValueError, TypeError):

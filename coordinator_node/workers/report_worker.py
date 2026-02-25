@@ -148,6 +148,36 @@ def auto_report_schema(contract: CrunchConfig) -> dict[str, Any]:
         )
         col_id += 1
 
+    # Add columns for custom score_type fields (e.g. net_pnl, drawdown_pct)
+    # Skip fields already covered by windows, metrics, or internal fields.
+    _skip_fields = {"value", "success", "failed_reason"}
+    existing_properties = {c["property"] for c in columns}
+    existing_properties.update(_skip_fields)
+    existing_properties.update(set(contract.metrics))
+
+    for k, field_name in enumerate(contract.score_type.model_fields):
+        if field_name in existing_properties:
+            continue
+        field_info = contract.score_type.model_fields[field_name]
+        # Only add numeric fields
+        origin = field_info.annotation
+        if origin not in (int, float):
+            continue
+        display = field_name.replace("_", " ").title()
+        columns.append(
+            {
+                "id": col_id,
+                "type": "VALUE",
+                "property": field_name,
+                "format": "decimal-4",
+                "displayName": display,
+                "tooltip": None,
+                "nativeConfiguration": None,
+                "order": 200 + k * 10,
+            }
+        )
+        col_id += 1
+
     # Chart series from aggregation windows
     series = [
         {"name": name, "label": name.replace("_", " ").title()}

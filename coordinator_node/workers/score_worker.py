@@ -33,11 +33,16 @@ def configure_logging() -> None:
 def build_service() -> ScoreService:
     extension_settings = ExtensionSettings.from_env()
     runtime_settings = RuntimeSettings.from_env()
+    contract = load_config()
 
-    scoring_function = resolve_callable(
-        extension_settings.scoring_function,
-        required_params=("prediction", "ground_truth"),
-    )
+    # CrunchConfig.scoring_function takes precedence over env var
+    if contract.scoring_function is not None:
+        scoring_function = contract.scoring_function
+    else:
+        scoring_function = resolve_callable(
+            extension_settings.scoring_function,
+            required_params=("prediction", "ground_truth"),
+        )
 
     session = create_session()
 
@@ -54,7 +59,7 @@ def build_service() -> ScoreService:
         leaderboard_repository=DBLeaderboardRepository(session),
         merkle_cycle_repository=DBMerkleCycleRepository(session),
         merkle_node_repository=DBMerkleNodeRepository(session),
-        contract=load_config(),
+        contract=contract,
     )
 
 
