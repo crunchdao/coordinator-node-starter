@@ -464,36 +464,3 @@ class CrunchConfig(BaseModel):
         default_aggregate_snapshot
     )
     build_emission: Callable[..., EmissionCheckpoint] = default_build_emission
-
-    # ── JSONB parse / dump helpers ──
-    # Use these in the service layer for type-safe serialization.
-
-    def parse_raw_input(self, data: dict[str, Any]) -> BaseModel:
-        return self.raw_input_type.model_validate(data)
-
-    def dump_raw_input(self, obj: BaseModel) -> dict[str, Any]:
-        return obj.model_dump()
-
-    def parse_input(self, data: dict[str, Any]) -> BaseModel:
-        return self.input_type.model_validate(data)
-
-    def dump_input(self, obj: BaseModel) -> dict[str, Any]:
-        return obj.model_dump()
-
-    def parse_output(self, data: dict[str, Any]) -> BaseModel:
-        return self.output_type.model_validate(data)
-
-    def dump_output(self, obj: BaseModel) -> dict[str, Any]:
-        return obj.model_dump()
-
-    def parse_ground_truth(self, data: dict[str, Any]) -> BaseModel:
-        return self.ground_truth_type.model_validate(data)
-
-    def dump_ground_truth(self, obj: BaseModel) -> dict[str, Any]:
-        return obj.model_dump()
-
-    def parse_score(self, data: dict[str, Any]) -> BaseModel:
-        return self.score_type.model_validate(data)
-
-    def dump_score(self, obj: BaseModel) -> dict[str, Any]:
-        return obj.model_dump()

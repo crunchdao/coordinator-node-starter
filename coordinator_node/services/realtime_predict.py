@@ -78,8 +78,8 @@ class RealtimePredictService(PredictService):
 
         # 1. get data → tick models
         if raw_input is not None:
-            validated = self.contract.parse_raw_input(raw_input)
-            data = self.contract.dump_raw_input(validated)
+            validated = self.contract.raw_input_type.model_validate(raw_input)
+            data = validated.model_dump()
             inp = InputRecord(
                 id=f"INP_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}",
                 raw_data=data,

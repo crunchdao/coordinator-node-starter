@@ -93,8 +93,8 @@ class PredictService:
     def get_data(self, now: datetime) -> InputRecord:
         """Fetch input, validate through raw_input_type, save to DB."""
         raw = self.feed_reader.get_input(now)
-        validated = self.contract.parse_raw_input(raw)
-        data = self.contract.dump_raw_input(validated)
+        validated = self.contract.raw_input_type.model_validate(raw)
+        data = validated.model_dump()
 
         record = InputRecord(
             id=f"INP_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}",
@@ -264,8 +264,8 @@ class PredictService:
                 self.logger.error("INFERENCE_OUTPUT_VALIDATION_ERROR: %s", msg)
                 return msg
 
-            validated = self.contract.parse_output(output)
-            output.update(self.contract.dump_output(validated))
+            validated = self.contract.output_type.model_validate(output)
+            output.update(validated.model_dump())
             return None
         except Exception as exc:
             self.logger.error("INFERENCE_OUTPUT_VALIDATION_ERROR: %s", exc)
