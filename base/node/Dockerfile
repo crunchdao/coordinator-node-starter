@@ -26,8 +26,8 @@ RUN pip install --no-cache-dir --force-reinstall --no-deps \
 COPY --chown=appuser:appgroup challenge ./challenge
 RUN pip install --no-cache-dir ./challenge
 
-# Runtime definitions (operator customization)
-COPY --chown=appuser:appgroup node/runtime_definitions ./runtime_definitions
+# Operator config (CrunchConfig override, prediction schedules, callables)
+COPY --chown=appuser:appgroup node/config ./config
 
 USER appuser
 

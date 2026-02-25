@@ -18,27 +18,13 @@ class InputRow(SQLModel, table=True):
     __tablename__ = "inputs"
 
     id: str = Field(primary_key=True)
-    status: str = Field(default="RECEIVED", index=True)
 
     raw_data_jsonb: dict[str, Any] = Field(
         default_factory=dict,
         sa_column=Column(JSONB),
     )
-    actuals_jsonb: dict[str, Any] | None = Field(
-        default=None,
-        sa_column=Column(JSONB, nullable=True),
-    )
-    scope_jsonb: dict[str, Any] = Field(
-        default_factory=dict,
-        sa_column=Column(JSONB),
-    )
-    meta_jsonb: dict[str, Any] = Field(
-        default_factory=dict,
-        sa_column=Column(JSONB),
-    )
 
     received_at: datetime = Field(default_factory=utc_now, index=True)
-    resolvable_at: datetime | None = Field(default=None, index=True)
 
 
 class PredictionRow(SQLModel, table=True):

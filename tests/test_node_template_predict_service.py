@@ -106,7 +106,7 @@ class InMemoryPredictionRepository:
                 "scope_template": {"subject": "BTC", "horizon": 60, "step": 60},
                 "schedule": {
                     "prediction_interval_seconds": 60,
-                    "resolve_after_seconds": 60,
+                    "resolve_horizon_seconds": 60,
                 },
                 "active": True,
                 "order": 1,
@@ -225,8 +225,8 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
             any("INFERENCE_OUTPUT_VALIDATION_ERROR" in line for line in logs.output)
         )
 
-    async def test_run_once_sets_input_scope_with_feed_dimensions(self):
-        """Regression: input scope must include source/subject/kind/granularity
+    async def test_run_once_sets_prediction_scope_with_feed_dimensions(self):
+        """Prediction scope must include source/subject/kind/granularity
         so the score worker can query matching feed records for ground truth."""
         input_repo = InMemoryInputRepository()
         pred_repo = InMemoryPredictionRepository()
@@ -244,18 +244,17 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
 
         await service.run_once(raw_input={"symbol": "BTC"}, now=datetime.now(UTC))
 
-        self.assertEqual(len(input_repo.records), 1)
-        inp = input_repo.records[0]
+        self.assertGreater(len(pred_repo.saved_predictions), 0)
+        pred = pred_repo.saved_predictions[0]
         # Feed dimensions must be in scope for score worker to query feed records
-        self.assertEqual(inp.scope.get("source"), "binance")
-        self.assertEqual(inp.scope.get("kind"), "candle")
-        self.assertEqual(inp.scope.get("granularity"), "1m")
-        # subject comes from config scope_template, which may override feed_reader
-        self.assertIn("subject", inp.scope)
+        self.assertEqual(pred.scope.get("source"), "binance")
+        self.assertEqual(pred.scope.get("kind"), "candle")
+        self.assertEqual(pred.scope.get("granularity"), "1m")
+        self.assertIn("subject", pred.scope)
 
-    async def test_run_once_sets_input_resolvable_at(self):
-        """Regression: input resolvable_at must be set so the score worker
-        can find inputs that are ready for ground truth resolution."""
+    async def test_run_once_sets_prediction_resolvable_at(self):
+        """Predictions must have resolvable_at so score worker can find
+        predictions ready for ground truth resolution."""
         input_repo = InMemoryInputRepository()
         pred_repo = InMemoryPredictionRepository()
         service = _make_service(
@@ -266,10 +265,10 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
         now = datetime.now(UTC)
         await service.run_once(raw_input={"symbol": "BTC"}, now=now)
 
-        self.assertEqual(len(input_repo.records), 1)
-        inp = input_repo.records[0]
-        self.assertIsNotNone(inp.resolvable_at)
-        self.assertGreater(inp.resolvable_at, now)
+        self.assertGreater(len(pred_repo.saved_predictions), 0)
+        for pred in pred_repo.saved_predictions:
+            self.assertIsNotNone(pred.resolvable_at)
+            self.assertGreaterEqual(pred.resolvable_at, now)
 
     async def test_custom_call_method_uses_configured_method_name(self):
         """Finding F: CallMethodConfig controls which gRPC method is called."""
@@ -305,7 +304,7 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
                 "scope_template": {"symbol": "BTCUSDT", "side": "LONG"},
                 "schedule": {
                     "prediction_interval_seconds": 60,
-                    "resolve_after_seconds": 60,
+                    "resolve_horizon_seconds": 60,
                 },
                 "active": True,
                 "order": 1,
@@ -329,7 +328,7 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(contract.call_method.method, "predict")
         self.assertEqual(len(contract.call_method.args), 3)
         self.assertEqual(contract.call_method.args[0].name, "subject")
-        self.assertEqual(contract.call_method.args[1].name, "horizon_seconds")
+        self.assertEqual(contract.call_method.args[1].name, "resolve_horizon_seconds")
         self.assertEqual(contract.call_method.args[2].name, "step_seconds")
 
 

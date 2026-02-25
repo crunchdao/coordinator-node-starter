@@ -9,7 +9,9 @@ from starter_challenge.tracker import TrackerBase
 class DummyTracker(TrackerBase):
     """Minimal implementation for testing."""
 
-    def predict(self, subject: str, horizon_seconds: int, step_seconds: int) -> dict:
+    def predict(
+        self, subject: str, resolve_horizon_seconds: int, step_seconds: int
+    ) -> dict:
         data = self._get_data(subject)
         return {"value": 1.0 if data else 0.0}
 

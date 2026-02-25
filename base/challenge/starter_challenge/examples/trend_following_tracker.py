@@ -6,7 +6,9 @@ from starter_challenge.tracker import TrackerBase
 class TrendFollowingTracker(TrackerBase):
     """Projects recent direction forward with conservative scaling."""
 
-    def predict(self, subject: str, horizon_seconds: int, step_seconds: int) -> dict:
+    def predict(
+        self, subject: str, resolve_horizon_seconds: int, step_seconds: int
+    ) -> dict:
         prices = _extract_prices(self._get_data(subject))
         if len(prices) < 3:
             return {"value": 0.0}

@@ -20,7 +20,6 @@ from coordinator_node.db.repositories import (
     DBSnapshotRepository,
 )
 from coordinator_node.entities.prediction import (
-    InputStatus,
     PredictionStatus,
     ScoreRecord,
     SnapshotRecord,
@@ -246,96 +245,79 @@ class ScoreService:
     def run_once(self) -> bool:
         now = datetime.now(UTC)
 
-        # 1. resolve actuals on inputs past their horizon
-        self._resolve_inputs(now)
-
-        # 2. score predictions whose input has actuals
+        # 1. score predictions past their resolve horizon
         scored = self._score_predictions(now)
         if not scored:
             self.logger.info("No predictions scored this cycle")
             return False
 
-        # 3. write snapshots (per-model period summary + multi-metric enrichment)
+        # 2. write snapshots (per-model period summary + multi-metric enrichment)
         cycle_snapshots = self._write_snapshots(scored, now)
 
-        # 4. compute ensembles (if configured)
+        # 3. compute ensembles (if configured)
         self._compute_ensembles(scored, now)
 
-        # 5. rebuild leaderboard from snapshots
+        # 4. rebuild leaderboard from snapshots
         self._rebuild_leaderboard()
         return True
 
     async def shutdown(self) -> None:
         self.stop_event.set()
 
-    # ── 1. resolve actuals on inputs ──
+    # ── 1. score predictions ──
 
-    def _resolve_inputs(self, now: datetime) -> int:
-        if self.input_repository is None or self.feed_reader is None:
-            return 0
+    def _resolve_actuals(self, prediction: PredictionRecord) -> dict[str, Any] | None:
+        """Resolve ground truth for a single prediction.
 
-        unresolved = self.input_repository.find(
-            status=InputStatus.RECEIVED,
-            resolvable_before=now,
+        - resolve_horizon_seconds=0 (resolvable_at == performed_at): immediate
+          resolution with empty actuals (live trading).
+        - Otherwise: fetch feed records in the horizon window and call
+          resolve_ground_truth.
+        """
+        if prediction.resolvable_at is None:
+            return None
+
+        # Immediate resolution (live trading)
+        if prediction.resolvable_at <= prediction.performed_at:
+            return {}
+
+        if self.feed_reader is None:
+            return None
+
+        scope = prediction.scope or {}
+        records = self.feed_reader.fetch_window(
+            start=prediction.performed_at,
+            end=prediction.resolvable_at,
+            source=scope.get("source"),
+            subject=scope.get("subject"),
+            kind=scope.get("kind"),
+            granularity=scope.get("granularity"),
         )
-        if not unresolved:
-            return 0
 
-        resolved = 0
-        for inp in unresolved:
-            # Query feed records using the input's scope dimensions + time window
-            records = self.feed_reader.fetch_window(
-                start=inp.received_at,
-                end=inp.resolvable_at,
-                source=inp.scope.get("source"),
-                subject=inp.scope.get("subject"),
-                kind=inp.scope.get("kind"),
-                granularity=inp.scope.get("granularity"),
-            )
-
-            actuals = self.contract.resolve_ground_truth(records)
-            if actuals is None:
-                continue
-
-            inp.actuals = actuals
-            inp.status = InputStatus.RESOLVED
-            self.input_repository.save(inp)
-            resolved += 1
-
-        if resolved:
-            self.logger.info("Resolved actuals for %d inputs", resolved)
-        return resolved
-
-    # ── 2. score predictions ──
+        return self.contract.resolve_ground_truth(records)
 
     def _score_predictions(self, now: datetime) -> list[ScoreRecord]:
-        predictions = self.prediction_repository.find(status=PredictionStatus.PENDING)
+        predictions = self.prediction_repository.find(
+            status=PredictionStatus.PENDING,
+            resolvable_before=now,
+        )
         if not predictions:
             return []
 
-        # Build input lookup for actuals
-        input_ids = {p.input_id for p in predictions}
-        inputs_by_id: dict[str, Any] = {}
-        if self.input_repository is not None:
-            for inp in self.input_repository.find(status=InputStatus.RESOLVED):
-                if inp.id in input_ids:
-                    inputs_by_id[inp.id] = inp
-
         scored: list[ScoreRecord] = []
         for prediction in predictions:
-            inp = inputs_by_id.get(prediction.input_id)
-            if inp is None or inp.actuals is None:
-                continue  # actuals not yet available
+            actuals = self._resolve_actuals(prediction)
+            if actuals is None:
+                continue  # ground truth not yet available
 
             typed_output = self._coerce_output(prediction.inference_output)
 
             # Inject prediction metadata so scoring functions can identify
             # the model (e.g. for stateful per-model position tracking).
-            # Prediction entity fields take precedence over inference_output.
             typed_output["model_id"] = prediction.model_id
             typed_output["prediction_id"] = prediction.id
 
-            result = self.scoring_function(typed_output, inp.actuals)
+            result = self.scoring_function(typed_output, actuals)
             validated = self.contract.score_type(**result)
 
             score = ScoreRecord(
@@ -552,24 +534,22 @@ class ScoreService:
 
             # Score ensemble predictions against actuals
             ens_scored: list[ScoreRecord] = []
-            if self.input_repository is not None:
-                for ep in ens_preds:
-                    inputs = self.input_repository.find(status=InputStatus.RESOLVED)
-                    inp = next((i for i in inputs if i.id == ep.input_id), None)
-                    if inp and inp.actuals:
-                        typed_output = self._coerce_output(ep.inference_output)
-                        result = self.scoring_function(typed_output, inp.actuals)
-                        validated = self.contract.score_type(**result)
-                        score = ScoreRecord(
-                            id=f"SCR_{ep.id}",
-                            prediction_id=ep.id,
-                            result=validated.model_dump(),
-                            success=True,
-                            scored_at=now,
-                        )
-                        if self.score_repository is not None:
-                            self.score_repository.save(score)
-                        ens_scored.append(score)
+            for ep in ens_preds:
+                actuals = self._resolve_actuals(ep)
+                if actuals is not None:
+                    typed_output = self._coerce_output(ep.inference_output)
+                    result = self.scoring_function(typed_output, actuals)
+                    validated = self.contract.score_type(**result)
+                    score = ScoreRecord(
+                        id=f"SCR_{ep.id}",
+                        prediction_id=ep.id,
+                        result=validated.model_dump(),
+                        success=True,
+                        scored_at=now,
+                    )
+                    if self.score_repository is not None:
+                        self.score_repository.save(score)
+                    ens_scored.append(score)
 
             # Store ensemble prediction dicts for metrics context
             ens_pred_dicts = [

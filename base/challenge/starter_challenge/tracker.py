@@ -13,7 +13,7 @@ class TrackerBase:
     The ``predict()`` signature must match the coordinator's
     ``CallMethodConfig``. The default expects::
 
-        predict(subject="BTC", horizon_seconds=60, step_seconds=15)
+        predict(subject="BTC", resolve_horizon_seconds=60, step_seconds=15)
 
     and must return a dict matching ``InferenceOutput`` (e.g. ``{"value": 0.5}``).
     """
@@ -48,13 +48,13 @@ class TrackerBase:
         )
 
     def predict(
-        self, subject: str, horizon_seconds: int, step_seconds: int
+        self, subject: str, resolve_horizon_seconds: int, step_seconds: int
     ) -> dict[str, Any]:
         """Return a prediction for the given scope.
 
         Args:
             subject: Asset being predicted (e.g. "BTC", "ETHUSDT").
-            horizon_seconds: How far ahead to predict (seconds).
+            resolve_horizon_seconds: How far ahead ground truth is resolved (seconds).
             step_seconds: Time step between predictions (seconds).
 
         Returns:

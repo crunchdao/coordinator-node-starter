@@ -6,11 +6,6 @@ from enum import StrEnum
 from typing import Any, TypedDict
 
 
-class InputStatus(StrEnum):
-    RECEIVED = "RECEIVED"
-    RESOLVED = "RESOLVED"
-
-
 class PredictionStatus(StrEnum):
     PENDING = "PENDING"
     SCORED = "SCORED"
@@ -27,23 +22,14 @@ class CheckpointStatus(StrEnum):
 
 @dataclass
 class InputRecord:
-    """A data point received from the feed. Actuals filled in after horizon passes.
+    """A feed data snapshot — dumb log of what was received.
 
-    TODO: Consider adding feed_record_id FK for 1:1 lineage (FeedRecord → InputRecord).
-    Most realtime setups have one feed event per input. Currently raw_data holds a copy
-    which also supports assembled/windowed inputs, but the common case is passthrough.
+    Multiple predictions from different models reference the same input.
     """
 
     id: str
-    raw_data: dict[str, Any] = field(default_factory=dict)  # contract.raw_input_type
-    actuals: dict[str, Any] | None = None  # contract.ground_truth_type
-    status: InputStatus = InputStatus.RECEIVED
-    scope: dict[str, Any] = field(
-        default_factory=dict
-    )  # contract.scope_type (PredictionScope)
+    raw_data: dict[str, Any] = field(default_factory=dict)
     received_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    resolvable_at: datetime | None = None
-    meta: dict[str, Any] = field(default_factory=dict)  # contract.meta_type (Meta)
 
 
 @dataclass

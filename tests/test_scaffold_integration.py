@@ -22,24 +22,34 @@ import pytest
 BASE_DIR = Path(__file__).resolve().parent.parent / "base"
 NODE_DIR = BASE_DIR / "node"
 CHALLENGE_DIR = BASE_DIR / "challenge"
-CONFIGS_PATH = NODE_DIR / "config" / "scheduled_prediction_configs.json"
-
-
 # ── Fixtures ───────────────────────────────────────────────────────────
 
 
 @pytest.fixture(scope="module")
 def crunch_config():
-    """Load the scaffold's CrunchConfig (runtime_definitions override)."""
-    from runtime_definitions.crunch_config import CrunchConfig
+    """Load the scaffold's CrunchConfig (config/ override)."""
+    from config.crunch_config import CrunchConfig
 
     return CrunchConfig()
 
 
 @pytest.fixture(scope="module")
-def prediction_configs() -> list[dict[str, Any]]:
-    """Load scheduled_prediction_configs.json."""
-    return json.loads(CONFIGS_PATH.read_text())
+def prediction_configs(crunch_config) -> list[dict[str, Any]]:
+    """Load scheduled predictions from CrunchConfig."""
+    return [
+        {
+            "scope_key": sp.scope_key,
+            "scope_template": sp.scope,
+            "schedule": {
+                "prediction_interval_seconds": sp.prediction_interval_seconds,
+                "resolve_horizon_seconds": sp.resolve_horizon_seconds,
+            },
+            "active": sp.active,
+            "order": sp.order,
+            "meta": sp.meta,
+        }
+        for sp in crunch_config.scheduled_predictions
+    ]
 
 
 @pytest.fixture(scope="module")
@@ -54,15 +64,12 @@ def scoring_function():
 
 
 class TestConfigFileValid:
-    """scheduled_prediction_configs.json must parse without error."""
+    """CrunchConfig.scheduled_predictions must validate without error."""
 
-    def test_file_exists(self):
-        assert CONFIGS_PATH.exists(), f"Missing {CONFIGS_PATH}"
-
-    def test_is_valid_json(self):
-        data = json.loads(CONFIGS_PATH.read_text())
-        assert isinstance(data, list)
-        assert len(data) > 0, "Config file is empty — no prediction configs defined"
+    def test_has_predictions(self, crunch_config):
+        assert len(crunch_config.scheduled_predictions) > 0, (
+            "No scheduled_predictions defined in CrunchConfig"
+        )
 
     def test_each_entry_validates_as_envelope(self, prediction_configs):
         from coordinator_node.schemas import ScheduledPredictionConfigEnvelope
@@ -108,12 +115,21 @@ class TestScopeTemplateAlignment:
     def test_call_method_args_resolvable_from_scope(
         self, crunch_config, prediction_configs
     ):
-        """Every arg the model runner sends must exist in the merged scope."""
+        """Every arg the model runner sends must exist in the merged scope.
+
+        resolve_horizon_seconds is injected at runtime from
+        ScheduledPrediction.resolve_horizon_seconds, so it's always available.
+        """
+        # runtime-injected keys that don't come from PredictionScope
+        runtime_injected = {"resolve_horizon_seconds"}
+
         scope_defaults = crunch_config.scope.model_dump()
         for i, entry in enumerate(prediction_configs):
             template = entry.get("scope_template", {})
             merged = {**scope_defaults, **template}
             for arg in crunch_config.call_method.args:
+                if arg.name in runtime_injected:
+                    continue
                 assert arg.name in merged, (
                     f"Config entry [{i}]: CallMethodConfig.arg '{arg.name}' "
                     f"not found in merged scope {set(merged.keys())}. "
@@ -388,9 +404,10 @@ class TestTrackerOutputMatchesInferenceOutput:
         example_tracker.tick(tick_data)
 
         scope = crunch_config.scope.model_dump()
+        resolve = crunch_config.scheduled_predictions[0].resolve_horizon_seconds
         output = example_tracker.predict(
             subject=scope["subject"],
-            horizon_seconds=scope["horizon_seconds"],
+            resolve_horizon_seconds=resolve,
             step_seconds=scope["step_seconds"],
         )
 
@@ -417,9 +434,10 @@ class TestTrackerOutputMatchesInferenceOutput:
         example_tracker.tick(tick_data)
 
         scope = crunch_config.scope.model_dump()
+        resolve = crunch_config.scheduled_predictions[0].resolve_horizon_seconds
         output = example_tracker.predict(
             subject=scope["subject"],
-            horizon_seconds=scope["horizon_seconds"],
+            resolve_horizon_seconds=resolve,
             step_seconds=scope["step_seconds"],
         )
         ground_truth = {

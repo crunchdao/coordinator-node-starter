@@ -2,7 +2,7 @@
 
 Catches common misconfigurations that silently break the pipeline:
 1. Docker networking — NEXT_PUBLIC_API_URL must use Docker-internal hostnames
-2. Timing — resolve_after_seconds must exceed feed granularity
+2. Timing — resolve_horizon_seconds must exceed feed granularity
 3. Scoring — scoring function must return non-zero for valid inputs
 4. Models — submission dirs must be self-contained (no challenge pkg imports)
 5. CrunchConfig — types, callables, and aggregation must be wired correctly
@@ -107,28 +107,51 @@ def check_docker_networking():
 
 
 def check_timing():
-    """resolve_after_seconds must exceed feed granularity, otherwise the
+    """resolve_horizon_seconds must exceed feed granularity, otherwise the
     score-worker's fetch_window returns zero records and predictions
     silently fail to score."""
     print("\n[2/5] Timing consistency")
     env = _load_env(NODE_DIR / ".local.env")
-    spc_path = NODE_DIR / "config" / "scheduled_prediction_configs.json"
 
     feed_gran = env.get("FEED_GRANULARITY", "1s")
     gran_secs = _granularity_to_seconds(feed_gran)
 
-    if not spc_path.exists():
-        check("scheduled_prediction_configs.json exists", False, "file not found")
+    # Load scheduled predictions from CrunchConfig
+    configs = []
+    try:
+        from config.crunch_config import CrunchConfig
+
+        cc = CrunchConfig()
+        configs = [
+            {
+                "scope_key": sp.scope_key,
+                "resolve_horizon_seconds": sp.resolve_horizon_seconds,
+                "prediction_interval_seconds": sp.prediction_interval_seconds,
+            }
+            for sp in cc.scheduled_predictions
+        ]
+    except ImportError:
+        warn(
+            "CrunchConfig import",
+            "could not import config.crunch_config — skipping timing checks",
+        )
         return
 
-    configs = json.loads(spc_path.read_text())
+    if not configs:
+        check(
+            "scheduled_predictions defined",
+            False,
+            "no predictions found in CrunchConfig",
+        )
+        return
+
     for cfg in configs:
         key = cfg.get("scope_key", "unknown")
-        resolve = cfg.get("schedule", {}).get("resolve_after_seconds", 0)
-        interval = cfg.get("schedule", {}).get("prediction_interval_seconds", 60)
+        resolve = cfg.get("resolve_horizon_seconds", 0)
+        interval = cfg.get("prediction_interval_seconds", 60)
 
         check(
-            f"[{key}] resolve_after_seconds ({resolve}) > feed granularity ({gran_secs}s)",
+            f"[{key}] resolve_horizon_seconds ({resolve}) > feed granularity ({gran_secs}s)",
             resolve > gran_secs,
             f"Score-worker fetches feed records in a {resolve}s window. "
             f"With {feed_gran} data, this window likely contains zero "
@@ -268,7 +291,7 @@ def check_crunch_config():
     """Verify CrunchConfig loads and its callables/types are wired."""
     print("\n[5/5] CrunchConfig wiring")
     try:
-        from runtime_definitions.crunch_config import CrunchConfig
+        from config.crunch_config import CrunchConfig
     except ImportError as exc:
         warn(
             "CrunchConfig import",

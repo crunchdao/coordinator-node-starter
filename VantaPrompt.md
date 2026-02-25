@@ -30,9 +30,9 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
        config.py                       # package metadata
 
    node/                               # coordinator infrastructure
-     runtime_definitions/
-       __init__.py
-       crunch_config.py                # CrunchConfig, Pydantic contracts, callables
+     config/
+       crunch_config.py                # CrunchConfig (types, predictions, callables, behavior)
+       callables.env                   # scoring function callable path
      extensions/
        __init__.py
        position_manager.py             # Order → Position → Portfolio → Snapshot
@@ -41,9 +41,6 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
      api/
        __init__.py
        positions.py                    # Custom REST endpoints for position/lifecycle state
-     config/
-       callables.env
-       scheduled_prediction_configs.json
      deployment/
        model-orchestrator-local/
          config/
@@ -78,7 +75,7 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
    class TrackerBase:
        def tick(self, data: dict) -> None: ...
        def trade(self) -> Order | None: ...
-       def predict(self, subject, horizon_seconds, step_seconds) -> dict | None: ...  # adapter, do NOT override
+       def predict(self, subject, resolve_horizon_seconds, step_seconds) -> dict | None: ...  # adapter, do NOT override
  ```
 
  - tick(data) receives per-symbol market data (1m/5m/15m/1h candles, optional orderbook + funding). Called every feed update. Store data keyed by data["symbol"].
@@ -266,14 +263,14 @@ Build: Vanta Coordinator — Order-Based Crypto Trading Competition
 
  ────────────────────────────────────────────────────────────────────────────────
 
- 7. CrunchConfig — node/runtime_definitions/crunch_config.py
+ 7. CrunchConfig — node/config/crunch_config.py
 
  Pydantic models for the framework contracts:
 
  - RawInput / InferenceInput: symbol, asof_ts, candles_1m/5m/15m/1h, orderbook, funding
  - InferenceOutput: action (LONG/SHORT/FLAT), trade_pair, leverage
  - ScoreResult: value, portfolio_value, unrealized_pnl, realized_pnl, total_fees, gross_pnl, net_pnl, drawdown_pct, portfolio_leverage, open_positions, order_accepted, order_rejected_reason, success, failed_reason
- - PredictionScope: subject, horizon_seconds=0 (order-based, no fixed horizon; ge=0 is valid), step_seconds=60 (ge=1)
+ - PredictionScope: subject, step_seconds=15 (ge=1). resolve_horizon_seconds is injected from ScheduledPrediction.resolve_horizon_seconds
  - Aggregation: three windows as a **dict** (not a list) — `{"pnl_24h": AggregationWindow(hours=24), "pnl_72h": AggregationWindow(hours=72), "pnl_7d": AggregationWindow(hours=168)}`. AggregationWindow only accepts `hours` (no `name`, no `seconds`; extra="forbid"). Ranking by `ranking_key` + `ranking_direction="desc"` (NOT `ranking_order`).
  - Callables: resolve_ground_truth, aggregate_snapshot, build_emission, compute_metrics
 

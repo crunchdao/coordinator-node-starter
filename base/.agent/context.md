@@ -29,7 +29,7 @@ Feed → Input → Prediction → Score → Snapshot → Checkpoint → On-chain
 
 ### Contract-Based Design
 
-All type shapes and behavior are defined in a single `CrunchConfig` in `node/runtime_definitions/crunch_config.py`:
+All type shapes and behavior are defined in a single `CrunchConfig` in `node/config/crunch_config.py`:
 
 ```python
 class CrunchConfig(BaseModel):
@@ -152,7 +152,7 @@ make logs-capture
 | What to change | Where to edit |
 |---|---|
 | Challenge behavior (tracker, scoring, examples) | `challenge/starter_challenge/` |
-| Runtime contract (types, callables, emission config) | `node/runtime_definitions/crunch_config.py` |
+| Runtime contract (types, callables, emission config) | `node/config/crunch_config.py` |
 | Node config (env, deployment, schedules) | `node/` (.local.env, config/, deployment/) |
 
 For detailed edit boundaries, see `node/.agent/context.md` and `challenge/.agent/context.md`.
@@ -171,11 +171,11 @@ For detailed edit boundaries, see `node/.agent/context.md` and `challenge/.agent
 | I want to… | Put it in |
 |---|---|
 | Add a new API endpoint | `node/api/` — drop a `.py` file with `router = APIRouter(prefix="/custom")`. Auto-mounted at report-worker startup. |
-| Override scoring, ground truth, aggregation, or emission logic | `node/runtime_definitions/crunch_config.py` — override the relevant `CrunchConfig` callable field |
+| Override scoring, ground truth, aggregation, or emission logic | `node/config/crunch_config.py` — override the relevant `CrunchConfig` callable field |
 | Add a custom feed provider or external API integration | `node/plugins/` — for node-side integrations that need secrets or call private APIs |
 | Add a scoring helper or custom callable module | `node/extensions/` — for edge-case Python modules needed by the runtime (custom feed providers, specialized scoring helpers) |
 | Change the scoring function path | `node/config/callables.env` — set `SCORING_FUNCTION=module.path:function` |
-| Change prediction schedule or scope | `node/config/scheduled_prediction_configs.json` — **`resolve_after_seconds` must be > feed data interval** (see `node/.agent/context.md`) |
+| Change prediction schedule or scope | `node/config/crunch_config.py` → `scheduled_predictions` — **`resolve_horizon_seconds` >= feed interval or 0 for immediate** (see `node/.agent/context.md`) |
 | Change feed source, subjects, kind, granularity | `node/.local.env` — `FEED_SOURCE`, `FEED_SUBJECTS`, `FEED_KIND`, `FEED_GRANULARITY` |
 | Change the model interface participants implement | `challenge/starter_challenge/tracker.py` |
 | Change local self-eval scoring | `challenge/starter_challenge/scoring.py` |
@@ -194,7 +194,7 @@ For detailed edit boundaries, see `node/.agent/context.md` and `challenge/.agent
 
 ### To add a custom metric
 
-1. In `node/runtime_definitions/crunch_config.py`, register with `get_default_registry().register("name", fn)`
+1. In `node/config/crunch_config.py`, register with `get_default_registry().register("name", fn)`
 2. Add the metric name to `CrunchConfig.metrics` list
 
 ### To add a new ensemble strategy
@@ -253,7 +253,7 @@ cd .. && PYTHONPATH=base/challenge:base/node make test    # from repo root
 
 Tests CrunchConfig wiring end-to-end without Docker:
 
-- `scheduled_prediction_configs.json` validates as `ScheduledPredictionConfigEnvelope`
+- `CrunchConfig.scheduled_predictions` validates as `ScheduledPrediction` models
 - `scope_template` keys match `PredictionScope` fields
 - `CallMethodConfig.args` resolvable from merged scope
 - `resolve_ground_truth` returns non-None for valid feed data

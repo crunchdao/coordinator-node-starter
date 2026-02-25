@@ -105,7 +105,7 @@ class TestCreateSubmission(unittest.TestCase):
                 model_file.write_text(
                     "from my_pkg.tracker import TrackerBase\n\n"
                     "class CoolModel(TrackerBase):\n"
-                    "    def predict(self, subject, horizon_seconds, step_seconds):\n"
+                    "    def predict(self, subject, resolve_horizon_seconds, step_seconds):\n"
                     "        return {'value': 0.0}\n"
                 )
 

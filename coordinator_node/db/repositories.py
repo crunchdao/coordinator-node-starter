@@ -23,7 +23,6 @@ from coordinator_node.entities.prediction import (
     CheckpointRecord,
     CheckpointStatus,
     InputRecord,
-    InputStatus,
     PredictionRecord,
     PredictionStatus,
     ScoreRecord,
@@ -113,39 +112,22 @@ class DBInputRepository:
     def save(self, record: InputRecord) -> None:
         row = InputRow(
             id=record.id,
-            status=record.status,
             raw_data_jsonb=record.raw_data,
-            actuals_jsonb=record.actuals,
-            scope_jsonb=record.scope,
-            meta_jsonb=record.meta,
             received_at=record.received_at,
-            resolvable_at=record.resolvable_at,
         )
         existing = self._session.get(InputRow, row.id)
         if existing is None:
             self._session.add(row)
-        else:
-            existing.status = row.status
-            existing.actuals_jsonb = row.actuals_jsonb
-            existing.scope_jsonb = row.scope_jsonb
-            existing.resolvable_at = row.resolvable_at
-            existing.meta_jsonb = row.meta_jsonb
         self._session.commit()
 
     def find(
         self,
         *,
-        status: str | None = None,
-        resolvable_before: datetime | None = None,
         since: datetime | None = None,
         until: datetime | None = None,
         limit: int | None = None,
     ) -> list[InputRecord]:
         stmt = select(InputRow).order_by(InputRow.received_at.asc())
-        if status is not None:
-            stmt = stmt.where(InputRow.status == status)
-        if resolvable_before is not None:
-            stmt = stmt.where(InputRow.resolvable_at <= resolvable_before)
         if since is not None:
             stmt = stmt.where(InputRow.received_at >= since)
         if until is not None:
@@ -156,13 +138,8 @@ class DBInputRepository:
         return [
             InputRecord(
                 id=r.id,
-                status=InputStatus(r.status),
                 raw_data=r.raw_data_jsonb or {},
-                actuals=r.actuals_jsonb,
-                scope=r.scope_jsonb or {},
-                meta=r.meta_jsonb or {},
                 received_at=r.received_at,
-                resolvable_at=r.resolvable_at,
             )
             for r in rows
         ]

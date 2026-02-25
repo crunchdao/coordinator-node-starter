@@ -250,7 +250,7 @@ class TestBacktestRunner(unittest.TestCase):
             end="2026-01-16",
             window_size=10,
             prediction_interval_seconds=60,
-            horizon_seconds=60,
+            resolve_horizon_seconds=60,
             **self._FEED_DIMS,
         )
 
@@ -267,7 +267,7 @@ class TestBacktestRunner(unittest.TestCase):
             end="2026-01-16",
             window_size=10,
             prediction_interval_seconds=60,
-            horizon_seconds=60,
+            resolve_horizon_seconds=60,
             **self._FEED_DIMS,
         )
 
@@ -285,7 +285,7 @@ class TestBacktestRunner(unittest.TestCase):
             end="2026-01-16",
             window_size=10,
             prediction_interval_seconds=60,
-            horizon_seconds=60,
+            resolve_horizon_seconds=60,
             **self._FEED_DIMS,
         )
 
@@ -318,7 +318,7 @@ class TestBacktestRunner(unittest.TestCase):
             end="2026-01-16",
             window_size=10,
             prediction_interval_seconds=60,
-            horizon_seconds=60,
+            resolve_horizon_seconds=60,
             **self._FEED_DIMS,
         )
 
@@ -345,7 +345,7 @@ class TestBacktestRunner(unittest.TestCase):
             end="2026-01-16",
             window_size=10,
             prediction_interval_seconds=60,
-            horizon_seconds=60,
+            resolve_horizon_seconds=60,
             **self._FEED_DIMS,
         )
 
@@ -382,7 +382,9 @@ class TestBacktestRunner(unittest.TestCase):
                 ],
             }
         )
-        prod_result = model.predict(subject="BTC", horizon_seconds=60, step_seconds=60)
+        prod_result = model.predict(
+            subject="BTC", resolve_horizon_seconds=60, step_seconds=60
+        )
 
         # Same model in backtest
         model2 = DummyTracker()
@@ -393,7 +395,7 @@ class TestBacktestRunner(unittest.TestCase):
             end="2026-01-16",
             window_size=10,
             prediction_interval_seconds=60,
-            horizon_seconds=60,
+            resolve_horizon_seconds=60,
             **self._FEED_DIMS,
         )
 

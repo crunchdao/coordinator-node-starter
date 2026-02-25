@@ -15,4 +15,4 @@ Use this folder for **node-side integrations** that should not live in the publi
 - Infrastructure-specific adapters
 
 Most scoring and ground-truth customization belongs in
-`runtime_definitions/crunch_config.py` on the `CrunchConfig`.
+`config/crunch_config.py` on the `CrunchConfig`.

@@ -8,7 +8,6 @@ from datetime import UTC, datetime, timedelta
 from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.entities.prediction import (
     InputRecord,
-    InputStatus,
     PredictionRecord,
     PredictionStatus,
     ScoreRecord,
@@ -70,10 +69,7 @@ class TestMultiMetricSnapshots(unittest.TestCase):
         input1 = InputRecord(
             id="inp1",
             raw_data={},
-            actuals={"return": 0.05, "entry_price": 100, "resolved_price": 105},
-            status=InputStatus.RESOLVED,
             received_at=now - timedelta(minutes=5),
-            resolvable_at=now,
         )
 
         predictions = [
@@ -88,6 +84,7 @@ class TestMultiMetricSnapshots(unittest.TestCase):
                 exec_time_ms=10.0,
                 inference_output={"value": float(i + 1)},
                 performed_at=now - timedelta(seconds=60 * (5 - i)),
+                resolvable_at=now - timedelta(seconds=30),
             )
             for i in range(5)
         ]
@@ -210,10 +207,7 @@ class TestEnsembleInScorePipeline(unittest.TestCase):
         input1 = InputRecord(
             id="inp1",
             raw_data={},
-            actuals={"return": 0.05, "entry_price": 100, "resolved_price": 105},
-            status=InputStatus.RESOLVED,
             received_at=now - timedelta(minutes=5),
-            resolvable_at=now,
         )
 
         # Two models
@@ -234,6 +228,7 @@ class TestEnsembleInScorePipeline(unittest.TestCase):
                         exec_time_ms=10.0,
                         inference_output={"value": float(i + 1 + model_idx)},
                         performed_at=now - timedelta(seconds=60 * (3 - i)),
+                        resolvable_at=now - timedelta(seconds=30),
                     )
                 )
                 scores.append(

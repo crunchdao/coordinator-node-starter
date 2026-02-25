@@ -194,6 +194,7 @@ def build_ensemble_predictions(
                 inference_output={"value": ensemble_value},
                 meta={"weights": weights, "ensemble_name": name},
                 performed_at=now,
+                resolvable_at=now,
             )
         )
 

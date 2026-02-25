@@ -14,7 +14,7 @@ Replace 7 Tier 2 callables with a single Pydantic `CrunchContract` class. The ru
 ### The Contract
 
 ```python
-# runtime_definitions/contracts.py
+# config/contracts.py
 
 from pydantic import BaseModel, Field
 
@@ -105,14 +105,14 @@ entries.sort(
 
 ### Files Removed
 
-- `runtime_definitions/inference.py` (1-liner pass-through)
-- `runtime_definitions/validation.py` (delegates to contracts.py)
-- `runtime_definitions/reporting.py` (100-line hand-written schema)
+- `config/inference.py` (1-liner pass-through)
+- `config/validation.py` (delegates to contracts.py)
+- `config/reporting.py` (100-line hand-written schema)
 - `coordinator_runtime/defaults.py` (thin wrappers around node_template defaults)
 
 ### Files Modified
 
-- `runtime_definitions/contracts.py` — becomes the CrunchContract
+- `config/contracts.py` — becomes the CrunchContract
 - `node_template/config/extensions.py` — shrinks from 10 fields to 3
 - `node_template/workers/predict_worker.py` — uses contract types
 - `node_template/workers/score_worker.py` — uses contract aggregation

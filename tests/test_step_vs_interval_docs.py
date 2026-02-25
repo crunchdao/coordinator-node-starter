@@ -45,18 +45,10 @@ class TestStepVsIntervalDocumented:
             "descriptions — they are different concepts"
         )
 
-    def test_resolve_after_seconds_has_description(self):
+    def test_resolve_horizon_seconds_has_description(self):
         from coordinator_node.schemas.payload_contracts import ScheduleEnvelope
 
-        field = ScheduleEnvelope.model_fields["resolve_after_seconds"]
+        field = ScheduleEnvelope.model_fields["resolve_horizon_seconds"]
         assert field.description is not None and len(field.description) > 10, (
-            "ScheduleEnvelope.resolve_after_seconds must have a description"
-        )
-
-    def test_horizon_seconds_has_description(self):
-        from coordinator_node.crunch_config import PredictionScope
-
-        field = PredictionScope.model_fields["horizon_seconds"]
-        assert field.description is not None and len(field.description) > 10, (
-            "PredictionScope.horizon_seconds must have a description"
+            "ScheduleEnvelope.resolve_horizon_seconds must have a description"
         )

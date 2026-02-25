@@ -119,26 +119,14 @@ class PredictionScope(BaseModel):
             "use separate prediction configs per subject."
         ),
     )
-    horizon_seconds: int = Field(
-        default=60,
-        ge=0,
-        description=(
-            "How far into the future the model predicts (seconds). "
-            "Ground truth is resolved after this window elapses. "
-            "Example: 60 means 'predict what happens in the next 60 seconds'. "
-            "Use 0 for order-based or immediate-scoring competitions "
-            "where a forward-looking horizon is not applicable."
-        ),
-    )
     step_seconds: int = Field(
         default=15,
         ge=1,
         description=(
             "Time granularity within a prediction horizon (seconds). "
             "Passed to model.predict() as context — NOT the scheduling interval. "
-            "Example: with horizon=60 and step=15, the model knows it's producing "
-            "a 60s forecast at 15s resolution. See prediction_interval_seconds "
-            "in ScheduleEnvelope for how often the coordinator calls models."
+            "Example: with resolve_horizon=60 and step=15, the model knows "
+            "it's producing a 60s forecast at 15s resolution."
         ),
     )
 
@@ -155,7 +143,7 @@ class CallMethodArg(BaseModel):
 class CallMethodConfig(BaseModel):
     """How the coordinator invokes models.
 
-    Default: ``predict(subject, horizon_seconds, step_seconds)``
+    Default: ``predict(subject, resolve_horizon_seconds, step_seconds)``
     Override for competitions that use a different method signature, e.g.::
 
         CallMethodConfig(method="trade", args=[
@@ -170,7 +158,7 @@ class CallMethodConfig(BaseModel):
     args: list[CallMethodArg] = Field(
         default_factory=lambda: [
             CallMethodArg(name="subject", type="STRING"),
-            CallMethodArg(name="horizon_seconds", type="INT"),
+            CallMethodArg(name="resolve_horizon_seconds", type="INT"),
             CallMethodArg(name="step_seconds", type="INT"),
         ],
         description="Ordered list of arguments extracted from the prediction scope",
@@ -372,6 +360,48 @@ def default_compute_metrics(
     return get_default_registry().compute(metrics, predictions, scores, context)
 
 
+class ScheduledPrediction(BaseModel):
+    """A single scheduled prediction entry — defines what, when, and how to predict.
+
+    Replaces the old ``scheduled_prediction_configs.json`` file. Define these
+    directly in your CrunchConfig::
+
+        scheduled_predictions = [
+            ScheduledPrediction(
+                scope_key="realtime-btc",
+                scope={"subject": "BTC"},
+                prediction_interval_seconds=15,
+                resolve_horizon_seconds=60,
+            ),
+        ]
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    scope_key: str = Field(
+        min_length=1, description="Unique key for this prediction scope"
+    )
+    scope: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Scope template dict passed to model.predict() — e.g. subject",
+    )
+    prediction_interval_seconds: int = Field(
+        default=60,
+        ge=1,
+        description="How often the coordinator calls models (seconds)",
+    )
+    resolve_horizon_seconds: int = Field(
+        default=0,
+        ge=0,
+        description="Seconds to wait before resolving ground truth. 0 = immediate (live trading).",
+    )
+    active: bool = Field(
+        default=True, description="Whether this prediction config is active"
+    )
+    order: int = Field(default=0, description="Display/processing order")
+    meta: dict[str, Any] = Field(default_factory=dict, description="Arbitrary metadata")
+
+
 class CrunchConfig(BaseModel):
     """Single source of truth for challenge data shapes and aggregation."""
 
@@ -386,6 +416,19 @@ class CrunchConfig(BaseModel):
     scope: PredictionScope = Field(default_factory=PredictionScope)
     call_method: CallMethodConfig = Field(default_factory=CallMethodConfig)
     aggregation: Aggregation = Field(default_factory=Aggregation)
+
+    # Scheduled predictions — replaces scheduled_prediction_configs.json
+    scheduled_predictions: list[ScheduledPrediction] = Field(
+        default_factory=lambda: [
+            ScheduledPrediction(
+                scope_key="BTC-60",
+                scope={"subject": "BTC"},
+                prediction_interval_seconds=15,
+                resolve_horizon_seconds=60,
+            ),
+        ],
+        description="Prediction schedules — what to predict, how often, when to resolve",
+    )
 
     # Multi-metric scoring
     metrics: list[str] = Field(

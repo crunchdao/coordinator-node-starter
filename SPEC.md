@@ -94,9 +94,9 @@ challenge/                              # pip-installable participant package
       volatility_breakout.py            # Low-vol breakout across pairs
 
 node/
-  runtime_definitions/
-    __init__.py
-    crunch_config.py                    # CrunchConfig with Vanta-specific types
+  config/
+    crunch_config.py                    # CrunchConfig (types, predictions, callables, behavior)
+    callables.env                       # scoring function callable path
   extensions/
     __init__.py
     position_manager.py                 # Order → Position → Portfolio → Snapshot (DB-backed)
@@ -109,9 +109,6 @@ node/
   api/
     __init__.py
     positions.py                        # Custom REST endpoints for position/lifecycle state
-  config/
-    callables.env
-    scheduled_prediction_configs.json
   deployment/
     model-orchestrator-local/
       config/
@@ -256,7 +253,7 @@ call_method = CallMethodConfig(
 )
 ```
 
-No `subject`/`horizon_seconds`/`step_seconds` — those are prediction-contest concepts. This is a trading game.
+No `subject`/`resolve_horizon_seconds`/`step_seconds` — those are prediction-contest concepts. This is a trading game.
 
 ---
 
@@ -286,7 +283,7 @@ class Order:
 
 ---
 
-## 3. CrunchConfig — `node/runtime_definitions/crunch_config.py`
+## 3. CrunchConfig — `node/config/crunch_config.py`
 
 ### Pydantic contracts:
 
@@ -337,7 +334,7 @@ class CrunchConfig(BaseCrunchConfig):
     output_type = InferenceOutput
     score_type = ScoreResult
 
-    scope = PredictionScope(subject="BTCUSDT", horizon_seconds=0, step_seconds=60)
+    scope = PredictionScope(subject="BTCUSDT", step_seconds=60)
 
     # tick(market_data, positions) — two JSON args
     call_method = CallMethodConfig(
@@ -1240,7 +1237,7 @@ Each phase's tests must be GREEN before starting the next phase. Earlier phases 
 - `node/extensions/fee_engine.py` — fee calculations
 - `node/extensions/lifecycle_manager.py` — state machine
 - `node/api/positions.py` — REST endpoints (stubs)
-- `node/runtime_definitions/crunch_config.py` — Vanta-specific types + config
+- `node/config/crunch_config.py` — Vanta-specific types + config
 - All test files
 
 ### Existing files to modify:
@@ -1252,11 +1249,11 @@ Each phase's tests must be GREEN before starting the next phase. Earlier phases 
 - `node/db/tables/__init__.py` — register new table models
 - `node/db/__init__.py` — export new repositories
 - `node/.local.env` — Vanta-specific env vars
-- `node/config/scheduled_prediction_configs.json` — configure 60s tick cycle
+- `node/config/crunch_config.py` — scheduled_predictions define tick cycle, scope, and resolution
 - `docker-compose.yml` / `Dockerfile` — ensure pandas is available in model containers
 
 ### Existing files NOT to modify:
-- `coordinator_node/crunch_config.py` — base config classes (we override in runtime_definitions)
+- `coordinator_node/crunch_config.py` — base config classes (we override in config)
 - `coordinator_node/services/score.py` — base score service (we extend in score_worker)
 - Existing DB tables (inputs, predictions, scores, snapshots, leaderboards, feed_records)
 - Feed providers (binance.py) — keep depth/funding fetch capability, just don't call it from feed_data

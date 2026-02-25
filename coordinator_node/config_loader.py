@@ -1,15 +1,13 @@
 """Config loader — resolve the operator's CrunchConfig at startup.
 
 Workers call `load_config()` instead of `CrunchConfig()`. This tries
-to import the operator's customized config from `runtime_definitions`,
+to import the operator's customized config from `config/`,
 falling back to the engine default.
 
 Resolution order:
 1. `CRUNCH_CONFIG_MODULE` env var (e.g. `my_package.config:MyConfig`)
-2. `runtime_definitions.contracts:CrunchConfig` (standard operator override)
-3. `runtime_definitions.contracts:CrunchContract` (backward compat alias)
-4. `runtime_definitions.crunch_config:CrunchConfig` (new-style name)
-5. `coordinator_node.crunch_config:CrunchConfig` (engine default)
+2. `config.crunch_config:CrunchConfig` (operator override)
+3. `coordinator_node.crunch_config:CrunchConfig` (engine default)
 """
 
 from __future__ import annotations
@@ -38,18 +36,11 @@ def load_config() -> Any:
     return config
 
 
-# Backward compat alias
-load_contract = load_config
-
-
 def _resolve_config() -> Any:
     """Try each config source in priority order."""
 
     # 1. Explicit env var
     explicit = os.getenv("CRUNCH_CONFIG_MODULE", "").strip()
-    if not explicit:
-        # Backward compat
-        explicit = os.getenv("CONTRACT_MODULE", "").strip()
     if explicit:
         config, found = _try_load(explicit)
         if config is not None:
@@ -59,30 +50,20 @@ def _resolve_config() -> Any:
             "CRUNCH_CONFIG_MODULE=%s failed to load, trying fallbacks", explicit
         )
 
-    # 2. Operator's runtime_definitions (try multiple conventions)
-    failed_paths: list[str] = []
-    for path in [
-        "runtime_definitions.contracts:CrunchConfig",
-        "runtime_definitions.contracts:CrunchContract",  # backward compat
-        "runtime_definitions.contracts:CONTRACT",
-        "runtime_definitions.crunch_config:CrunchConfig",
-    ]:
-        config, found = _try_load(path)
-        if config is not None:
-            logger.info("Loaded config from %s", path)
-            return config
-        if found:
-            failed_paths.append(path)
+    # 2. Operator's config directory
+    config, found = _try_load("config.crunch_config:CrunchConfig")
+    if config is not None:
+        logger.info("Loaded config from config.crunch_config:CrunchConfig")
+        return config
 
     # 3. Engine default
     from coordinator_node.crunch_config import CrunchConfig
 
-    if failed_paths:
+    if found:
         logger.warning(
-            "Operator config found at %s but failed to instantiate — "
-            "falling back to engine default CrunchConfig. "
+            "Operator config found at config.crunch_config but failed to "
+            "instantiate — falling back to engine default CrunchConfig. "
             "Fix the validation errors above.",
-            ", ".join(failed_paths),
         )
     else:
         logger.info("Using default CrunchConfig (no operator override found)")

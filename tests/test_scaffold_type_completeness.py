@@ -12,7 +12,7 @@ SCAFFOLD_CONFIG_PATH = (
     Path(__file__).resolve().parent.parent
     / "base"
     / "node"
-    / "runtime_definitions"
+    / "config"
     / "crunch_config.py"
 )
 

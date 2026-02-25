@@ -40,7 +40,7 @@ Key design decisions:
 
 ## Cross-references
 
-- Runtime contract (node-private): `../node/runtime_definitions/crunch_config.py` — CrunchConfig defining types, scoring, emission
+- Runtime contract (node-private): `../node/config/crunch_config.py` — CrunchConfig defining types, scoring, emission
 
 ## ⚠️ Starter placeholder values
 

@@ -30,8 +30,9 @@ class RealtimePredictService(PredictService):
     ) -> None:
         """Validate prediction configs against feed timing constraints.
 
-        Raises ValueError if any active config has resolve_after_seconds
+        Raises ValueError if any active config has resolve_horizon_seconds
         that is too low to accumulate feed data for ground truth resolution.
+        resolve_horizon_seconds=0 is valid (immediate resolution, e.g. live trading).
         Must be called at startup to fail fast.
         """
         for config in configs:
@@ -39,16 +40,21 @@ class RealtimePredictService(PredictService):
                 continue
 
             schedule = config.get("schedule") or {}
-            resolve_after = schedule.get("resolve_after_seconds", 0)
+            resolve_horizon = schedule.get("resolve_horizon_seconds", 0)
             scope_key = config.get("scope_key", "<unknown>")
 
-            if resolve_after < feed_poll_seconds:
+            # 0 means immediate resolution (live trading) — skip feed timing check
+            if resolve_horizon == 0:
+                continue
+
+            if resolve_horizon < feed_poll_seconds:
                 raise ValueError(
-                    f"Config '{scope_key}': resolve_after_seconds={resolve_after} "
+                    f"Config '{scope_key}': resolve_horizon_seconds={resolve_horizon} "
                     f"is less than feed_poll_seconds={feed_poll_seconds}. "
                     f"Predictions will never accumulate enough feed data to "
                     f"resolve ground truth. All scores will be 0. "
-                    f"Set resolve_after_seconds >= {feed_poll_seconds}."
+                    f"Set resolve_horizon_seconds >= {feed_poll_seconds} "
+                    f"or use 0 for immediate resolution (live trading)."
                 )
 
     # ── main loop ──
@@ -112,37 +118,26 @@ class RealtimePredictService(PredictService):
                 continue
 
             # scope + timing
+            resolve_seconds = int(schedule.resolve_horizon_seconds or 0)
             scope = {
                 "scope_key": str(config.get("scope_key") or "default-scope"),
                 **self.contract.scope.model_dump(),
                 **(config.get("scope_template") or {}),
+                "resolve_horizon_seconds": resolve_seconds,
             }
             scope_key = scope["scope_key"]
-            resolve_seconds = schedule.resolve_after_seconds
-            if resolve_seconds is None:
-                resolve_seconds = scope.get(
-                    "horizon_seconds", self.contract.scope.horizon_seconds
-                )
-            resolvable_at = now + timedelta(seconds=max(0, int(resolve_seconds or 0)))
+            resolvable_at = now + timedelta(seconds=max(0, resolve_seconds))
 
-            # set resolvable_at on input (earliest horizon wins)
-            if inp.resolvable_at is None or resolvable_at < inp.resolvable_at:
-                inp.resolvable_at = resolvable_at
-                # Include feed dimensions so score worker can query matching records
-                feed_dims = {}
-                if self.feed_reader is not None:
-                    feed_dims = {
-                        "source": self.feed_reader.source,
-                        "subject": self.feed_reader.subject,
-                        "kind": self.feed_reader.kind,
-                        "granularity": self.feed_reader.granularity,
-                    }
-                inp.scope = {
-                    **feed_dims,
-                    **{k: v for k, v in scope.items() if k != "scope_key"},
-                }
-                if self.input_repository is not None:
-                    self.input_repository.save(inp)
+            # Include feed dimensions in scope so score worker can query matching records
+            if self.feed_reader is not None:
+                scope.setdefault("source", self.feed_reader.source)
+                scope.setdefault("subject", self.feed_reader.subject)
+                scope.setdefault("kind", self.feed_reader.kind)
+                scope.setdefault("granularity", self.feed_reader.granularity)
+
+            # Save input once (dumb log)
+            if self.input_repository is not None:
+                self.input_repository.save(inp)
 
             # call models
             responses = await self._call_models(scope)

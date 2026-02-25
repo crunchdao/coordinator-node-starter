@@ -8,7 +8,9 @@ from starter_challenge.tracker import TrackerBase
 class VolatilityRegimeTracker(TrackerBase):
     """Dampens directional signal when short-term volatility spikes."""
 
-    def predict(self, subject: str, horizon_seconds: int, step_seconds: int) -> dict:
+    def predict(
+        self, subject: str, resolve_horizon_seconds: int, step_seconds: int
+    ) -> dict:
         prices = _extract_prices(self._get_data(subject))
         returns = _returns(prices)
         if len(returns) < 3:

@@ -359,7 +359,7 @@ class BacktestRunner:
         end: str | datetime = "2026-02-01",
         window_size: int = 120,
         prediction_interval_seconds: int = 60,
-        horizon_seconds: int = 60,
+        resolve_horizon_seconds: int = 60,
     ) -> BacktestResult:
         """Replay cached data through the model, score predictions.
 
@@ -430,7 +430,7 @@ class BacktestRunner:
         predictions: list[dict[str, Any]] = []
         last_predict_ts: datetime | None = None
         interval = timedelta(seconds=prediction_interval_seconds)
-        horizon = timedelta(seconds=horizon_seconds)
+        horizon = timedelta(seconds=resolve_horizon_seconds)
 
         for i in range(window_size, len(df)):
             current_ts = df.iloc[i]["ts_event"]
@@ -449,7 +449,7 @@ class BacktestRunner:
                 try:
                     output = self.model.predict(
                         subject=subject,
-                        horizon_seconds=horizon_seconds,
+                        resolve_horizon_seconds=resolve_horizon_seconds,
                         step_seconds=prediction_interval_seconds,
                     )
                     output = self._coerce_output(output)
@@ -498,7 +498,7 @@ class BacktestRunner:
             "end": str(end),
             "window_size": window_size,
             "prediction_interval_seconds": prediction_interval_seconds,
-            "horizon_seconds": horizon_seconds,
+            "resolve_horizon_seconds": resolve_horizon_seconds,
         }
 
         return BacktestResult(predictions=predictions, metrics=metrics, config=config)

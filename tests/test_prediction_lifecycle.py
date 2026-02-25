@@ -18,7 +18,6 @@ from coordinator_node.entities.prediction import (
     CheckpointRecord,
     CheckpointStatus,
     InputRecord,
-    InputStatus,
     PredictionRecord,
     PredictionStatus,
     ScoreRecord,
@@ -41,23 +40,8 @@ class MemInputRepository:
                 return
         self.records.append(record)
 
-    def find(
-        self,
-        *,
-        status: str | None = None,
-        resolvable_before: datetime | None = None,
-        **kwargs: Any,
-    ) -> list[InputRecord]:
-        results = list(self.records)
-        if status is not None:
-            results = [r for r in results if r.status == status]
-        if resolvable_before is not None:
-            results = [
-                r
-                for r in results
-                if r.resolvable_at and r.resolvable_at <= resolvable_before
-            ]
-        return results
+    def find(self, **kwargs: Any) -> list[InputRecord]:
+        return list(self.records)
 
 
 class MemPredictionRepository:
@@ -70,7 +54,7 @@ class MemPredictionRepository:
                 "scope_template": {"subject": "BTC"},
                 "schedule": {
                     "prediction_interval_seconds": 60,
-                    "resolve_after_seconds": 60,
+                    "resolve_horizon_seconds": 60,
                 },
                 "active": True,
                 "order": 1,
@@ -369,12 +353,6 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         # predictions now SCORED
         scored_preds = self.pred_repo.find(status=PredictionStatus.SCORED)
         self.assertEqual(len(scored_preds), 2)
-
-        # input has actuals resolved
-        resolved_inputs = self.input_repo.find(status=InputStatus.RESOLVED)
-        self.assertEqual(len(resolved_inputs), 1)
-        self.assertIn("entry_price", resolved_inputs[0].actuals)
-        self.assertIn("resolved_price", resolved_inputs[0].actuals)
 
         # score records created
         self.assertEqual(len(self.score_repo.scores), 2)

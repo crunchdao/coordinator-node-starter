@@ -35,18 +35,12 @@ class TestRepositoryAPIs(unittest.TestCase):
         self.assertTrue(callable(getattr(DBLeaderboardRepository, "save", None)))
         self.assertTrue(callable(getattr(DBLeaderboardRepository, "get_latest", None)))
 
-    def test_input_repository_save_updates_scope_and_resolvable_at(self):
-        """Regression: DBInputRepository.save() must update scope_jsonb and
-        resolvable_at on existing records, not just status/actuals/meta."""
+    def test_input_repository_save_is_insert_only(self):
+        """InputRepository.save() is insert-only (dumb log table)."""
         source = inspect.getsource(DBInputRepository.save)
-        self.assertIn(
-            "scope_jsonb", source, "save() must update scope_jsonb on existing records"
-        )
-        self.assertIn(
-            "resolvable_at",
-            source,
-            "save() must update resolvable_at on existing records",
-        )
+        self.assertIn("raw_data_jsonb", source)
+        self.assertNotIn("scope_jsonb", source)
+        self.assertNotIn("actuals_jsonb", source)
 
     def test_prediction_repository_save_updates_resolvable_at(self):
         """Regression: DBPredictionRepository.save() must update resolvable_at

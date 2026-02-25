@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import Any
@@ -11,8 +10,6 @@ from sqlmodel import SQLModel, delete
 from coordinator_node.db.session import create_session, engine
 from coordinator_node.db.tables import PredictionConfigRow
 from coordinator_node.schemas import ScheduledPredictionConfigEnvelope
-
-MINUTE = 60
 
 
 def tables_to_reset() -> list[str]:
@@ -34,35 +31,30 @@ def tables_to_reset() -> list[str]:
     ]
 
 
-def default_scheduled_prediction_configs() -> list[dict[str, Any]]:
-    # Starter profile: generic scope + schedule for quick local end-to-end feedback.
+def load_scheduled_prediction_configs() -> list[dict[str, Any]]:
+    """Load scheduled predictions from CrunchConfig.scheduled_predictions."""
+    from coordinator_node.config_loader import load_config
+
+    config = load_config()
+    predictions = getattr(config, "scheduled_predictions", [])
+    if not predictions:
+        return []
+
+    # Convert ScheduledPrediction models to the envelope dict format
     return [
         {
-            "scope_key": "BTC-60-60",
-            "scope_template": {
-                "asset": "BTC",
-                "horizon": 1 * MINUTE,
-                "step": 1 * MINUTE,
-            },
+            "scope_key": sp.scope_key,
+            "scope_template": sp.scope,
             "schedule": {
-                "prediction_interval_seconds": 1 * MINUTE,
-                "resolve_after_seconds": 1 * MINUTE,
+                "prediction_interval_seconds": sp.prediction_interval_seconds,
+                "resolve_horizon_seconds": sp.resolve_horizon_seconds,
             },
-            "active": True,
-            "order": 1,
-        },
+            "active": sp.active,
+            "order": sp.order,
+            "meta": sp.meta,
+        }
+        for sp in predictions
     ]
-
-
-def load_scheduled_prediction_configs() -> list[dict[str, Any]]:
-    path = os.getenv("SCHEDULED_PREDICTION_CONFIGS_PATH")
-    if not path:
-        return default_scheduled_prediction_configs()
-
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(payload, list):
-        raise ValueError("SCHEDULED_PREDICTION_CONFIGS_PATH must point to a JSON array")
-    return payload
 
 
 def validate_scheduled_configs(configs: list[dict[str, Any]]) -> None:
@@ -76,15 +68,13 @@ def validate_scheduled_configs(configs: list[dict[str, Any]]) -> None:
             continue
 
         schedule = config.get("schedule") or {}
-        resolve_after = schedule.get("resolve_after_seconds", 0)
+        resolve_horizon = schedule.get("resolve_horizon_seconds", 0)
         scope_key = config.get("scope_key", "<unknown>")
 
-        if resolve_after <= 0:
+        if resolve_horizon < 0:
             raise ValueError(
-                f"Config '{scope_key}': resolve_after_seconds={resolve_after} "
-                f"must be > 0. With resolve_after_seconds=0, predictions have no "
-                f"time window to accumulate feed data for ground truth. "
-                f"All scores will be 0."
+                f"Config '{scope_key}': resolve_horizon_seconds={resolve_horizon} "
+                f"must be >= 0."
             )
 
 
@@ -215,10 +205,6 @@ def reset_db() -> None:
 
     migrate()
     print("✅ Database reset complete.")
-
-
-# Keep backward compat
-init_db = reset_db
 
 
 def _stamp_alembic_if_needed() -> None:

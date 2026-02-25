@@ -52,30 +52,30 @@ class TestExampleContract:
 
     def test_returns_dict_with_value(self, tracker):
         tracker.tick(_make_tick("BTC", UPTREND_CLOSES))
-        result = tracker.predict("BTC", horizon_seconds=60, step_seconds=15)
+        result = tracker.predict("BTC", resolve_horizon_seconds=60, step_seconds=15)
         assert isinstance(result, dict)
         assert "value" in result
         assert isinstance(result["value"], (int, float))
 
     def test_empty_data_returns_zero(self, tracker):
         tracker.tick(EMPTY_TICK)
-        result = tracker.predict("BTC", horizon_seconds=60, step_seconds=15)
+        result = tracker.predict("BTC", resolve_horizon_seconds=60, step_seconds=15)
         assert result["value"] == 0.0
 
     def test_no_tick_returns_zero(self, tracker):
-        result = tracker.predict("BTC", horizon_seconds=60, step_seconds=15)
+        result = tracker.predict("BTC", resolve_horizon_seconds=60, step_seconds=15)
         assert result["value"] == 0.0
 
     def test_sparse_candles_does_not_crash(self, tracker):
         """Fewer than 3 candles — models should handle gracefully."""
         tracker.tick(_make_tick("BTC", [40000, 40010]))
-        result = tracker.predict("BTC", horizon_seconds=60, step_seconds=15)
+        result = tracker.predict("BTC", resolve_horizon_seconds=60, step_seconds=15)
         assert isinstance(result["value"], (int, float))
         assert result["value"] == 0.0  # < 3 prices triggers early return
 
     def test_single_candle(self, tracker):
         tracker.tick(_make_tick("BTC", [40000]))
-        result = tracker.predict("BTC", horizon_seconds=60, step_seconds=15)
+        result = tracker.predict("BTC", resolve_horizon_seconds=60, step_seconds=15)
         assert result["value"] == 0.0
 
 

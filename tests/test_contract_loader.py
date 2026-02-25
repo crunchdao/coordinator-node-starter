@@ -62,7 +62,6 @@ class TestLoadConfig(unittest.TestCase):
     def tearDown(self):
         reset_cache()
         os.environ.pop("CRUNCH_CONFIG_MODULE", None)
-        os.environ.pop("CONTRACT_MODULE", None)
 
     def test_falls_back_to_engine_default(self):
         config = load_config()
@@ -88,23 +87,6 @@ class TestLoadConfig(unittest.TestCase):
         finally:
             del sys.modules["_test_explicit"]
 
-    def test_backward_compat_contract_module_env(self):
-        mod = types.ModuleType("_test_compat")
-        from coordinator_node.crunch_config import CrunchConfig
-
-        class CompatConfig(CrunchConfig):
-            metrics: list[str] = ["compat"]
-
-        mod.CompatConfig = CompatConfig
-        sys.modules["_test_compat"] = mod
-        os.environ["CONTRACT_MODULE"] = "_test_compat:CompatConfig"
-
-        try:
-            config = load_config()
-            self.assertIsInstance(config, CompatConfig)
-        finally:
-            del sys.modules["_test_compat"]
-
     def test_caches_result(self):
         c1 = load_config()
         c2 = load_config()
@@ -117,24 +99,6 @@ class TestLoadConfig(unittest.TestCase):
         self.assertIsNot(c1, c2)
 
 
-class TestPredictionScopeValidation(unittest.TestCase):
-    """PredictionScope must accept horizon_seconds=0 for order-based competitions."""
-
-    def test_horizon_zero_accepted(self):
-        from coordinator_node.crunch_config import PredictionScope
-
-        scope = PredictionScope(horizon_seconds=0)
-        self.assertEqual(scope.horizon_seconds, 0)
-
-    def test_horizon_negative_rejected(self):
-        from pydantic import ValidationError
-
-        from coordinator_node.crunch_config import PredictionScope
-
-        with self.assertRaises(ValidationError):
-            PredictionScope(horizon_seconds=-1)
-
-
 class TestAggregationWindowSchema(unittest.TestCase):
     """AggregationWindow accepts only `hours` — rejects stale scaffold fields."""
 
@@ -145,7 +109,6 @@ class TestAggregationWindowSchema(unittest.TestCase):
         self.assertEqual(w.hours, 24)
 
     def test_rejects_name_and_seconds(self):
-        """Scaffold bug #2: AggregationWindow(name='pnl_24h', seconds=86400)."""
         from pydantic import ValidationError
 
         from coordinator_node.crunch_config import AggregationWindow
@@ -172,7 +135,6 @@ class TestAggregationSchema(unittest.TestCase):
         self.assertIn("w1", agg.windows)
 
     def test_rejects_ranking_order(self):
-        """Scaffold bug #4: ranking_order='desc' instead of ranking_direction."""
         from pydantic import ValidationError
 
         from coordinator_node.crunch_config import Aggregation
@@ -193,8 +155,6 @@ class TestTryLoadValidationError(unittest.TestCase):
     """_try_load must log a warning (not debug) when instantiation fails."""
 
     def test_validation_error_logs_warning_and_reports_found(self):
-        """A config class whose __init__ raises should produce a warning log
-        and return found=True so the caller knows the module existed."""
         mod = types.ModuleType("_test_bad_config")
 
         class BadConfig:
@@ -222,90 +182,44 @@ class TestResolveConfigFallbackMessage(unittest.TestCase):
 
     def setUp(self):
         reset_cache()
-        # Evict ALL runtime_definitions.* entries that prior tests may have
-        # cached (e.g. scaffold integration tests with base/node on PYTHONPATH).
         self._saved_modules = {}
         for key in list(sys.modules):
-            if key == "runtime_definitions" or key.startswith("runtime_definitions."):
+            if key == "config" or key.startswith("config."):
                 self._saved_modules[key] = sys.modules.pop(key)
 
     def tearDown(self):
         reset_cache()
-        # Remove anything we injected
         for key in list(sys.modules):
-            if key == "runtime_definitions" or key.startswith("runtime_definitions."):
+            if key == "config" or key.startswith("config."):
                 del sys.modules[key]
-        # Restore previously cached modules
         sys.modules.update(self._saved_modules)
 
     def test_fallback_warns_when_override_exists_but_broken(self):
-        """Inject a broken runtime_definitions.crunch_config and verify the
+        """Inject a broken config.crunch_config and verify the
         fallback message mentions it failed, not 'no override found'."""
-        # Create runtime_definitions package with empty path so no
-        # submodules can be discovered from the real filesystem.
-        pkg = types.ModuleType("runtime_definitions")
+        pkg = types.ModuleType("config")
         pkg.__path__ = []
-        sys.modules["runtime_definitions"] = pkg
+        sys.modules["config"] = pkg
 
-        # Create crunch_config submodule with a broken CrunchConfig
-        mod = types.ModuleType("runtime_definitions.crunch_config")
+        mod = types.ModuleType("config.crunch_config")
 
         class BrokenConfig:
             def __init__(self):
                 raise ValueError("broken scope")
 
         mod.CrunchConfig = BrokenConfig
-        sys.modules["runtime_definitions.crunch_config"] = mod
+        sys.modules["config.crunch_config"] = mod
 
         with self.assertLogs("coordinator_node.config_loader", level="WARNING") as cm:
             config = load_config()
 
-        # Should still get a working config (engine default)
         from coordinator_node.crunch_config import CrunchConfig
 
         self.assertIsInstance(config, CrunchConfig)
 
-        # The WARNING must mention the failed path, not "no override found"
         all_output = "\n".join(cm.output)
-        self.assertIn("runtime_definitions.crunch_config", all_output)
+        self.assertIn("config.crunch_config", all_output)
         self.assertIn("failed to instantiate", all_output)
-
-
-class TestBackwardCompat(unittest.TestCase):
-    """Verify old import paths still work."""
-
-    def setUp(self):
-        reset_cache()
-
-    def tearDown(self):
-        reset_cache()
-
-    def test_import_from_contracts(self):
-        from coordinator_node.contracts import CrunchContract
-        from coordinator_node.crunch_config import CrunchConfig
-
-        # CrunchContract now resolves via config_loader → returns an instance
-        self.assertIsInstance(CrunchContract, CrunchConfig)
-
-    def test_crunch_contract_returns_same_cached_instance(self):
-        from coordinator_node import contracts
-
-        a = contracts.CrunchContract
-        b = contracts.CrunchContract
-        self.assertIs(a, b)
-
-    def test_crunch_config_class_still_importable(self):
-        from coordinator_node.contracts import CrunchConfig
-
-        # The raw class must still be importable for subclassing
-        self.assertTrue(isinstance(CrunchConfig, type))
-
-    def test_import_load_contract(self):
-        from coordinator_node.config_loader import load_config
-        from coordinator_node.contract_loader import load_contract
-
-        # Both should be the same function
-        self.assertIs(load_contract, load_config)
 
 
 if __name__ == "__main__":

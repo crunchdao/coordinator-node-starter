@@ -26,23 +26,8 @@ class MemInputRepository:
                 return
         self._records.append(record)
 
-    def find(
-        self,
-        *,
-        status: str | None = None,
-        resolvable_before: datetime | None = None,
-        **kwargs: Any,
-    ) -> list[InputRecord]:
-        results = list(self._records)
-        if status is not None:
-            results = [r for r in results if r.status == status]
-        if resolvable_before is not None:
-            results = [
-                r
-                for r in results
-                if r.resolvable_at and r.resolvable_at <= resolvable_before
-            ]
-        return results
+    def find(self, **kwargs: Any) -> list[InputRecord]:
+        return list(self._records)
 
 
 class MemPredictionRepository:
@@ -50,11 +35,21 @@ class MemPredictionRepository:
         self._predictions = list(predictions or [])
 
     def find(
-        self, *, status: str | None = None, **kwargs: Any
+        self,
+        *,
+        status: str | None = None,
+        resolvable_before: datetime | None = None,
+        **kwargs: Any,
     ) -> list[PredictionRecord]:
         results = list(self._predictions)
         if status is not None:
             results = [p for p in results if p.status == status]
+        if resolvable_before is not None:
+            results = [
+                p
+                for p in results
+                if p.resolvable_at and p.resolvable_at <= resolvable_before
+            ]
         return results
 
     def save(self, prediction: PredictionRecord) -> None:
@@ -144,14 +139,11 @@ class FakeFeedReader:
 now = datetime.now(UTC)
 
 
-def _make_input(status: str = "RECEIVED") -> InputRecord:
+def _make_input() -> InputRecord:
     return InputRecord(
         id="inp-1",
         raw_data={"symbol": "BTC"},
-        scope={"source": "pyth", "subject": "BTC", "kind": "tick", "granularity": "1s"},
-        status=status,
         received_at=now - timedelta(minutes=5),
-        resolvable_at=now - timedelta(minutes=1),
     )
 
 
@@ -164,7 +156,12 @@ def _make_prediction(
         model_id="m1",
         prediction_config_id="CFG_1",
         scope_key="BTC-60",
-        scope={"subject": "BTC", "horizon": 60},
+        scope={
+            "subject": "BTC",
+            "source": "pyth",
+            "kind": "tick",
+            "granularity": "1s",
+        },
         status=status,
         exec_time_ms=10.0,
         inference_output={"value": 0.5},

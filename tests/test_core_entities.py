@@ -3,7 +3,6 @@ import unittest
 from coordinator_node.entities.model import Model
 from coordinator_node.entities.prediction import (
     InputRecord,
-    InputStatus,
     PredictionRecord,
     PredictionStatus,
     ScoreRecord,
@@ -30,8 +29,6 @@ class TestCoreEntities(unittest.TestCase):
     def test_input_record(self):
         record = InputRecord(id="inp1", raw_data={"symbol": "BTC", "price": 100.0})
         self.assertEqual(record.raw_data["symbol"], "BTC")
-        self.assertEqual(record.status, InputStatus.RECEIVED)
-        self.assertIsNone(record.actuals)
 
     def test_prediction_record_carries_scope_and_output(self):
         prediction = PredictionRecord(

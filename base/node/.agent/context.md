@@ -59,10 +59,9 @@ Config: `API_ROUTES_DIR` (default `api/`), `API_ROUTES` (explicit `module:attr` 
 | Folder | Purpose | When to use |
 |---|---|---|
 | `api/` | Custom FastAPI endpoints | Add any `.py` file with `router = APIRouter()` — auto-discovered at startup. See `api/README.md` for examples with DB access and metrics. |
-| `extensions/` | Node-specific callable overrides | Edge-case Python modules needed by the runtime (custom feed providers, specialized scoring helpers). Most customization should go in `runtime_definitions/crunch_config.py` instead. |
+| `extensions/` | Node-specific callable overrides | Edge-case Python modules needed by the runtime (custom feed providers, specialized scoring helpers). Most customization should go in `config/crunch_config.py` instead. |
 | `plugins/` | Node-side integrations | Custom feed providers beyond built-in Pyth/Binance, external API integrations, data enrichment. Use when code needs secrets or calls private APIs that shouldn't be in the challenge package. |
-| `runtime_definitions/` | Competition contract | `crunch_config.py` is the primary file — defines all type shapes, callables, and behavior. `contracts.py` is backward compat. |
-| `config/` | Runtime configuration | `callables.env` for scoring function path, `scheduled_prediction_configs.json` for prediction schedule and scope. |
+| `config/` | Competition config & runtime settings | `crunch_config.py` defines all type shapes, callables, scheduled predictions, and behavior. `callables.env` for scoring function path. |
 | `deployment/` | Local deployment assets | `model-orchestrator-local/` for local model runner config, `report-ui/` for dashboard settings. |
 | `scripts/` | Utility scripts (do not edit) | `verify_e2e.py`, `backfill.py`, `check_models.py`, `capture_runtime_logs.py` — called by Makefile targets. |
 
@@ -72,8 +71,8 @@ Config: `API_ROUTES_DIR` (default `api/`), `API_ROUTES` (explicit `module:attr` 
 |---|---|
 | Node env config | `.local.env`, `.env` |
 | Callable paths | `config/callables.env` |
-| Prediction schedules | `config/scheduled_prediction_configs.json` — **`resolve_after_seconds` must be > feed data interval** (see below) |
-| Competition types & behavior | `runtime_definitions/crunch_config.py` (preferred), `runtime_definitions/contracts.py` (backward compat) |
+| Prediction schedules | `config/crunch_config.py` → `scheduled_predictions` field — **`resolve_horizon_seconds` must be >= feed data interval or 0 for immediate** (see below) |
+| Competition types & behavior | `config/crunch_config.py` |
 | Custom API endpoints | `api/` |
 | Custom callable modules | `extensions/` |
 | External integrations / feed providers | `plugins/` |
@@ -82,21 +81,21 @@ Config: `API_ROUTES_DIR` (default `api/`), `API_ROUTES` (explicit `module:attr` 
 
 ## ⚠️ Starter placeholder values
 
-All values in `config/`, `.local.env`, `runtime_definitions/crunch_config.py`,
-and `scheduled_prediction_configs.json` are starter placeholders (BTC, 60s
+All values in `config/`, `.local.env`, `config/crunch_config.py`,
+and `scheduled_predictions` are starter placeholders (BTC, 60s
 horizon, 1s granularity, etc.). They exist to make the scaffold bootable.
 **Ask the user for every competition-specific value before customizing.**
 See `../.agent/playbooks/customize.md` for the full placeholder table.
 
 ## Prediction schedule constraint
 
-`resolve_after_seconds` in `config/scheduled_prediction_configs.json` controls how long the score-worker waits before fetching ground truth from the feed. **It must be strictly greater than the feed's effective data interval**, otherwise no feed data will exist yet when scoring runs, and all predictions fail to score silently.
+`resolve_horizon_seconds` in `CrunchConfig.scheduled_predictions` controls how long the score-worker waits before fetching ground truth from the feed. Use **0 for immediate resolution** (live trading — scoring happens right away). For deferred resolution, it **must be >= the feed's effective data interval**, otherwise no feed data will exist yet when scoring runs.
 
-- Feed granularity `1s` + poll every `5s` → `resolve_after_seconds` > 5
-- Feed granularity `1m` → `resolve_after_seconds` > 60
-- Feed granularity `5m` → `resolve_after_seconds` > 300
+- Feed granularity `1s` + poll every `5s` → `resolve_horizon_seconds` > 5
+- Feed granularity `1m` → `resolve_horizon_seconds` > 60
+- Feed granularity `5m` → `resolve_horizon_seconds` > 300
 
-Always ask the user what `resolve_after_seconds` should be — do not assume a default.
+Always ask the user what `resolve_horizon_seconds` should be — do not assume a default.
 
 ## ⛔ Known gotchas
 
@@ -110,13 +109,13 @@ to `localhost`** — the SSR server runs inside Docker where `localhost` is itse
 - ✅ Leave unset (docker-compose.yml defaults are correct)
 - ❌ `http://localhost:8000` → ECONNREFUSED inside the container
 
-### 2. resolve_after_seconds must exceed feed granularity
-The score-worker fetches feed records in a time window of `resolve_after_seconds`.
+### 2. resolve_horizon_seconds must exceed feed granularity (unless 0)
+The score-worker fetches feed records in a time window of `resolve_horizon_seconds`.
 If this window is shorter than the feed granularity, it contains zero records
 and predictions silently fail to score.
 
-- Feed `1m` → `resolve_after_seconds` >= 75
-- Feed `1s` → `resolve_after_seconds` >= 10
+- Feed `1m` → `resolve_horizon_seconds` >= 75
+- Feed `1s` → `resolve_horizon_seconds` >= 10
 
 ### 3. Model submissions must be self-contained
 Model-runner containers do NOT have the challenge package installed. Any

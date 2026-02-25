@@ -256,11 +256,10 @@ contract = CrunchConfig(
 All workers use `load_config()` which tries, in order:
 
 1. `CRUNCH_CONFIG_MODULE` env var (e.g. `my_package.crunch_config:MyCrunchConfig`)
-2. `runtime_definitions.crunch_config:CrunchConfig` — the standard operator override
-3. `runtime_definitions.contracts:CrunchConfig` — backward compat
-4. `coordinator_node.crunch_config:CrunchConfig` — engine default
+2. `config.crunch_config:CrunchConfig` — the standard operator override
+3. `coordinator_node.crunch_config:CrunchConfig` — engine default
 
-The operator's config is imported automatically — no env var needed if `runtime_definitions/crunch_config.py` exists on `PYTHONPATH` (it does in the Docker setup).
+The operator's config is imported automatically — no env var needed if `config/crunch_config.py` exists on `PYTHONPATH` (it does in the Docker setup).
 
 ---
 
@@ -581,7 +580,7 @@ Historical backfill data is stored as Hive-partitioned parquet files at `data/ba
 | `scores` | One row per scored prediction. Stores the result payload, success flag, and optional failure reason. |
 | `snapshots` | Per-model period summaries. Aggregates prediction counts and result metrics over a time window. |
 | `checkpoints` | Periodic emission checkpoints. Aggregates snapshots into on-chain reward distributions. Status: `PENDING → SUBMITTED → CLAIMABLE → PAID`. |
-| `scheduled_prediction_configs` | Defines when and what to predict — scope template, schedule, and ordering. Seeded at init from `scheduled_prediction_configs.json`. |
+| `scheduled_prediction_configs` | Defines when and what to predict — scope template, schedule, and ordering. Seeded at init from `CrunchConfig.scheduled_predictions`. |
 
 ### Model layer
 
@@ -623,7 +622,7 @@ coordinator-node-starter/
 │   ├── schemas/            ← API schemas
 │   ├── extensions/         ← default callables
 │   ├── config/             ← runtime configuration
-│   └── contracts.py        ← competition shape: types, scope, and callable hooks
+│   └── crunch_config.py    ← base CrunchConfig class and default types
 ├── base/                   ← template used by crunch-cli init-workspace
 │   ├── node/               ← node template (Dockerfile, docker-compose, config)
 │   └── challenge/          ← challenge template (tracker, scoring, backtest, examples)

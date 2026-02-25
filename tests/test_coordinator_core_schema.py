@@ -35,8 +35,6 @@ class TestCoordinatorCoreSchema(unittest.TestCase):
         self.assertIn("meta_jsonb", ModelRow.model_fields)
 
         self.assertIn("raw_data_jsonb", InputRow.model_fields)
-        self.assertIn("actuals_jsonb", InputRow.model_fields)
-        self.assertIn("status", InputRow.model_fields)
 
         self.assertIn("inference_output_jsonb", PredictionRow.model_fields)
         self.assertIn("scope_jsonb", PredictionRow.model_fields)

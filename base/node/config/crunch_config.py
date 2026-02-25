@@ -14,6 +14,7 @@ from coordinator_node.crunch_config import (
 from coordinator_node.crunch_config import (
     GroundTruth,
     InferenceOutput,
+    ScheduledPrediction,
     ScoreResult,
 )
 
@@ -71,3 +72,13 @@ class CrunchConfig(BaseCrunchConfig):
         InferenceOutput  # ← customize for your prediction format
     )
     score_type: type[BaseModel] = ScoreResult  # ← customize for your scoring metrics
+
+    # Prediction schedule — what to predict, how often, when to resolve
+    scheduled_predictions: list[ScheduledPrediction] = [
+        ScheduledPrediction(
+            scope_key="realtime-btc-price-60s",
+            scope={"subject": "BTCUSDT"},  # these get added to the request when called
+            prediction_interval_seconds=15,  # how often it is called
+            resolve_horizon_seconds=60,  # how long to wait for the ground truth
+        ),
+    ]
