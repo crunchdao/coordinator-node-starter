@@ -140,9 +140,8 @@ class ScoreService:
         ``InferenceOutput`` are preserved so no data is silently lost.
         """
         try:
-            typed = self.contract.output_type(**raw)
-            # Start with the validated/coerced fields, then layer any extras
-            result = typed.model_dump()
+            typed = self.contract.parse_output(raw)
+            result = self.contract.dump_output(typed)
             for key, value in raw.items():
                 if key not in result:
                     result[key] = value
@@ -163,11 +162,10 @@ class ScoreService:
         """
         output_type = self.contract.output_type
         ground_truth_type = self.contract.ground_truth_type
-        score_type = self.contract.score_type
 
         # Build a sample prediction dict from InferenceOutput defaults
         try:
-            sample_output = output_type().model_dump()
+            sample_output = self.contract.dump_output(output_type())
         except Exception as exc:
             raise RuntimeError(
                 f"Cannot construct a default InferenceOutput ({output_type.__name__}): {exc}. "
@@ -176,7 +174,7 @@ class ScoreService:
 
         # Build a sample ground truth dict
         try:
-            sample_gt = ground_truth_type().model_dump()
+            sample_gt = self.contract.dump_ground_truth(ground_truth_type())
         except Exception as exc:
             self.logger.warning(
                 "Cannot construct a default GroundTruth (%s): %s — "
@@ -208,11 +206,11 @@ class ScoreService:
 
         # Validate the result against ScoreResult
         try:
-            score_type(**result)
+            self.contract.parse_score(result)
         except Exception as exc:
             raise RuntimeError(
                 f"Scoring function returned {result!r} which does not match "
-                f"ScoreResult ({score_type.__name__}): {exc}"
+                f"ScoreResult ({self.contract.score_type.__name__}): {exc}"
             ) from exc
 
         self.logger.info(
@@ -294,7 +292,12 @@ class ScoreService:
             granularity=scope.get("granularity"),
         )
 
-        return self.contract.resolve_ground_truth(records)
+        actuals = self.contract.resolve_ground_truth(records)
+        if actuals is None:
+            return None
+        # Validate through ground_truth_type
+        parsed = self.contract.parse_ground_truth(actuals)
+        return self.contract.dump_ground_truth(parsed)
 
     def _score_predictions(self, now: datetime) -> list[ScoreRecord]:
         predictions = self.prediction_repository.find(
@@ -318,12 +321,12 @@ class ScoreService:
             typed_output["prediction_id"] = prediction.id
 
             result = self.scoring_function(typed_output, actuals)
-            validated = self.contract.score_type(**result)
+            validated = self.contract.parse_score(result)
 
             score = ScoreRecord(
                 id=f"SCR_{prediction.id}",
                 prediction_id=prediction.id,
-                result=validated.model_dump(),
+                result=self.contract.dump_score(validated),
                 success=True,
                 scored_at=now,
             )
@@ -539,11 +542,11 @@ class ScoreService:
                 if actuals is not None:
                     typed_output = self._coerce_output(ep.inference_output)
                     result = self.scoring_function(typed_output, actuals)
-                    validated = self.contract.score_type(**result)
+                    validated = self.contract.parse_score(result)
                     score = ScoreRecord(
                         id=f"SCR_{ep.id}",
                         prediction_id=ep.id,
-                        result=validated.model_dump(),
+                        result=self.contract.dump_score(validated),
                         success=True,
                         scored_at=now,
                     )

@@ -53,7 +53,6 @@ class PredictService:
         self,
         feed_reader: FeedReader,
         contract: CrunchConfig | None = None,
-        transform: Callable | None = None,
         input_repository: DBInputRepository | None = None,
         model_repository: DBModelRepository | None = None,
         prediction_repository: DBPredictionRepository | None = None,
@@ -69,7 +68,7 @@ class PredictService:
     ):
         self.feed_reader = feed_reader
         self.contract = contract or CrunchConfig()
-        self.transform = transform
+
         self.input_repository = input_repository
         self.model_repository = model_repository
         self.prediction_repository = prediction_repository
@@ -92,9 +91,10 @@ class PredictService:
     # ── 1. get data ──
 
     def get_data(self, now: datetime) -> InputRecord:
-        """Fetch input, apply optional transform, save to DB."""
+        """Fetch input, validate through raw_input_type, save to DB."""
         raw = self.feed_reader.get_input(now)
-        data = self.transform(raw) if self.transform is not None else raw
+        validated = self.contract.parse_raw_input(raw)
+        data = self.contract.dump_raw_input(validated)
 
         record = InputRecord(
             id=f"INP_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}",
@@ -264,8 +264,8 @@ class PredictService:
                 self.logger.error("INFERENCE_OUTPUT_VALIDATION_ERROR: %s", msg)
                 return msg
 
-            validated = output_type(**output)
-            output.update(validated.model_dump())
+            validated = self.contract.parse_output(output)
+            output.update(self.contract.dump_output(validated))
             return None
         except Exception as exc:
             self.logger.error("INFERENCE_OUTPUT_VALIDATION_ERROR: %s", exc)
