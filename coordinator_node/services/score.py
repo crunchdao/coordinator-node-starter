@@ -1,22 +1,31 @@
 """Score service: resolve actuals on inputs → score predictions → leaderboard."""
+
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from coordinator_node.entities.prediction import (
-    CheckpointStatus, InputStatus, PredictionStatus, ScoreRecord, SnapshotRecord,
-)
-
+from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.db.repositories import (
-    DBInputRepository, DBLeaderboardRepository, DBMerkleCycleRepository,
-    DBMerkleNodeRepository, DBModelRepository,
-    DBPredictionRepository, DBScoreRepository, DBSnapshotRepository,
+    DBInputRepository,
+    DBLeaderboardRepository,
+    DBMerkleCycleRepository,
+    DBMerkleNodeRepository,
+    DBModelRepository,
+    DBPredictionRepository,
+    DBScoreRepository,
+    DBSnapshotRepository,
+)
+from coordinator_node.entities.prediction import (
+    InputStatus,
+    PredictionStatus,
+    ScoreRecord,
+    SnapshotRecord,
 )
 from coordinator_node.merkle.service import MerkleService
-from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.services.feed_reader import FeedReader
 
 
@@ -39,7 +48,9 @@ class ScoreService:
         **kwargs: Any,
     ):
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
-        self.score_interval_seconds = score_interval_seconds or min(60, checkpoint_interval_seconds)
+        self.score_interval_seconds = score_interval_seconds or min(
+            60, checkpoint_interval_seconds
+        )
         self.scoring_function = scoring_function
         self.feed_reader = feed_reader
         self.input_repository = input_repository
@@ -76,15 +87,30 @@ class ScoreService:
         test_cases = [
             (
                 {"value": 1.0},
-                {"entry_price": 40000, "resolved_price": 40100, "return": 0.0025, "direction_up": True},
+                {
+                    "entry_price": 40000,
+                    "resolved_price": 40100,
+                    "return": 0.0025,
+                    "direction_up": True,
+                },
             ),
             (
                 {"value": -1.0},
-                {"entry_price": 40000, "resolved_price": 39900, "return": -0.0025, "direction_up": False},
+                {
+                    "entry_price": 40000,
+                    "resolved_price": 39900,
+                    "return": -0.0025,
+                    "direction_up": False,
+                },
             ),
             (
                 {"value": 0.5},
-                {"entry_price": 40000, "resolved_price": 40500, "return": 0.0125, "direction_up": True},
+                {
+                    "entry_price": 40000,
+                    "resolved_price": 40500,
+                    "return": 0.0125,
+                    "direction_up": True,
+                },
             ),
         ]
 
@@ -124,7 +150,8 @@ class ScoreService:
             return result
         except Exception as exc:
             self.logger.warning(
-                "InferenceOutput coercion failed (%s), passing raw dict to scorer", exc,
+                "InferenceOutput coercion failed (%s), passing raw dict to scorer",
+                exc,
             )
             return raw
 
@@ -155,7 +182,8 @@ class ScoreService:
             self.logger.warning(
                 "Cannot construct a default GroundTruth (%s): %s — "
                 "scoring dry-run skipped (ground truth requires runtime data)",
-                ground_truth_type.__name__, exc,
+                ground_truth_type.__name__,
+                exc,
             )
             return
 
@@ -174,7 +202,8 @@ class ScoreService:
             self.logger.warning(
                 "Scoring dry-run raised %s: %s — this may be OK if the function "
                 "requires real data, but check field names match InferenceOutput",
-                type(exc).__name__, exc,
+                type(exc).__name__,
+                exc,
             )
             return
 
@@ -189,13 +218,15 @@ class ScoreService:
 
         self.logger.info(
             "Scoring IO validation passed: InferenceOutput(%s) → scoring → ScoreResult(%s)",
-            list(sample_output.keys()), list(result.keys()),
+            list(sample_output.keys()),
+            list(result.keys()),
         )
 
     async def run(self) -> None:
         self.logger.info(
             "score service started (score_interval=%ds, checkpoint_interval=%ds)",
-            self.score_interval_seconds, self.checkpoint_interval_seconds,
+            self.score_interval_seconds,
+            self.checkpoint_interval_seconds,
         )
         while not self.stop_event.is_set():
             try:
@@ -206,12 +237,14 @@ class ScoreService:
                 self.logger.exception("score loop error: %s", exc)
                 self._rollback_repositories()
             try:
-                await asyncio.wait_for(self.stop_event.wait(), timeout=self.score_interval_seconds)
-            except asyncio.TimeoutError:
+                await asyncio.wait_for(
+                    self.stop_event.wait(), timeout=self.score_interval_seconds
+                )
+            except TimeoutError:
                 pass
 
     def run_once(self) -> bool:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # 1. resolve actuals on inputs past their horizon
         self._resolve_inputs(now)
@@ -242,7 +275,8 @@ class ScoreService:
             return 0
 
         unresolved = self.input_repository.find(
-            status=InputStatus.RECEIVED, resolvable_before=now,
+            status=InputStatus.RECEIVED,
+            resolvable_before=now,
         )
         if not unresolved:
             return 0
@@ -325,7 +359,9 @@ class ScoreService:
 
     # ── 3. snapshots (with multi-metric enrichment) ──
 
-    def _write_snapshots(self, scored: list[ScoreRecord], now: datetime) -> list[SnapshotRecord]:
+    def _write_snapshots(
+        self, scored: list[ScoreRecord], now: datetime
+    ) -> list[SnapshotRecord]:
         if self.snapshot_repository is None:
             return []
 
@@ -349,18 +385,23 @@ class ScoreService:
 
             pred = pred_by_id.get(score.prediction_id)
             if pred:
-                by_model_preds.setdefault(model_id, []).append({
-                    "inference_output": pred.inference_output,
-                    "performed_at": pred.performed_at,
-                    "scope": pred.scope,
-                })
-            by_model_score_dicts.setdefault(model_id, []).append({
-                "result": score.result,
-                "scored_at": score.scored_at,
-            })
+                by_model_preds.setdefault(model_id, []).append(
+                    {
+                        "inference_output": pred.inference_output,
+                        "performed_at": pred.performed_at,
+                        "scope": pred.scope,
+                    }
+                )
+            by_model_score_dicts.setdefault(model_id, []).append(
+                {
+                    "result": score.result,
+                    "scored_at": score.scored_at,
+                }
+            )
 
         # Build MetricsContext (shared across all model evaluations)
         from coordinator_node.metrics.context import MetricsContext
+
         metrics_context_base = MetricsContext(
             model_id="",  # set per-model below
             window_start=min((s.scored_at for s in scored), default=now),
@@ -394,7 +435,11 @@ class ScoreService:
             snapshot = SnapshotRecord(
                 id=f"SNAP_{model_id}_{now.strftime('%Y%m%d_%H%M%S')}",
                 model_id=model_id,
-                period_start=min(s.scored_at for s in scored if pred_map.get(s.prediction_id) == model_id),
+                period_start=min(
+                    s.scored_at
+                    for s in scored
+                    if pred_map.get(s.prediction_id) == model_id
+                ),
                 period_end=now,
                 prediction_count=len(results),
                 result_summary=summary,
@@ -421,13 +466,13 @@ class ScoreService:
         if not self.contract.ensembles:
             return
 
+        from coordinator_node.metrics.context import MetricsContext
         from coordinator_node.services.ensemble import (
             apply_model_filter,
             build_ensemble_predictions,
             ensemble_model_id,
             is_ensemble_model,
         )
-        from coordinator_node.metrics.context import MetricsContext
 
         # Gather current model predictions and metrics from latest snapshots
         predictions = self.prediction_repository.find(status=PredictionStatus.SCORED)
@@ -439,21 +484,26 @@ class ScoreService:
         for p in predictions:
             if is_ensemble_model(p.model_id):
                 continue
-            by_model_preds.setdefault(p.model_id, []).append({
-                "inference_output": p.inference_output,
-                "performed_at": p.performed_at,
-                "scope": p.scope,
-                "input_id": p.input_id,
-                "scope_key": p.scope_key,
-            })
+            by_model_preds.setdefault(p.model_id, []).append(
+                {
+                    "inference_output": p.inference_output,
+                    "performed_at": p.performed_at,
+                    "scope": p.scope,
+                    "input_id": p.input_id,
+                    "scope_key": p.scope_key,
+                }
+            )
 
         # Get metrics from latest snapshots
-        all_snapshots = self.snapshot_repository.find() if self.snapshot_repository else []
+        all_snapshots = (
+            self.snapshot_repository.find() if self.snapshot_repository else []
+        )
         model_metrics: dict[str, dict[str, float]] = {}
         for snap in all_snapshots:
             if not is_ensemble_model(snap.model_id):
                 model_metrics[snap.model_id] = {
-                    k: float(v) for k, v in snap.result_summary.items()
+                    k: float(v)
+                    for k, v in snap.result_summary.items()
                     if isinstance(v, (int, float))
                 }
 
@@ -465,24 +515,32 @@ class ScoreService:
 
             # Filter models
             filtered_preds = apply_model_filter(
-                ens_config.model_filter, model_metrics, by_model_preds,
+                ens_config.model_filter,
+                model_metrics,
+                by_model_preds,
             )
 
             if not filtered_preds:
-                self.logger.info("Ensemble %r: no models after filtering", ens_config.name)
+                self.logger.info(
+                    "Ensemble %r: no models after filtering", ens_config.name
+                )
                 continue
 
             # Compute weights
             strategy = ens_config.strategy
             if strategy is None:
                 from coordinator_node.services.ensemble import inverse_variance
+
                 strategy = inverse_variance
 
             weights = strategy(model_metrics, filtered_preds)
 
             # Build ensemble predictions
             ens_preds = build_ensemble_predictions(
-                ens_config.name, weights, filtered_preds, now,
+                ens_config.name,
+                weights,
+                filtered_preds,
+                now,
             )
 
             if not ens_preds:
@@ -515,8 +573,13 @@ class ScoreService:
 
             # Store ensemble prediction dicts for metrics context
             ens_pred_dicts = [
-                {"inference_output": ep.inference_output, "performed_at": ep.performed_at,
-                 "scope": ep.scope, "input_id": ep.input_id, "scope_key": ep.scope_key}
+                {
+                    "inference_output": ep.inference_output,
+                    "performed_at": ep.performed_at,
+                    "scope": ep.scope,
+                    "input_id": ep.input_id,
+                    "scope_key": ep.scope_key,
+                }
                 for ep in ens_preds
             ]
             ensemble_predictions_map[ens_config.name] = ens_pred_dicts
@@ -531,14 +594,22 @@ class ScoreService:
                 if self.contract.metrics:
                     ctx = MetricsContext(
                         model_id=ens_model_id,
-                        window_start=min((s.scored_at for s in ens_scored), default=now),
+                        window_start=min(
+                            (s.scored_at for s in ens_scored), default=now
+                        ),
                         window_end=now,
                         all_model_predictions=by_model_preds,
                         ensemble_predictions=ensemble_predictions_map,
                     )
-                    ens_score_dicts = [{"result": s.result, "scored_at": s.scored_at} for s in ens_scored]
+                    ens_score_dicts = [
+                        {"result": s.result, "scored_at": s.scored_at}
+                        for s in ens_scored
+                    ]
                     metric_results = self.contract.compute_metrics(
-                        self.contract.metrics, ens_pred_dicts, ens_score_dicts, ctx,
+                        self.contract.metrics,
+                        ens_pred_dicts,
+                        ens_score_dicts,
+                        ctx,
                     )
                     summary.update(metric_results)
 
@@ -555,7 +626,9 @@ class ScoreService:
 
             self.logger.info(
                 "Ensemble %r: %d models, %d predictions, weights=%s",
-                ens_config.name, len(weights), len(ens_preds),
+                ens_config.name,
+                len(weights),
+                len(ens_preds),
                 {m: round(w, 3) for m, w in weights.items()},
             )
 
@@ -569,11 +642,14 @@ class ScoreService:
         ranked = self._rank(aggregated)
 
         self.leaderboard_repository.save(
-            ranked, meta={"generated_by": "coordinator_node.score_service"},
+            ranked,
+            meta={"generated_by": "coordinator_node.score_service"},
         )
 
-    def _aggregate_from_snapshots(self, snapshots: list[SnapshotRecord], models: dict) -> list[dict[str, Any]]:
-        now = datetime.now(timezone.utc)
+    def _aggregate_from_snapshots(
+        self, snapshots: list[SnapshotRecord], models: dict
+    ) -> list[dict[str, Any]]:
+        now = datetime.now(UTC)
         aggregation = self.contract.aggregation
 
         # Group snapshots by model
@@ -588,15 +664,24 @@ class ScoreService:
             # Windowed aggregation of the ranking key
             for window_name, window in aggregation.windows.items():
                 cutoff = now - timedelta(hours=window.hours)
-                window_snaps = [s for s in model_snapshots if self._ensure_utc(s.period_end) >= cutoff]
+                window_snaps = [
+                    s
+                    for s in model_snapshots
+                    if self._ensure_utc(s.period_end) >= cutoff
+                ]
                 if window_snaps:
-                    vals = [float(s.result_summary.get(aggregation.ranking_key, 0)) for s in window_snaps]
+                    vals = [
+                        float(s.result_summary.get(aggregation.ranking_key, 0))
+                        for s in window_snaps
+                    ]
                     metrics[window_name] = sum(vals) / len(vals)
                 else:
                     metrics[window_name] = 0.0
 
             # Add latest multi-metric values from most recent snapshot
-            latest_snap = max(model_snapshots, key=lambda s: self._ensure_utc(s.period_end))
+            latest_snap = max(
+                model_snapshots, key=lambda s: self._ensure_utc(s.period_end)
+            )
             for key, value in latest_snap.result_summary.items():
                 if key not in metrics and key in self.contract.metrics:
                     try:
@@ -647,16 +732,18 @@ class ScoreService:
     def _ensure_utc(dt: datetime) -> datetime:
         """Ensure a datetime is timezone-aware (assume UTC if naive)."""
         if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc)
+            return dt.replace(tzinfo=UTC)
         return dt
 
     def _rollback_repositories(self) -> None:
-        for name, repo in [("input", self.input_repository),
-                           ("prediction", self.prediction_repository),
-                           ("score", self.score_repository),
-                           ("snapshot", self.snapshot_repository),
-                           ("model", self.model_repository),
-                           ("leaderboard", self.leaderboard_repository)]:
+        for name, repo in [
+            ("input", self.input_repository),
+            ("prediction", self.prediction_repository),
+            ("score", self.score_repository),
+            ("snapshot", self.snapshot_repository),
+            ("model", self.model_repository),
+            ("leaderboard", self.leaderboard_repository),
+        ]:
             rollback = getattr(repo, "rollback", None)
             if callable(rollback):
                 try:

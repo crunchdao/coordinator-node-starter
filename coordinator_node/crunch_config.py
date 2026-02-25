@@ -1,11 +1,16 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from coordinator_node.entities.feed_record import FeedRecord
-from coordinator_node.entities.prediction import CruncherReward, EmissionCheckpoint, ProviderReward
+from coordinator_node.entities.prediction import (
+    CruncherReward,
+    EmissionCheckpoint,
+    ProviderReward,
+)
 
 
 class Meta(BaseModel):
@@ -115,7 +120,8 @@ class PredictionScope(BaseModel):
         ),
     )
     horizon_seconds: int = Field(
-        default=60, ge=0,
+        default=60,
+        ge=0,
         description=(
             "How far into the future the model predicts (seconds). "
             "Ground truth is resolved after this window elapses. "
@@ -125,7 +131,8 @@ class PredictionScope(BaseModel):
         ),
     )
     step_seconds: int = Field(
-        default=15, ge=1,
+        default=15,
+        ge=1,
         description=(
             "Time granularity within a prediction horizon (seconds). "
             "Passed to model.predict() as context — NOT the scheduling interval. "
@@ -140,7 +147,9 @@ class CallMethodArg(BaseModel):
     """A single argument to pass when calling a model method."""
 
     name: str = Field(description="Scope key to read the value from")
-    type: str = Field(default="STRING", description="VariantType: STRING, INT, FLOAT, JSON")
+    type: str = Field(
+        default="STRING", description="VariantType: STRING, INT, FLOAT, JSON"
+    )
 
 
 class CallMethodConfig(BaseModel):
@@ -155,7 +164,9 @@ class CallMethodConfig(BaseModel):
         ])
     """
 
-    method: str = Field(default="predict", description="gRPC method name to call on models")
+    method: str = Field(
+        default="predict", description="gRPC method name to call on models"
+    )
     args: list[CallMethodArg] = Field(
         default_factory=lambda: [
             CallMethodArg(name="subject", type="STRING"),
@@ -186,11 +197,13 @@ class Aggregation(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    windows: dict[str, AggregationWindow] = Field(default_factory=lambda: {
-        "score_recent": AggregationWindow(hours=24),
-        "score_steady": AggregationWindow(hours=72),
-        "score_anchor": AggregationWindow(hours=168),
-    })
+    windows: dict[str, AggregationWindow] = Field(
+        default_factory=lambda: {
+            "score_recent": AggregationWindow(hours=24),
+            "score_steady": AggregationWindow(hours=72),
+            "score_anchor": AggregationWindow(hours=168),
+        }
+    )
     ranking_key: str = "score_recent"
     ranking_direction: str = "desc"
 
@@ -206,7 +219,9 @@ class EnsembleConfig(BaseModel):
     enabled: bool = True
 
 
-def default_resolve_ground_truth(feed_records: list[FeedRecord]) -> dict[str, Any] | None:
+def default_resolve_ground_truth(
+    feed_records: list[FeedRecord],
+) -> dict[str, Any] | None:
     """Default resolver: compare first and last record's close/price in the window.
 
     Override for custom ground truth (VWAP, cross-venue, labels, etc.).
@@ -295,25 +310,31 @@ def default_build_emission(
 
     cruncher_rewards: list[CruncherReward] = []
     for i, entry in enumerate(ranked_entries):
-        cruncher_rewards.append(CruncherReward(
-            cruncher_index=i,
-            reward_pct=frac64_values[i],
-        ))
+        cruncher_rewards.append(
+            CruncherReward(
+                cruncher_index=i,
+                reward_pct=frac64_values[i],
+            )
+        )
 
     # Default: single compute + data provider each get 100%
     compute_rewards: list[ProviderReward] = []
     if compute_provider:
-        compute_rewards.append(ProviderReward(
-            provider=compute_provider,
-            reward_pct=FRAC_64_MULTIPLIER,
-        ))
+        compute_rewards.append(
+            ProviderReward(
+                provider=compute_provider,
+                reward_pct=FRAC_64_MULTIPLIER,
+            )
+        )
 
     data_rewards: list[ProviderReward] = []
     if data_provider:
-        data_rewards.append(ProviderReward(
-            provider=data_provider,
-            reward_pct=FRAC_64_MULTIPLIER,
-        ))
+        data_rewards.append(
+            ProviderReward(
+                provider=data_provider,
+                reward_pct=FRAC_64_MULTIPLIER,
+            )
+        )
 
     return EmissionCheckpoint(
         crunch=crunch_pubkey,
@@ -347,6 +368,7 @@ def default_compute_metrics(
 ) -> dict[str, float]:
     """Default metrics computation using the global metrics registry."""
     from coordinator_node.metrics.registry import get_default_registry
+
     return get_default_registry().compute(metrics, predictions, scores, context)
 
 
@@ -366,20 +388,36 @@ class CrunchConfig(BaseModel):
     aggregation: Aggregation = Field(default_factory=Aggregation)
 
     # Multi-metric scoring
-    metrics: list[str] = Field(default_factory=lambda: [
-        "ic", "ic_sharpe", "hit_rate", "max_drawdown", "model_correlation",
-    ])
+    metrics: list[str] = Field(
+        default_factory=lambda: [
+            "ic",
+            "ic_sharpe",
+            "hit_rate",
+            "max_drawdown",
+            "model_correlation",
+        ]
+    )
     compute_metrics: Callable = default_compute_metrics
 
     # Ensembles
     ensembles: list[EnsembleConfig] = Field(default_factory=list)
 
     # On-chain identifiers
-    crunch_pubkey: str = Field(default="", description="Crunch account pubkey for emission checkpoints")
-    compute_provider: str | None = Field(default=None, description="Compute provider wallet pubkey")
-    data_provider: str | None = Field(default=None, description="Data provider wallet pubkey")
+    crunch_pubkey: str = Field(
+        default="", description="Crunch account pubkey for emission checkpoints"
+    )
+    compute_provider: str | None = Field(
+        default=None, description="Compute provider wallet pubkey"
+    )
+    data_provider: str | None = Field(
+        default=None, description="Data provider wallet pubkey"
+    )
 
     # Callables
-    resolve_ground_truth: Callable[[list[FeedRecord]], dict[str, Any] | None] = default_resolve_ground_truth
-    aggregate_snapshot: Callable[[list[dict[str, Any]]], dict[str, Any]] = default_aggregate_snapshot
+    resolve_ground_truth: Callable[[list[FeedRecord]], dict[str, Any] | None] = (
+        default_resolve_ground_truth
+    )
+    aggregate_snapshot: Callable[[list[dict[str, Any]]], dict[str, Any]] = (
+        default_aggregate_snapshot
+    )
     build_emission: Callable[..., EmissionCheckpoint] = default_build_emission

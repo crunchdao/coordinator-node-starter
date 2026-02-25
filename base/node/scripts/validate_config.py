@@ -11,11 +11,11 @@ Run:  python scripts/validate_config.py
       make validate
 Exit 0 = all checks pass, exit 1 = at least one failure.
 """
+
 from __future__ import annotations
 
 import importlib
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -52,6 +52,7 @@ def warn(name: str, msg: str) -> None:
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
+
 def _load_env(path: Path) -> dict[str, str]:
     """Parse a .env file into a dict (ignoring comments and blank lines)."""
     env: dict[str, str] = {}
@@ -75,6 +76,7 @@ def _granularity_to_seconds(gran: str) -> int:
 
 
 # ── 1. Docker networking ─────────────────────────────────────────────
+
 
 def check_docker_networking():
     """NEXT_PUBLIC_API_URL is used by Next.js rewrites to proxy API calls
@@ -102,6 +104,7 @@ def check_docker_networking():
 
 
 # ── 2. Timing consistency ────────────────────────────────────────────
+
 
 def check_timing():
     """resolve_after_seconds must exceed feed granularity, otherwise the
@@ -141,6 +144,7 @@ def check_timing():
 
 # ── 3. Scoring sanity ────────────────────────────────────────────────
 
+
 def check_scoring():
     """The scoring function must return non-zero for valid inputs and
     differentiate between opposing predictions."""
@@ -165,7 +169,12 @@ def check_scoring():
     # Use generic shapes that work for both numeric and order-based competitions
     try:
         # Try order-based shape first (action/leverage/entry_price)
-        pred = {"action": "LONG", "trade_pair": "BTCUSDT", "leverage": 1.0, "entry_price": 100.0}
+        pred = {
+            "action": "LONG",
+            "trade_pair": "BTCUSDT",
+            "leverage": 1.0,
+            "entry_price": 100.0,
+        }
         gt = {"price": 105.0, "symbol": "BTCUSDT", "timestamp": 0}
         result = score_fn(pred, gt)
 
@@ -175,11 +184,17 @@ def check_scoring():
             gt = {"value": 100.0}
             result = score_fn(pred, gt)
 
-        check("score_prediction returns dict", isinstance(result, dict), f"got {type(result)}")
+        check(
+            "score_prediction returns dict",
+            isinstance(result, dict),
+            f"got {type(result)}",
+        )
         if not isinstance(result, dict):
             return
 
-        check("Result has 'value' key", "value" in result, f"keys: {list(result.keys())}")
+        check(
+            "Result has 'value' key", "value" in result, f"keys: {list(result.keys())}"
+        )
         check("Result has 'success' key", "success" in result, "")
 
         val = result.get("value", 0.0)
@@ -197,6 +212,7 @@ def check_scoring():
 
 # ── 4. Model submissions ─────────────────────────────────────────────
 
+
 def check_model_submissions():
     """Model-runner containers don't have the challenge package installed.
     Submissions must be self-contained."""
@@ -207,15 +223,21 @@ def check_model_submissions():
     pkg_name = None
     if CHALLENGE_DIR.exists():
         for d in CHALLENGE_DIR.iterdir():
-            if d.is_dir() and not d.name.startswith((".", "_")) and (d / "tracker.py").exists():
+            if (
+                d.is_dir()
+                and not d.name.startswith((".", "_"))
+                and (d / "tracker.py").exists()
+            ):
                 pkg_name = d.name
                 break
 
     sub_dirs = sorted(config_dir.glob("*-submission")) if config_dir.exists() else []
     if not sub_dirs:
-        warn("No config submissions found",
-             "No *-submission dirs in deployment/model-orchestrator-local/config/. "
-             "Models auto-discovered from challenge examples may still work.")
+        warn(
+            "No config submissions found",
+            "No *-submission dirs in deployment/model-orchestrator-local/config/. "
+            "Models auto-discovered from challenge examples may still work.",
+        )
         return
     check(f"Found {len(sub_dirs)} config submission(s)", True)
 
@@ -241,14 +263,17 @@ def check_model_submissions():
 
 # ── 5. CrunchConfig wiring ───────────────────────────────────────────
 
+
 def check_crunch_config():
     """Verify CrunchConfig loads and its callables/types are wired."""
     print("\n[5/5] CrunchConfig wiring")
     try:
         from runtime_definitions.crunch_config import CrunchConfig
     except ImportError as exc:
-        warn("CrunchConfig import",
-             f"skipped ({exc}). Install coordinator-node + pydantic to validate locally.")
+        warn(
+            "CrunchConfig import",
+            f"skipped ({exc}). Install coordinator-node + pydantic to validate locally.",
+        )
         return
 
     try:
@@ -273,6 +298,7 @@ def check_crunch_config():
 
 
 # ── Main ─────────────────────────────────────────────────────────────
+
 
 def main() -> int:
     print("=" * 60)

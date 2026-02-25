@@ -14,14 +14,17 @@ Usage:
     async for channel, payload in listen("new_feed_data", "score_complete"):
         print(f"got {channel}: {payload}")
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import select as _select
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 import psycopg2
+
 from coordinator_node.db.session import database_url
 
 logger = logging.getLogger(__name__)
@@ -30,7 +33,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_CHANNEL = "new_feed_data"
 
 
-def notify(channel: str = DEFAULT_CHANNEL, payload: str = "", connection: Any = None) -> None:
+def notify(
+    channel: str = DEFAULT_CHANNEL, payload: str = "", connection: Any = None
+) -> None:
     """Send a NOTIFY on the given channel with an optional payload string."""
     own_conn = connection is None
     if own_conn:
@@ -47,7 +52,9 @@ def notify(channel: str = DEFAULT_CHANNEL, payload: str = "", connection: Any = 
             connection.close()
 
 
-async def wait_for_notify(channel: str = DEFAULT_CHANNEL, timeout: float = 30.0) -> bool:
+async def wait_for_notify(
+    channel: str = DEFAULT_CHANNEL, timeout: float = 30.0
+) -> bool:
     """Block (async) until a NOTIFY arrives on the channel or timeout.
 
     Returns True if notified, False on timeout.
@@ -64,7 +71,9 @@ async def wait_for_notify(channel: str = DEFAULT_CHANNEL, timeout: float = 30.0)
         conn.close()
 
 
-async def listen(*channels: str, timeout: float | None = None) -> AsyncIterator[tuple[str, str]]:
+async def listen(
+    *channels: str, timeout: float | None = None
+) -> AsyncIterator[tuple[str, str]]:
     """Async generator that yields (channel, payload) tuples as notifications arrive.
 
     Subscribes to one or more channels. Runs until cancelled.
@@ -87,7 +96,10 @@ async def listen(*channels: str, timeout: float | None = None) -> AsyncIterator[
         loop = asyncio.get_event_loop()
         while True:
             notified = await loop.run_in_executor(
-                None, _poll_notify, conn, timeout if timeout is not None else 30.0,
+                None,
+                _poll_notify,
+                conn,
+                timeout if timeout is not None else 30.0,
             )
             if notified:
                 while conn.notifies:

@@ -2,21 +2,21 @@
 
 All tests mock the psycopg2 connection so no real Postgres is needed.
 """
+
 from __future__ import annotations
 
 import asyncio
 import unittest
 from collections import namedtuple
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from coordinator_node.db.pg_notify import (
     DEFAULT_CHANNEL,
+    _poll_notify,
+    listen,
     notify,
     wait_for_notify,
-    listen,
-    _poll_notify,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -184,6 +184,7 @@ class TestListen(unittest.TestCase):
         ]
 
         call_count = 0
+
         def poll_side_effect(c, t):
             nonlocal call_count
             call_count += 1
@@ -220,7 +221,7 @@ class TestListen(unittest.TestCase):
         # Run briefly — will loop once then we check LISTEN calls
         try:
             asyncio.run(asyncio.wait_for(run(), timeout=0.1))
-        except (asyncio.TimeoutError, StopAsyncIteration):
+        except (TimeoutError, StopAsyncIteration):
             pass
 
         listen_calls = [c for c in cursor.execute.call_args_list if "LISTEN" in str(c)]
@@ -242,7 +243,7 @@ class TestListen(unittest.TestCase):
 
         try:
             asyncio.run(asyncio.wait_for(run(), timeout=0.1))
-        except (asyncio.TimeoutError, StopAsyncIteration):
+        except (TimeoutError, StopAsyncIteration):
             pass
 
         cursor.execute.assert_any_call(f"LISTEN {DEFAULT_CHANNEL}")
@@ -254,6 +255,7 @@ class TestListen(unittest.TestCase):
         mock_raw.return_value = conn
 
         call_count = 0
+
         def poll_side_effect(c, t):
             nonlocal call_count
             call_count += 1
@@ -278,6 +280,7 @@ class TestListen(unittest.TestCase):
         mock_raw.return_value = conn
 
         call_count = 0
+
         def poll_side_effect(c, t):
             nonlocal call_count
             call_count += 1
@@ -303,15 +306,18 @@ class TestListen(unittest.TestCase):
         mock_raw.return_value = conn
 
         call_count = 0
+
         def poll_side_effect(c, t):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                conn.notifies.extend([
-                    Notification("a", "1"),
-                    Notification("b", "2"),
-                    Notification("a", "3"),
-                ])
+                conn.notifies.extend(
+                    [
+                        Notification("a", "1"),
+                        Notification("b", "2"),
+                        Notification("a", "3"),
+                    ]
+                )
                 return True
             return False
 
@@ -338,6 +344,7 @@ class TestRawConnection(unittest.TestCase):
     def test_strips_psycopg2_dialect(self, mock_connect, mock_url):
         mock_url.return_value = "postgresql+psycopg2://user:pass@host:5432/db"
         from coordinator_node.db.pg_notify import _raw_connection
+
         _raw_connection()
         mock_connect.assert_called_once_with("postgresql://user:pass@host:5432/db")
 
@@ -346,6 +353,7 @@ class TestRawConnection(unittest.TestCase):
     def test_plain_url_unchanged(self, mock_connect, mock_url):
         mock_url.return_value = "postgresql://user:pass@host:5432/db"
         from coordinator_node.db.pg_notify import _raw_connection
+
         _raw_connection()
         mock_connect.assert_called_once_with("postgresql://user:pass@host:5432/db")
 

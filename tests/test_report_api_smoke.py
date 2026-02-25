@@ -6,6 +6,7 @@ failed API route discovery, missing imports, etc.
 
 Run after scaffolding or any change to CrunchConfig, report_worker, or api/.
 """
+
 from __future__ import annotations
 
 import unittest
@@ -17,6 +18,7 @@ class TestReportApiSmoke(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from fastapi.testclient import TestClient
+
         from coordinator_node.workers.report_worker import app
 
         cls.client = TestClient(app)
@@ -35,8 +37,12 @@ class TestReportApiSmoke(unittest.TestCase):
         self.assertIsInstance(data["leaderboard_columns"], list)
         self.assertIsInstance(data["metrics_widgets"], list)
         # Must have at least the MODEL column
-        model_cols = [c for c in data["leaderboard_columns"] if c.get("type") == "MODEL"]
-        self.assertGreaterEqual(len(model_cols), 1, "Schema must include a MODEL column")
+        model_cols = [
+            c for c in data["leaderboard_columns"] if c.get("type") == "MODEL"
+        ]
+        self.assertGreaterEqual(
+            len(model_cols), 1, "Schema must include a MODEL column"
+        )
 
     def test_schema_leaderboard_columns(self):
         resp = self.client.get("/reports/schema/leaderboard-columns")

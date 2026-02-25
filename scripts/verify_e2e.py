@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import requests
 
@@ -115,7 +115,7 @@ def main() -> int:
     print(f"[verify-e2e] base_url={base_url} timeout={timeout_seconds}s")
 
     deadline = time.time() + timeout_seconds
-    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    since = datetime.now(UTC) - timedelta(hours=1)
 
     last_error: str | None = None
 
@@ -125,12 +125,18 @@ def main() -> int:
                 model_logs = _read_model_orchestrator_logs()
                 failure = _detect_model_runner_failure(model_logs)
                 if failure is not None:
-                    raise FatalVerificationError(f"model-runner failure detected: {failure}")
+                    raise FatalVerificationError(
+                        f"model-runner failure detected: {failure}"
+                    )
 
             predict_worker_logs = _read_predict_worker_logs()
-            validation_failure = _detect_prediction_validation_failure(predict_worker_logs)
+            validation_failure = _detect_prediction_validation_failure(
+                predict_worker_logs
+            )
             if validation_failure is not None:
-                raise FatalVerificationError(f"prediction validation failure detected: {validation_failure}")
+                raise FatalVerificationError(
+                    f"prediction validation failure detected: {validation_failure}"
+                )
 
             health = _get_json(base_url, "/healthz")
             if health.get("status") != "ok":
@@ -141,7 +147,7 @@ def main() -> int:
                 raise RuntimeError("no models registered yet")
 
             model_id = models[0]["model_id"]
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             predictions = _get_json(
                 base_url,
                 "/reports/predictions",
@@ -153,7 +159,12 @@ def main() -> int:
             )
             leaderboard = _get_json(base_url, "/reports/leaderboard")
 
-            scored = [row for row in predictions if row.get("score_value") is not None and row.get("score_failed") is False]
+            scored = [
+                row
+                for row in predictions
+                if row.get("score_value") is not None
+                and row.get("score_failed") is False
+            ]
             if scored and leaderboard:
                 # Fail if scores indicate a stub or broken ground truth
                 quality_ok, quality_reason = check_score_quality(scored)

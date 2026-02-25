@@ -3,14 +3,18 @@
 Issue #6: Scaffold overrides raw_input_type/input_type but forgets
 output_type/score_type, making it easy to miss they need customization.
 """
+
 from __future__ import annotations
 
-import ast
-import pytest
 from pathlib import Path
 
-
-SCAFFOLD_CONFIG_PATH = Path(__file__).resolve().parent.parent / "base" / "node" / "runtime_definitions" / "crunch_config.py"
+SCAFFOLD_CONFIG_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "base"
+    / "node"
+    / "runtime_definitions"
+    / "crunch_config.py"
+)
 
 
 class TestScaffoldTypeCompleteness:

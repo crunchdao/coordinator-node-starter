@@ -4,10 +4,10 @@ Issue #10: Bad predictions should fail at prediction time, not at scoring.
 The validator should reject outputs that are missing required fields or
 have wrong types.
 """
+
 from __future__ import annotations
 
-import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class TestOutputValidationRejectsInvalidOutput:
@@ -15,8 +15,8 @@ class TestOutputValidationRejectsInvalidOutput:
 
     def test_rejects_missing_required_field(self):
         """If InferenceOutput has a required field (no default), empty dict fails."""
-        from coordinator_node.services.predict import PredictService
         from coordinator_node.crunch_config import CrunchConfig
+        from coordinator_node.services.predict import PredictService
 
         class StrictOutput(BaseModel):
             direction: str  # required, no default
@@ -26,6 +26,7 @@ class TestOutputValidationRejectsInvalidOutput:
         service = PredictService.__new__(PredictService)
         service.contract = config
         import logging
+
         service.logger = logging.getLogger("test")
 
         error = service.validate_output({})
@@ -35,8 +36,8 @@ class TestOutputValidationRejectsInvalidOutput:
 
     def test_rejects_wrong_type(self):
         """If output has a field with wrong type that can't be coerced, it fails."""
-        from coordinator_node.services.predict import PredictService
         from coordinator_node.crunch_config import CrunchConfig
+        from coordinator_node.services.predict import PredictService
 
         class TypedOutput(BaseModel):
             value: float
@@ -46,6 +47,7 @@ class TestOutputValidationRejectsInvalidOutput:
         service = PredictService.__new__(PredictService)
         service.contract = config
         import logging
+
         service.logger = logging.getLogger("test")
 
         # Pass a dict where direction is a list instead of str
@@ -54,13 +56,14 @@ class TestOutputValidationRejectsInvalidOutput:
 
     def test_accepts_valid_output(self):
         """Valid output should pass."""
-        from coordinator_node.services.predict import PredictService
         from coordinator_node.crunch_config import CrunchConfig
+        from coordinator_node.services.predict import PredictService
 
         config = CrunchConfig()  # default InferenceOutput: value: float = 0.0
         service = PredictService.__new__(PredictService)
         service.contract = config
         import logging
+
         service.logger = logging.getLogger("test")
 
         error = service.validate_output({"value": 1.5})
@@ -68,13 +71,14 @@ class TestOutputValidationRejectsInvalidOutput:
 
     def test_accepts_output_with_extra_fields(self):
         """Extra fields from model should not cause validation failure."""
-        from coordinator_node.services.predict import PredictService
         from coordinator_node.crunch_config import CrunchConfig
+        from coordinator_node.services.predict import PredictService
 
         config = CrunchConfig()
         service = PredictService.__new__(PredictService)
         service.contract = config
         import logging
+
         service.logger = logging.getLogger("test")
 
         error = service.validate_output({"value": 1.5, "extra_info": "foo"})
@@ -83,13 +87,14 @@ class TestOutputValidationRejectsInvalidOutput:
     def test_warns_when_no_output_keys_match_schema(self):
         """If model returns keys that don't match any InferenceOutput field,
         the output is effectively all defaults — likely a bug."""
-        from coordinator_node.services.predict import PredictService
         from coordinator_node.crunch_config import CrunchConfig
+        from coordinator_node.services.predict import PredictService
 
         config = CrunchConfig()  # default InferenceOutput: value: float = 0.0
         service = PredictService.__new__(PredictService)
         service.contract = config
         import logging
+
         service.logger = logging.getLogger("test")
 
         # Model returns garbage keys — none match InferenceOutput fields.
@@ -103,8 +108,8 @@ class TestOutputValidationRejectsInvalidOutput:
 
     def test_validate_output_does_not_mutate_on_failure(self):
         """Failed validation should not leave the output dict in a bad state."""
-        from coordinator_node.services.predict import PredictService
         from coordinator_node.crunch_config import CrunchConfig
+        from coordinator_node.services.predict import PredictService
 
         class StrictOutput(BaseModel):
             direction: str
@@ -114,6 +119,7 @@ class TestOutputValidationRejectsInvalidOutput:
         service = PredictService.__new__(PredictService)
         service.contract = config
         import logging
+
         service.logger = logging.getLogger("test")
 
         original = {"bad_key": "value"}

@@ -26,7 +26,9 @@ class VolatilityRegimeTracker(TrackerBase):
 
 
 def _extract_prices(latest_data):
-    if isinstance(latest_data, dict) and isinstance(latest_data.get("candles_1m"), list):
+    if isinstance(latest_data, dict) and isinstance(
+        latest_data.get("candles_1m"), list
+    ):
         return _closes(latest_data["candles_1m"])
     return []
 

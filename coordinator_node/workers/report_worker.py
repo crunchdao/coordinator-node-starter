@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Annotated, Any, Generator
+from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
+from typing import Annotated, Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, status
@@ -12,13 +13,11 @@ from sqlmodel import Session
 from coordinator_node.config.runtime import RuntimeSettings
 from coordinator_node.config_loader import load_config
 from coordinator_node.crunch_config import CrunchConfig
-from coordinator_node.entities.prediction import CheckpointStatus
-from coordinator_node.schemas import ReportSchemaEnvelope
 from coordinator_node.db import (
     DBBackfillJobRepository,
     DBCheckpointRepository,
-    DBLeaderboardRepository,
     DBFeedRecordRepository,
+    DBLeaderboardRepository,
     DBMerkleCycleRepository,
     DBMerkleNodeRepository,
     DBModelRepository,
@@ -26,7 +25,9 @@ from coordinator_node.db import (
     DBSnapshotRepository,
     create_session,
 )
+from coordinator_node.entities.prediction import CheckpointStatus
 from coordinator_node.merkle.service import MerkleService
+from coordinator_node.schemas import ReportSchemaEnvelope
 
 app = FastAPI(title="Node Template Report Worker")
 
@@ -43,6 +44,7 @@ SETTINGS = RuntimeSettings.from_env()
 
 # API key auth — active when API_KEY env var is set
 from coordinator_node.middleware.auth import configure_auth
+
 configure_auth(app)
 
 
@@ -104,35 +106,46 @@ def auto_report_schema(contract: CrunchConfig) -> dict[str, Any]:
     ]
     col_id = 2
     for i, (window_name, window) in enumerate(aggregation.windows.items()):
-        display = getattr(window, "display_name", None) or window_name.replace("_", " ").title()
-        tooltip = getattr(window, "tooltip", None) or f"Rolling score over {window.hours}h"
+        display = (
+            getattr(window, "display_name", None)
+            or window_name.replace("_", " ").title()
+        )
+        tooltip = (
+            getattr(window, "tooltip", None) or f"Rolling score over {window.hours}h"
+        )
         fmt = getattr(window, "format", None) or "decimal-2"
-        columns.append({
-            "id": col_id,
-            "type": "VALUE",
-            "property": window_name,
-            "format": fmt,
-            "displayName": display,
-            "tooltip": tooltip,
-            "nativeConfiguration": None,
-            "order": (i + 1) * 10,
-        })
+        columns.append(
+            {
+                "id": col_id,
+                "type": "VALUE",
+                "property": window_name,
+                "format": fmt,
+                "displayName": display,
+                "tooltip": tooltip,
+                "nativeConfiguration": None,
+                "order": (i + 1) * 10,
+            }
+        )
         col_id += 1
 
     # Add columns for active metrics
     for j, metric_name in enumerate(contract.metrics):
-        display = _METRIC_DISPLAY_NAMES.get(metric_name, metric_name.replace("_", " ").title())
+        display = _METRIC_DISPLAY_NAMES.get(
+            metric_name, metric_name.replace("_", " ").title()
+        )
         tooltip = _METRIC_TOOLTIPS.get(metric_name)
-        columns.append({
-            "id": col_id,
-            "type": "VALUE",
-            "property": metric_name,
-            "format": "decimal-4",
-            "displayName": display,
-            "tooltip": tooltip,
-            "nativeConfiguration": None,
-            "order": 100 + j * 10,
-        })
+        columns.append(
+            {
+                "id": col_id,
+                "type": "VALUE",
+                "property": metric_name,
+                "format": "decimal-4",
+                "displayName": display,
+                "tooltip": tooltip,
+                "nativeConfiguration": None,
+                "order": 100 + j * 10,
+            }
+        )
         col_id += 1
 
     # Chart series from aggregation windows
@@ -168,138 +181,194 @@ def auto_report_schema(contract: CrunchConfig) -> dict[str, Any]:
 
     # Add a metrics snapshot widget if metrics are active
     if contract.metrics:
-        widgets.append({
-            "id": widget_id,
-            "type": "CHART",
-            "displayName": "Multi-Metric Overview",
-            "tooltip": "Portfolio-level metrics computed per model over scoring windows",
-            "order": 15,
-            "endpointUrl": "/reports/snapshots",
-            "nativeConfiguration": {
-                "type": "bar",
-                "xAxis": {"name": "model_id"},
-                "yAxis": {"series": metric_series, "format": "decimal-4"},
-                "displayEvolution": False,
-            },
-        })
+        widgets.append(
+            {
+                "id": widget_id,
+                "type": "CHART",
+                "displayName": "Multi-Metric Overview",
+                "tooltip": "Portfolio-level metrics computed per model over scoring windows",
+                "order": 15,
+                "endpointUrl": "/reports/snapshots",
+                "nativeConfiguration": {
+                    "type": "bar",
+                    "xAxis": {"name": "model_id"},
+                    "yAxis": {"series": metric_series, "format": "decimal-4"},
+                    "displayEvolution": False,
+                },
+            }
+        )
         widget_id += 1
 
-    widgets.extend([
-        {
-            "id": widget_id,
-            "type": "CHART",
-            "displayName": "Predictions",
-            "tooltip": None,
-            "order": 30,
-            "endpointUrl": "/reports/predictions",
-            "nativeConfiguration": {
-                "type": "line",
-                "xAxis": {"name": "performed_at"},
-                "yAxis": {
-                    "series": [{"name": "score_value"}],
-                    "format": "decimal-2",
+    widgets.extend(
+        [
+            {
+                "id": widget_id,
+                "type": "CHART",
+                "displayName": "Predictions",
+                "tooltip": None,
+                "order": 30,
+                "endpointUrl": "/reports/predictions",
+                "nativeConfiguration": {
+                    "type": "line",
+                    "xAxis": {"name": "performed_at"},
+                    "yAxis": {
+                        "series": [{"name": "score_value"}],
+                        "format": "decimal-2",
+                    },
+                    "alertConfig": {
+                        "reasonField": "score_failed_reason",
+                        "field": "score_success",
+                    },
+                    "filterConfig": [
+                        {
+                            "type": "select",
+                            "label": "Subject",
+                            "property": "subject",
+                            "autoSelectFirst": True,
+                        },
+                        {
+                            "type": "select",
+                            "label": "Horizon",
+                            "property": "horizon",
+                            "autoSelectFirst": True,
+                        },
+                    ],
+                    "groupByProperty": "param",
+                    "displayEvolution": False,
                 },
-                "alertConfig": {
-                    "reasonField": "score_failed_reason",
-                    "field": "score_success",
+            },
+            {
+                "id": widget_id + 1,
+                "type": "CHART",
+                "displayName": "Rolling score by parameters",
+                "tooltip": None,
+                "order": 20,
+                "endpointUrl": "/reports/models/params",
+                "nativeConfiguration": {
+                    "type": "line",
+                    "xAxis": {"name": "performed_at"},
+                    "yAxis": {"series": series, "format": "decimal-2"},
+                    "filterConfig": [
+                        {
+                            "type": "select",
+                            "label": "Subject",
+                            "property": "subject",
+                            "autoSelectFirst": True,
+                        },
+                        {
+                            "type": "select",
+                            "label": "Horizon",
+                            "property": "horizon",
+                            "autoSelectFirst": True,
+                        },
+                    ],
+                    "groupByProperty": "param",
+                    "displayEvolution": False,
                 },
-                "filterConfig": [
-                    {"type": "select", "label": "Subject", "property": "subject", "autoSelectFirst": True},
-                    {"type": "select", "label": "Horizon", "property": "horizon", "autoSelectFirst": True},
-                ],
-                "groupByProperty": "param",
-                "displayEvolution": False,
             },
-        },
-        {
-            "id": widget_id + 1,
-            "type": "CHART",
-            "displayName": "Rolling score by parameters",
-            "tooltip": None,
-            "order": 20,
-            "endpointUrl": "/reports/models/params",
-            "nativeConfiguration": {
-                "type": "line",
-                "xAxis": {"name": "performed_at"},
-                "yAxis": {"series": series, "format": "decimal-2"},
-                "filterConfig": [
-                    {"type": "select", "label": "Subject", "property": "subject", "autoSelectFirst": True},
-                    {"type": "select", "label": "Horizon", "property": "horizon", "autoSelectFirst": True},
-                ],
-                "groupByProperty": "param",
-                "displayEvolution": False,
-            },
-        },
-    ])
+        ]
+    )
 
     # Diversity radar chart — shows model uniqueness
-    diversity_metrics = [m for m in contract.metrics if m in (
-        "model_correlation", "ensemble_correlation", "contribution", "fnc",
-    )]
+    diversity_metrics = [
+        m
+        for m in contract.metrics
+        if m
+        in (
+            "model_correlation",
+            "ensemble_correlation",
+            "contribution",
+            "fnc",
+        )
+    ]
     if diversity_metrics:
         diversity_series = [
-            {"name": m, "label": _METRIC_DISPLAY_NAMES.get(m, m.replace("_", " ").title())}
+            {
+                "name": m,
+                "label": _METRIC_DISPLAY_NAMES.get(m, m.replace("_", " ").title()),
+            }
             for m in diversity_metrics
         ]
         # Also add diversity_score (computed)
         diversity_series.append({"name": "diversity_score", "label": "Diversity Score"})
-        widgets.append({
-            "id": widget_id + 2,
-            "type": "CHART",
-            "displayName": "Model Diversity",
-            "tooltip": "How unique each model is relative to the ensemble",
-            "order": 25,
-            "endpointUrl": "/reports/diversity",
-            "nativeConfiguration": {
-                "type": "bar",
-                "xAxis": {"name": "model_id"},
-                "yAxis": {"series": diversity_series, "format": "decimal-4"},
-                "displayEvolution": False,
-            },
-        })
+        widgets.append(
+            {
+                "id": widget_id + 2,
+                "type": "CHART",
+                "displayName": "Model Diversity",
+                "tooltip": "How unique each model is relative to the ensemble",
+                "order": 25,
+                "endpointUrl": "/reports/diversity",
+                "nativeConfiguration": {
+                    "type": "bar",
+                    "xAxis": {"name": "model_id"},
+                    "yAxis": {"series": diversity_series, "format": "decimal-4"},
+                    "displayEvolution": False,
+                },
+            }
+        )
 
     # Ensemble performance over time — only if ensembles are configured
     if contract.ensembles:
         ensemble_series = [
-            {"name": m, "label": _METRIC_DISPLAY_NAMES.get(m, m.replace("_", " ").title())}
+            {
+                "name": m,
+                "label": _METRIC_DISPLAY_NAMES.get(m, m.replace("_", " ").title()),
+            }
             for m in contract.metrics[:5]  # top 5 metrics for the chart
         ]
-        widgets.append({
-            "id": widget_id + 3,
-            "type": "CHART",
-            "displayName": "Ensemble Performance",
-            "tooltip": "Ensemble metrics over time — is the collective getting smarter?",
-            "order": 16,
-            "endpointUrl": "/reports/ensemble/history",
-            "nativeConfiguration": {
-                "type": "line",
-                "xAxis": {"name": "period_end"},
-                "yAxis": {"series": ensemble_series, "format": "decimal-4"},
-                "filterConfig": [
-                    {"type": "select", "label": "Ensemble", "property": "ensemble_name", "autoSelectFirst": True},
-                ],
-                "displayEvolution": False,
-            },
-        })
+        widgets.append(
+            {
+                "id": widget_id + 3,
+                "type": "CHART",
+                "displayName": "Ensemble Performance",
+                "tooltip": "Ensemble metrics over time — is the collective getting smarter?",
+                "order": 16,
+                "endpointUrl": "/reports/ensemble/history",
+                "nativeConfiguration": {
+                    "type": "line",
+                    "xAxis": {"name": "period_end"},
+                    "yAxis": {"series": ensemble_series, "format": "decimal-4"},
+                    "filterConfig": [
+                        {
+                            "type": "select",
+                            "label": "Ensemble",
+                            "property": "ensemble_name",
+                            "autoSelectFirst": True,
+                        },
+                    ],
+                    "displayEvolution": False,
+                },
+            }
+        )
 
     # Checkpoint reward history
-    widgets.append({
-        "id": widget_id + 4,
-        "type": "CHART",
-        "displayName": "Reward History",
-        "tooltip": "Reward distribution per checkpoint period",
-        "order": 40,
-        "endpointUrl": "/reports/checkpoints/rewards",
-        "nativeConfiguration": {
-            "type": "bar",
-            "xAxis": {"name": "period_end"},
-            "yAxis": {"series": [{"name": "reward_pct", "label": "Reward %"}], "format": "decimal-2"},
-            "groupByProperty": "model_name",
-            "displayEvolution": False,
-        },
-    })
+    widgets.append(
+        {
+            "id": widget_id + 4,
+            "type": "CHART",
+            "displayName": "Reward History",
+            "tooltip": "Reward distribution per checkpoint period",
+            "order": 40,
+            "endpointUrl": "/reports/checkpoints/rewards",
+            "nativeConfiguration": {
+                "type": "bar",
+                "xAxis": {"name": "period_end"},
+                "yAxis": {
+                    "series": [{"name": "reward_pct", "label": "Reward %"}],
+                    "format": "decimal-2",
+                },
+                "groupByProperty": "model_name",
+                "displayEvolution": False,
+            },
+        }
+    )
 
-    schema = {"schema_version": "1", "leaderboard_columns": columns, "metrics_widgets": widgets}
+    schema = {
+        "schema_version": "1",
+        "leaderboard_columns": columns,
+        "metrics_widgets": widgets,
+    }
 
     # Validate against typed contracts
     validated = ReportSchemaEnvelope.model_validate(schema)
@@ -321,14 +390,22 @@ def _flatten_metrics(metrics: dict[str, Any]) -> dict[str, float | None]:
     return flattened
 
 
-def _compute_window_metrics(scores: list[tuple[datetime, float]], contract: CrunchConfig) -> dict[str, float]:
+def _compute_window_metrics(
+    scores: list[tuple[datetime, float]], contract: CrunchConfig
+) -> dict[str, float]:
     """Compute windowed metrics from timestamped scores using contract aggregation."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     metrics: dict[str, float] = {}
     for window_name, window in contract.aggregation.windows.items():
         cutoff = now - timedelta(hours=window.hours)
-        window_values = [v for ts, v in scores if (ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts) >= cutoff]
-        metrics[window_name] = sum(window_values) / len(window_values) if window_values else 0.0
+        window_values = [
+            v
+            for ts, v in scores
+            if (ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts) >= cutoff
+        ]
+        metrics[window_name] = (
+            sum(window_values) / len(window_values) if window_values else 0.0
+        )
     return metrics
 
 
@@ -346,6 +423,7 @@ REPORT_SCHEMA = auto_report_schema(CONTRACT)
 
 # Auto-discover and mount custom API routers from node/api/ directory
 from coordinator_node.api_discovery import mount_api_routers
+
 mount_api_routers(app)
 
 
@@ -355,43 +433,43 @@ def get_db_session() -> Generator[Session, Any, None]:
 
 
 def get_model_repository(
-    session_db: Annotated[Session, Depends(get_db_session)]
+    session_db: Annotated[Session, Depends(get_db_session)],
 ) -> DBModelRepository:
     return DBModelRepository(session_db)
 
 
 def get_leaderboard_repository(
-    session_db: Annotated[Session, Depends(get_db_session)]
+    session_db: Annotated[Session, Depends(get_db_session)],
 ) -> DBLeaderboardRepository:
     return DBLeaderboardRepository(session_db)
 
 
 def get_prediction_repository(
-    session_db: Annotated[Session, Depends(get_db_session)]
+    session_db: Annotated[Session, Depends(get_db_session)],
 ) -> DBPredictionRepository:
     return DBPredictionRepository(session_db)
 
 
 def get_feed_record_repository(
-    session_db: Annotated[Session, Depends(get_db_session)]
+    session_db: Annotated[Session, Depends(get_db_session)],
 ) -> DBFeedRecordRepository:
     return DBFeedRecordRepository(session_db)
 
 
 def get_snapshot_repository(
-    session_db: Annotated[Session, Depends(get_db_session)]
+    session_db: Annotated[Session, Depends(get_db_session)],
 ) -> DBSnapshotRepository:
     return DBSnapshotRepository(session_db)
 
 
 def get_checkpoint_repository(
-    session_db: Annotated[Session, Depends(get_db_session)]
+    session_db: Annotated[Session, Depends(get_db_session)],
 ) -> DBCheckpointRepository:
     return DBCheckpointRepository(session_db)
 
 
 def get_merkle_service(
-    session_db: Annotated[Session, Depends(get_db_session)]
+    session_db: Annotated[Session, Depends(get_db_session)],
 ) -> MerkleService:
     return MerkleService(
         merkle_cycle_repository=DBMerkleCycleRepository(session_db),
@@ -400,7 +478,7 @@ def get_merkle_service(
 
 
 def get_merkle_cycle_repository(
-    session_db: Annotated[Session, Depends(get_db_session)]
+    session_db: Annotated[Session, Depends(get_db_session)],
 ) -> DBMerkleCycleRepository:
     return DBMerkleCycleRepository(session_db)
 
@@ -427,7 +505,7 @@ def get_report_schema_metrics_widgets() -> list[dict[str, Any]]:
 
 @app.get("/reports/models")
 def get_models(
-    model_repo: Annotated[DBModelRepository, Depends(get_model_repository)]
+    model_repo: Annotated[DBModelRepository, Depends(get_model_repository)],
 ) -> list[dict]:
     models = model_repo.fetch_all()
 
@@ -447,7 +525,9 @@ def get_models(
 def get_model_diversity(
     model_id: str,
     snapshot_repo: Annotated[DBSnapshotRepository, Depends(get_snapshot_repository)],
-    leaderboard_repo: Annotated[DBLeaderboardRepository, Depends(get_leaderboard_repository)],
+    leaderboard_repo: Annotated[
+        DBLeaderboardRepository, Depends(get_leaderboard_repository)
+    ],
 ) -> dict[str, Any]:
     """Diversity and contribution feedback for a specific model.
 
@@ -502,14 +582,21 @@ def get_model_diversity(
             f"Positive contribution ({contribution:.4f}). "
             "Your model improves the ensemble — this is valuable."
         )
-    if model_correlation is not None and model_correlation < 0.3 and ic is not None and ic > 0:
+    if (
+        model_correlation is not None
+        and model_correlation < 0.3
+        and ic is not None
+        and ic > 0
+    ):
         guidance.append(
             "Low correlation + positive IC — your model provides unique alpha. "
             "This is the ideal profile for ensemble contribution."
         )
 
     if not guidance:
-        guidance.append("Not enough data yet for diversity guidance. Keep submitting predictions.")
+        guidance.append(
+            "Not enough data yet for diversity guidance. Keep submitting predictions."
+        )
 
     # Get rank from leaderboard
     rank = None
@@ -543,7 +630,9 @@ def _is_ensemble_model(model_id: str | None) -> bool:
 
 @app.get("/reports/leaderboard")
 def get_leaderboard(
-    leaderboard_repo: Annotated[DBLeaderboardRepository, Depends(get_leaderboard_repository)],
+    leaderboard_repo: Annotated[
+        DBLeaderboardRepository, Depends(get_leaderboard_repository)
+    ],
     include_ensembles: Annotated[bool, Query()] = False,
 ) -> list[dict]:
     leaderboard = leaderboard_repo.get_latest()
@@ -582,7 +671,9 @@ def get_leaderboard(
 
 @app.get("/reports/models/global")
 def get_models_global(
-    prediction_repo: Annotated[DBPredictionRepository, Depends(get_prediction_repository)],
+    prediction_repo: Annotated[
+        DBPredictionRepository, Depends(get_prediction_repository)
+    ],
     snapshot_repo: Annotated[DBSnapshotRepository, Depends(get_snapshot_repository)],
     model_repo: Annotated[DBModelRepository, Depends(get_model_repository)],
     model_ids: Annotated[list[str] | None, Query(alias="projectIds")] = None,
@@ -599,10 +690,12 @@ def get_models_global(
     if not model_ids:
         return []
     if end is None:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
     if start is None:
         start = end - timedelta(days=7)
-    predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
+    predictions_by_model = prediction_repo.query_scores(
+        model_ids=model_ids, _from=start, to=end
+    )
 
     # Fetch latest snapshot per model for multi-metric enrichment
     latest_snapshots: dict[str, dict[str, Any]] = {}
@@ -650,7 +743,9 @@ def get_models_global(
 
 @app.get("/reports/models/params")
 def get_models_params(
-    prediction_repo: Annotated[DBPredictionRepository, Depends(get_prediction_repository)],
+    prediction_repo: Annotated[
+        DBPredictionRepository, Depends(get_prediction_repository)
+    ],
     model_repo: Annotated[DBModelRepository, Depends(get_model_repository)],
     model_ids: Annotated[list[str] | None, Query(alias="projectIds")] = None,
     start: Annotated[datetime | None, Query()] = None,
@@ -666,10 +761,12 @@ def get_models_params(
     if not model_ids:
         return []
     if end is None:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
     if start is None:
         start = end - timedelta(days=7)
-    predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
+    predictions_by_model = prediction_repo.query_scores(
+        model_ids=model_ids, _from=start, to=end
+    )
 
     grouped: dict[tuple[str, str], list] = {}
     for model_id, predictions in predictions_by_model.items():
@@ -712,7 +809,9 @@ def get_models_params(
 
 @app.get("/reports/predictions")
 def get_predictions(
-    prediction_repo: Annotated[DBPredictionRepository, Depends(get_prediction_repository)],
+    prediction_repo: Annotated[
+        DBPredictionRepository, Depends(get_prediction_repository)
+    ],
     model_repo: Annotated[DBModelRepository, Depends(get_model_repository)],
     model_ids: Annotated[list[str] | None, Query(alias="projectIds")] = None,
     start: Annotated[datetime | None, Query()] = None,
@@ -725,10 +824,12 @@ def get_predictions(
     if not model_ids:
         return []
     if end is None:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
     if start is None:
         start = end - timedelta(days=7)
-    predictions_by_model = prediction_repo.query_scores(model_ids=model_ids, _from=start, to=end)
+    predictions_by_model = prediction_repo.query_scores(
+        model_ids=model_ids, _from=start, to=end
+    )
 
     rows: list[dict] = []
     for _, predictions in predictions_by_model.items():
@@ -742,7 +843,9 @@ def get_predictions(
                     "scope": prediction.scope,
                     "score_value": score.value if score else None,
                     "score_failed": (not score.success) if score else True,
-                    "score_failed_reason": score.failed_reason if score else "Prediction not scored",
+                    "score_failed_reason": score.failed_reason
+                    if score
+                    else "Prediction not scored",
                     "scored_at": score.scored_at if score else None,
                     "performed_at": prediction.performed_at,
                 }
@@ -804,7 +907,9 @@ def get_snapshots(
     until: Annotated[datetime | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[dict[str, Any]]:
-    snapshots = snapshot_repo.find(model_id=model_id, since=since, until=until, limit=limit)
+    snapshots = snapshot_repo.find(
+        model_id=model_id, since=since, until=until, limit=limit
+    )
     return [
         {
             "id": s.id,
@@ -842,7 +947,7 @@ def get_models_metrics_timeseries(
     if not model_ids:
         return []
     if end is None:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
     if start is None:
         start = end - timedelta(days=7)
 
@@ -883,7 +988,7 @@ def get_models_summary(
     if not model_ids:
         return []
     if end is None:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
     if start is None:
         start = end - timedelta(days=7)
 
@@ -927,7 +1032,10 @@ def get_diversity_overview(
     for snap in snapshots:
         if _is_ensemble_model(snap.model_id):
             continue
-        if snap.model_id not in latest or snap.period_end > latest[snap.model_id]["period_end"]:
+        if (
+            snap.model_id not in latest
+            or snap.period_end > latest[snap.model_id]["period_end"]
+        ):
             summary = snap.result_summary
             corr = summary.get("model_correlation")
             latest[snap.model_id] = {
@@ -937,11 +1045,15 @@ def get_diversity_overview(
                 "ensemble_correlation": summary.get("ensemble_correlation"),
                 "contribution": summary.get("contribution"),
                 "fnc": summary.get("fnc"),
-                "diversity_score": round(max(0.0, 1.0 - abs(corr)), 4) if corr is not None else None,
+                "diversity_score": round(max(0.0, 1.0 - abs(corr)), 4)
+                if corr is not None
+                else None,
                 "ic": summary.get("ic"),
             }
 
-    rows = sorted(latest.values(), key=lambda r: r.get("diversity_score") or 0, reverse=True)
+    rows = sorted(
+        latest.values(), key=lambda r: r.get("diversity_score") or 0, reverse=True
+    )
     return rows[:limit]
 
 
@@ -976,7 +1088,11 @@ def get_ensemble_history(
             "period_start": snap.period_start,
             "period_end": snap.period_end,
             "prediction_count": snap.prediction_count,
-            **{k: v for k, v in snap.result_summary.items() if isinstance(v, (int, float))},
+            **{
+                k: v
+                for k, v in snap.result_summary.items()
+                if isinstance(v, (int, float))
+            },
         }
         rows.append(row)
 
@@ -989,7 +1105,9 @@ def get_ensemble_history(
 
 @app.get("/reports/checkpoints/rewards")
 def get_checkpoint_rewards(
-    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+    checkpoint_repo: Annotated[
+        DBCheckpointRepository, Depends(get_checkpoint_repository)
+    ],
     model_id: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[dict[str, Any]]:
@@ -1017,21 +1135,27 @@ def get_checkpoint_rewards(
                 idx = entry.get("rank", 0) - 1
                 if 0 <= idx < len(cruncher_rewards):
                     from coordinator_node.crunch_config import FRAC_64_MULTIPLIER
+
                     raw = cruncher_rewards[idx].get("reward_pct", 0)
                     reward_pct = round(raw / FRAC_64_MULTIPLIER * 100, 4)
 
-            rows.append({
-                "checkpoint_id": cp.id,
-                "period_start": cp.period_start,
-                "period_end": cp.period_end,
-                "model_id": mid,
-                "model_name": entry.get("model_name"),
-                "rank": entry.get("rank"),
-                "reward_pct": reward_pct,
-                "prediction_count": entry.get("prediction_count"),
-                **{k: v for k, v in entry.get("result_summary", {}).items()
-                   if isinstance(v, (int, float))},
-            })
+            rows.append(
+                {
+                    "checkpoint_id": cp.id,
+                    "period_start": cp.period_start,
+                    "period_end": cp.period_end,
+                    "model_id": mid,
+                    "model_name": entry.get("model_name"),
+                    "rank": entry.get("rank"),
+                    "reward_pct": reward_pct,
+                    "prediction_count": entry.get("prediction_count"),
+                    **{
+                        k: v
+                        for k, v in entry.get("result_summary", {}).items()
+                        if isinstance(v, (int, float))
+                    },
+                }
+            )
 
     rows.sort(key=lambda r: (r["period_end"], r["rank"] or 999))
     return rows
@@ -1042,7 +1166,9 @@ def get_checkpoint_rewards(
 
 @app.get("/reports/checkpoints")
 def get_checkpoints(
-    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+    checkpoint_repo: Annotated[
+        DBCheckpointRepository, Depends(get_checkpoint_repository)
+    ],
     checkpoint_status: Annotated[str | None, Query(alias="status")] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[dict[str, Any]]:
@@ -1052,23 +1178,31 @@ def get_checkpoints(
 
 @app.get("/reports/checkpoints/latest")
 def get_latest_checkpoint(
-    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+    checkpoint_repo: Annotated[
+        DBCheckpointRepository, Depends(get_checkpoint_repository)
+    ],
 ) -> dict[str, Any]:
     checkpoint = checkpoint_repo.get_latest()
     if checkpoint is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No checkpoints found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No checkpoints found"
+        )
     return _checkpoint_to_dict(checkpoint)
 
 
 @app.get("/reports/checkpoints/{checkpoint_id}/payload")
 def get_checkpoint_payload(
     checkpoint_id: str,
-    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+    checkpoint_repo: Annotated[
+        DBCheckpointRepository, Depends(get_checkpoint_repository)
+    ],
 ) -> dict[str, Any]:
     checkpoints = checkpoint_repo.find()
     checkpoint = next((c for c in checkpoints if c.id == checkpoint_id), None)
     if checkpoint is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found"
+        )
     return {
         "checkpoint_id": checkpoint.id,
         "period_start": checkpoint.period_start.isoformat(),
@@ -1081,12 +1215,16 @@ def get_checkpoint_payload(
 def confirm_checkpoint(
     checkpoint_id: str,
     body: dict[str, Any],
-    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+    checkpoint_repo: Annotated[
+        DBCheckpointRepository, Depends(get_checkpoint_repository)
+    ],
 ) -> dict[str, Any]:
     checkpoints = checkpoint_repo.find()
     checkpoint = next((c for c in checkpoints if c.id == checkpoint_id), None)
     if checkpoint is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found"
+        )
     if checkpoint.status != CheckpointStatus.PENDING:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -1095,11 +1233,13 @@ def confirm_checkpoint(
 
     tx_hash = body.get("tx_hash")
     if not tx_hash:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="tx_hash required")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="tx_hash required"
+        )
 
     checkpoint.status = CheckpointStatus.SUBMITTED
     checkpoint.tx_hash = tx_hash
-    checkpoint.submitted_at = datetime.now(timezone.utc)
+    checkpoint.submitted_at = datetime.now(UTC)
     checkpoint_repo.save(checkpoint)
 
     return _checkpoint_to_dict(checkpoint)
@@ -1109,12 +1249,16 @@ def confirm_checkpoint(
 def update_checkpoint_status(
     checkpoint_id: str,
     body: dict[str, Any],
-    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+    checkpoint_repo: Annotated[
+        DBCheckpointRepository, Depends(get_checkpoint_repository)
+    ],
 ) -> dict[str, Any]:
     checkpoints = checkpoint_repo.find()
     checkpoint = next((c for c in checkpoints if c.id == checkpoint_id), None)
     if checkpoint is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found"
+        )
 
     new_status = body.get("status")
     valid_transitions: dict[CheckpointStatus, list[CheckpointStatus]] = {
@@ -1148,22 +1292,31 @@ def update_checkpoint_status(
 @app.get("/reports/checkpoints/{checkpoint_id}/emission")
 def get_checkpoint_emission(
     checkpoint_id: str,
-    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+    checkpoint_repo: Annotated[
+        DBCheckpointRepository, Depends(get_checkpoint_repository)
+    ],
 ) -> dict[str, Any]:
     """Return the EmissionCheckpoint in protocol format for on-chain submission."""
     checkpoints = checkpoint_repo.find()
     checkpoint = next((c for c in checkpoints if c.id == checkpoint_id), None)
     if checkpoint is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found"
+        )
     if not checkpoint.entries:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No emission data in checkpoint")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No emission data in checkpoint",
+        )
     return checkpoint.entries[0]
 
 
 @app.get("/reports/checkpoints/{checkpoint_id}/emission/cli-format")
 def get_checkpoint_emission_cli_format(
     checkpoint_id: str,
-    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+    checkpoint_repo: Annotated[
+        DBCheckpointRepository, Depends(get_checkpoint_repository)
+    ],
 ) -> dict[str, Any]:
     """Return emission in coordinator-cli JSON file format.
 
@@ -1173,9 +1326,14 @@ def get_checkpoint_emission_cli_format(
     checkpoints = checkpoint_repo.find()
     checkpoint = next((c for c in checkpoints if c.id == checkpoint_id), None)
     if checkpoint is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found"
+        )
     if not checkpoint.entries:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No emission data in checkpoint")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No emission data in checkpoint",
+        )
 
     emission = checkpoint.entries[0]
     frac64_multiplier = 1_000_000_000
@@ -1213,8 +1371,15 @@ def get_checkpoint_emission_cli_format(
 @app.get("/reports/checkpoints/{checkpoint_id}/prizes")
 def get_checkpoint_prizes(
     checkpoint_id: str,
-    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
-    total_prize: Annotated[int, Query(description="Total prize pool to distribute (in token lowest denomination)")] = 0,
+    checkpoint_repo: Annotated[
+        DBCheckpointRepository, Depends(get_checkpoint_repository)
+    ],
+    total_prize: Annotated[
+        int,
+        Query(
+            description="Total prize pool to distribute (in token lowest denomination)"
+        ),
+    ] = 0,
 ) -> list[dict[str, Any]]:
     """Return checkpoint emission as Prize[] JSON for the coordinator webapp.
 
@@ -1228,9 +1393,14 @@ def get_checkpoint_prizes(
     checkpoints = checkpoint_repo.find()
     checkpoint = next((c for c in checkpoints if c.id == checkpoint_id), None)
     if checkpoint is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found"
+        )
     if not checkpoint.entries:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No emission data in checkpoint")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No emission data in checkpoint",
+        )
 
     emission = checkpoint.entries[0]
     ranking = checkpoint.meta.get("ranking", [])
@@ -1244,20 +1414,29 @@ def get_checkpoint_prizes(
         model_id = ranking[idx]["model_id"] if idx < len(ranking) else str(idx)
 
         prize_amount = int(round(total_prize * pct))
-        prizes.append({
-            "prizeId": f"{checkpoint_id}-{model_id}",
-            "timestamp": timestamp,
-            "model": model_id,
-            "prize": prize_amount,
-        })
+        prizes.append(
+            {
+                "prizeId": f"{checkpoint_id}-{model_id}",
+                "timestamp": timestamp,
+                "model": model_id,
+                "prize": prize_amount,
+            }
+        )
 
     return prizes
 
 
 @app.get("/reports/checkpoints/latest/prizes")
 def get_latest_checkpoint_prizes(
-    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
-    total_prize: Annotated[int, Query(description="Total prize pool to distribute (in token lowest denomination)")] = 0,
+    checkpoint_repo: Annotated[
+        DBCheckpointRepository, Depends(get_checkpoint_repository)
+    ],
+    total_prize: Annotated[
+        int,
+        Query(
+            description="Total prize pool to distribute (in token lowest denomination)"
+        ),
+    ] = 0,
 ) -> dict[str, Any]:
     """Return the latest checkpoint's prizes in webapp format.
 
@@ -1265,9 +1444,14 @@ def get_latest_checkpoint_prizes(
     """
     checkpoint = checkpoint_repo.get_latest()
     if checkpoint is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No checkpoints found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No checkpoints found"
+        )
     if not checkpoint.entries:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No emission data in checkpoint")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No emission data in checkpoint",
+        )
 
     emission = checkpoint.entries[0]
     ranking = checkpoint.meta.get("ranking", [])
@@ -1281,12 +1465,14 @@ def get_latest_checkpoint_prizes(
         model_id = ranking[idx]["model_id"] if idx < len(ranking) else str(idx)
 
         prize_amount = int(round(total_prize * pct))
-        prizes.append({
-            "prizeId": f"{checkpoint.id}-{model_id}",
-            "timestamp": timestamp,
-            "model": model_id,
-            "prize": prize_amount,
-        })
+        prizes.append(
+            {
+                "prizeId": f"{checkpoint.id}-{model_id}",
+                "timestamp": timestamp,
+                "model": model_id,
+                "prize": prize_amount,
+            }
+        )
 
     return {
         "checkpoint_id": checkpoint.id,
@@ -1300,14 +1486,21 @@ def get_latest_checkpoint_prizes(
 
 @app.get("/reports/emissions/latest")
 def get_latest_emission(
-    checkpoint_repo: Annotated[DBCheckpointRepository, Depends(get_checkpoint_repository)],
+    checkpoint_repo: Annotated[
+        DBCheckpointRepository, Depends(get_checkpoint_repository)
+    ],
 ) -> dict[str, Any]:
     """Return the emission from the most recent checkpoint."""
     checkpoint = checkpoint_repo.get_latest()
     if checkpoint is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No checkpoints found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No checkpoints found"
+        )
     if not checkpoint.entries:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No emission data in checkpoint")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No emission data in checkpoint",
+        )
     return {
         "checkpoint_id": checkpoint.id,
         "status": checkpoint.status,
@@ -1336,7 +1529,9 @@ def _checkpoint_to_dict(c) -> dict[str, Any]:
 
 @app.get("/reports/merkle/cycles")
 def get_merkle_cycles(
-    cycle_repo: Annotated[DBMerkleCycleRepository, Depends(get_merkle_cycle_repository)],
+    cycle_repo: Annotated[
+        DBMerkleCycleRepository, Depends(get_merkle_cycle_repository)
+    ],
     since: Annotated[datetime | None, Query()] = None,
     until: Annotated[datetime | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
@@ -1360,12 +1555,16 @@ def get_merkle_cycles(
 @app.get("/reports/merkle/cycles/{cycle_id}")
 def get_merkle_cycle(
     cycle_id: str,
-    cycle_repo: Annotated[DBMerkleCycleRepository, Depends(get_merkle_cycle_repository)],
+    cycle_repo: Annotated[
+        DBMerkleCycleRepository, Depends(get_merkle_cycle_repository)
+    ],
 ) -> dict[str, Any]:
     """Get a single Merkle cycle with its chained root."""
     cycle = cycle_repo.get(cycle_id)
     if cycle is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Merkle cycle not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Merkle cycle not found"
+        )
     return {
         "id": cycle.id,
         "previous_cycle_id": cycle.previous_cycle_id,
@@ -1402,15 +1601,12 @@ def get_merkle_proof(
 
 # ── Backfill ──
 
-import asyncio
 import os
-from pathlib import Path
 
 from fastapi import BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from coordinator_node.db.backfill_jobs import BackfillJobStatus
 from coordinator_node.services.parquet_sink import ParquetBackfillSink
 
 BACKFILL_DATA_DIR = os.getenv("BACKFILL_DATA_DIR", "data/backfill")
@@ -1427,13 +1623,13 @@ class BackfillRequestBody(BaseModel):
 
     def model_post_init(self, __context: Any) -> None:
         if self.start.tzinfo is None:
-            self.start = self.start.replace(tzinfo=timezone.utc)
+            self.start = self.start.replace(tzinfo=UTC)
         if self.end.tzinfo is None:
-            self.end = self.end.replace(tzinfo=timezone.utc)
+            self.end = self.end.replace(tzinfo=UTC)
 
 
 def get_backfill_job_repository(
-    session_db: Annotated[Session, Depends(get_db_session)]
+    session_db: Annotated[Session, Depends(get_db_session)],
 ) -> DBBackfillJobRepository:
     return DBBackfillJobRepository(session_db)
 
@@ -1450,7 +1646,9 @@ def get_backfill_feeds(
 def start_backfill(
     body: BackfillRequestBody,
     background_tasks: BackgroundTasks,
-    backfill_repo: Annotated[DBBackfillJobRepository, Depends(get_backfill_job_repository)],
+    backfill_repo: Annotated[
+        DBBackfillJobRepository, Depends(get_backfill_job_repository)
+    ],
     feed_repo: Annotated[DBFeedRecordRepository, Depends(get_feed_record_repository)],
 ) -> dict[str, Any]:
     """Start a backfill job. Returns 409 if one is already running."""
@@ -1480,7 +1678,9 @@ def start_backfill(
 
 @app.get("/reports/backfill/jobs")
 def list_backfill_jobs(
-    backfill_repo: Annotated[DBBackfillJobRepository, Depends(get_backfill_job_repository)],
+    backfill_repo: Annotated[
+        DBBackfillJobRepository, Depends(get_backfill_job_repository)
+    ],
     job_status: Annotated[str | None, Query(alias="status")] = None,
 ) -> list[dict[str, Any]]:
     """List all backfill jobs."""
@@ -1491,12 +1691,16 @@ def list_backfill_jobs(
 @app.get("/reports/backfill/jobs/{job_id}")
 def get_backfill_job(
     job_id: str,
-    backfill_repo: Annotated[DBBackfillJobRepository, Depends(get_backfill_job_repository)],
+    backfill_repo: Annotated[
+        DBBackfillJobRepository, Depends(get_backfill_job_repository)
+    ],
 ) -> dict[str, Any]:
     """Get a single backfill job with progress."""
     job = backfill_repo.get(job_id)
     if job is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Backfill job not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Backfill job not found"
+        )
 
     result = _backfill_job_to_dict(job)
 
@@ -1504,7 +1708,9 @@ def get_backfill_job(
     if job.start_ts and job.end_ts and job.cursor_ts:
         total = (job.end_ts - job.start_ts).total_seconds()
         elapsed = (job.cursor_ts - job.start_ts).total_seconds()
-        result["progress_pct"] = min(100.0, max(0.0, (elapsed / total * 100.0) if total > 0 else 0.0))
+        result["progress_pct"] = min(
+            100.0, max(0.0, (elapsed / total * 100.0) if total > 0 else 0.0)
+        )
     else:
         result["progress_pct"] = 0.0
 
@@ -1532,7 +1738,9 @@ def get_backfill_file(
     rel_path = f"{source}/{subject}/{kind}/{granularity}/{filename}"
     file_path = _parquet_sink.read_file(rel_path)
     if file_path is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
+        )
     return FileResponse(
         path=str(file_path),
         media_type="application/octet-stream",
@@ -1562,7 +1770,7 @@ def _backfill_job_to_dict(job) -> dict[str, Any]:
 async def _run_backfill_async(job_id: str, body: BackfillRequestBody) -> None:
     """Run backfill in background. Uses its own DB session."""
     from coordinator_node.feeds import create_default_registry
-    from coordinator_node.services.backfill import BackfillService, BackfillRequest
+    from coordinator_node.services.backfill import BackfillRequest, BackfillService
 
     logger = logging.getLogger("backfill_worker")
 
@@ -1573,8 +1781,16 @@ async def _run_backfill_async(job_id: str, body: BackfillRequestBody) -> None:
             # Check if we should resume
             job = job_repo.get(job_id)
             cursor_ts = None
-            _cursor = job.cursor_ts.replace(tzinfo=timezone.utc) if job and job.cursor_ts and job.cursor_ts.tzinfo is None else (job.cursor_ts if job else None)
-            _start = body.start.replace(tzinfo=timezone.utc) if body.start.tzinfo is None else body.start
+            _cursor = (
+                job.cursor_ts.replace(tzinfo=UTC)
+                if job and job.cursor_ts and job.cursor_ts.tzinfo is None
+                else (job.cursor_ts if job else None)
+            )
+            _start = (
+                body.start.replace(tzinfo=UTC)
+                if body.start.tzinfo is None
+                else body.start
+            )
             if _cursor and _cursor > _start:
                 cursor_ts = job.cursor_ts
 
@@ -1593,12 +1809,16 @@ async def _run_backfill_async(job_id: str, body: BackfillRequestBody) -> None:
             )
 
             sink = ParquetBackfillSink(base_dir=BACKFILL_DATA_DIR)
-            service = BackfillService(feed=feed, repository=sink, job_repository=job_repo)
+            service = BackfillService(
+                feed=feed, repository=sink, job_repository=job_repo
+            )
             result = await service.run(request)
 
             logger.info(
                 "backfill job=%s completed records=%d pages=%d",
-                job_id, result.records_written, result.pages_fetched,
+                job_id,
+                result.records_written,
+                result.pages_fetched,
             )
     except Exception as exc:
         logger.exception("backfill job=%s failed: %s", job_id, exc)

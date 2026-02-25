@@ -4,6 +4,7 @@ Issue #5: If resolve_after_seconds < feed poll interval, predictions will
 never accumulate enough data to resolve ground truth. The system should
 fail fast at startup instead of silently scoring 0.
 """
+
 from __future__ import annotations
 
 import pytest

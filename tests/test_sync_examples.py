@@ -1,4 +1,5 @@
 """Tests for the model-orchestrator sync_examples script."""
+
 from __future__ import annotations
 
 import sys
@@ -6,7 +7,10 @@ import unittest
 from pathlib import Path
 
 # Import the script directly — it lives outside the Python package
-SCRIPT_PATH = Path(__file__).resolve().parent.parent / "base/node/deployment/model-orchestrator-local/config"
+SCRIPT_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "base/node/deployment/model-orchestrator-local/config"
+)
 sys.path.insert(0, str(SCRIPT_PATH))
 
 import sync_examples  # noqa: E402
@@ -65,6 +69,7 @@ class TestSubmissionIdFromFilename(unittest.TestCase):
 class TestFindExamples(unittest.TestCase):
     def test_excludes_init_and_private(self, tmp_path=None):
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmpdir:
             d = Path(tmpdir)
             (d / "__init__.py").write_text("")
@@ -80,6 +85,7 @@ class TestFindExamples(unittest.TestCase):
 class TestCreateSubmission(unittest.TestCase):
     def test_creates_standalone_submission(self):
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmpdir:
             # Set up paths
             orig_submissions = sync_examples.SUBMISSIONS_DIR
@@ -126,6 +132,7 @@ class TestCreateSubmission(unittest.TestCase):
 class TestGenerateModelsYml(unittest.TestCase):
     def test_generates_valid_yaml(self):
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmpdir:
             orig_file = sync_examples.MODELS_FILE
             sync_examples.MODELS_FILE = Path(tmpdir) / "models.dev.yml"
@@ -148,6 +155,7 @@ class TestGenerateModelsYml(unittest.TestCase):
 
     def test_empty_submissions(self):
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmpdir:
             orig_file = sync_examples.MODELS_FILE
             sync_examples.MODELS_FILE = Path(tmpdir) / "models.dev.yml"

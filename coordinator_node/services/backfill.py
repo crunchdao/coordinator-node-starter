@@ -1,9 +1,10 @@
 """Paginated historical backfill service for data feeds."""
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from coordinator_node.entities.feed_record import FeedIngestionState, FeedRecord
 from coordinator_node.feeds.base import DataFeed
@@ -82,7 +83,7 @@ class BackfillService:
                             subject=subject,
                             kind=request.kind,
                             granularity=request.granularity,
-                            last_event_ts=datetime.fromtimestamp(max_ts, tz=timezone.utc),
+                            last_event_ts=datetime.fromtimestamp(max_ts, tz=UTC),
                             meta={"phase": "backfill-manual"},
                         )
                     )
@@ -91,14 +92,16 @@ class BackfillService:
                     if self.job_repository and request.job_id:
                         self.job_repository.update_progress(
                             request.job_id,
-                            cursor_ts=datetime.fromtimestamp(subject_cursor, tz=timezone.utc),
+                            cursor_ts=datetime.fromtimestamp(subject_cursor, tz=UTC),
                             records_written=result.records_written,
                             pages_fetched=result.pages_fetched,
                         )
 
                     self.logger.info(
                         "backfill page subject=%s wrote=%d cursor=%s",
-                        subject, written, datetime.fromtimestamp(subject_cursor, tz=timezone.utc).isoformat(),
+                        subject,
+                        written,
+                        datetime.fromtimestamp(subject_cursor, tz=UTC).isoformat(),
                     )
 
             # Mark job as completed
@@ -119,7 +122,7 @@ def _feed_to_domain(source: str, record: FeedDataRecord) -> FeedRecord:
         subject=record.subject,
         kind=record.kind,
         granularity=record.granularity,
-        ts_event=datetime.fromtimestamp(int(record.ts_event), tz=timezone.utc),
+        ts_event=datetime.fromtimestamp(int(record.ts_event), tz=UTC),
         values=dict(record.values),
         meta=dict(record.metadata),
     )

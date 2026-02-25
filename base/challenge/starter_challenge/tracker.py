@@ -31,7 +31,9 @@ class TrackerBase:
         Args:
             data: Feed data dict (shape matches ``RawInput``).
         """
-        subject_key = data.get("symbol", "_default") if isinstance(data, dict) else "_default"
+        subject_key = (
+            data.get("symbol", "_default") if isinstance(data, dict) else "_default"
+        )
         self._latest_data_by_subject[subject_key] = data
 
     def _get_data(self, subject: str) -> dict[str, Any] | None:
@@ -45,7 +47,9 @@ class TrackerBase:
             self._latest_data_by_subject.get("_default"),
         )
 
-    def predict(self, subject: str, horizon_seconds: int, step_seconds: int) -> dict[str, Any]:
+    def predict(
+        self, subject: str, horizon_seconds: int, step_seconds: int
+    ) -> dict[str, Any]:
         """Return a prediction for the given scope.
 
         Args:

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
-from typing import Iterable
+from collections.abc import Iterable
+from datetime import UTC, datetime
 
 from sqlalchemy import func
 from sqlmodel import Session, delete, select
 
-from coordinator_node.entities.feed_record import FeedIngestionState, FeedRecord
 from coordinator_node.db.tables import FeedIngestionStateRow, FeedRecordRow
+from coordinator_node.entities.feed_record import FeedIngestionState, FeedRecord
 
 
 class DBFeedRecordRepository:
@@ -73,7 +73,9 @@ class DBFeedRecordRepository:
         deleted = len(rows)
 
         if deleted:
-            self._session.exec(delete(FeedRecordRow).where(FeedRecordRow.ts_event < cutoff_ts))
+            self._session.exec(
+                delete(FeedRecordRow).where(FeedRecordRow.ts_event < cutoff_ts)
+            )
             self._session.commit()
 
         return deleted
@@ -134,7 +136,15 @@ class DBFeedRecordRepository:
         }
 
         summaries: list[dict[str, object]] = []
-        for source, subject, kind, granularity, count, oldest_ts, newest_ts in grouped_rows:
+        for (
+            source,
+            subject,
+            kind,
+            granularity,
+            count,
+            oldest_ts,
+            newest_ts,
+        ) in grouped_rows:
             key = (source, subject, kind, granularity)
             state = watermarks.get(key)
             summaries.append(
@@ -144,8 +154,12 @@ class DBFeedRecordRepository:
                     "kind": kind,
                     "granularity": granularity,
                     "record_count": int(count or 0),
-                    "oldest_ts": _ensure_utc(oldest_ts).isoformat() if oldest_ts is not None else None,
-                    "newest_ts": _ensure_utc(newest_ts).isoformat() if newest_ts is not None else None,
+                    "oldest_ts": _ensure_utc(oldest_ts).isoformat()
+                    if oldest_ts is not None
+                    else None,
+                    "newest_ts": _ensure_utc(newest_ts).isoformat()
+                    if newest_ts is not None
+                    else None,
                     "watermark_ts": (
                         _ensure_utc(state.last_event_ts).isoformat()
                         if state is not None and state.last_event_ts is not None
@@ -194,7 +208,9 @@ class DBFeedRecordRepository:
         kind: str,
         granularity: str,
     ) -> FeedIngestionState | None:
-        row = self._session.get(FeedIngestionStateRow, _watermark_id(source, subject, kind, granularity))
+        row = self._session.get(
+            FeedIngestionStateRow, _watermark_id(source, subject, kind, granularity)
+        )
         if row is None:
             return None
         return self._watermark_row_to_domain(row)
@@ -218,7 +234,13 @@ class DBFeedRecordRepository:
         normalized_ts_ingested = _ensure_utc(record.ts_ingested)
 
         return FeedRecordRow(
-            id=_record_id(record.source, record.subject, record.kind, record.granularity, normalized_ts_event),
+            id=_record_id(
+                record.source,
+                record.subject,
+                record.kind,
+                record.granularity,
+                normalized_ts_event,
+            ),
             source=record.source,
             subject=record.subject,
             kind=record.kind,
@@ -245,12 +267,16 @@ class DBFeedRecordRepository:
     @staticmethod
     def _watermark_domain_to_row(state: FeedIngestionState) -> FeedIngestionStateRow:
         return FeedIngestionStateRow(
-            id=_watermark_id(state.source, state.subject, state.kind, state.granularity),
+            id=_watermark_id(
+                state.source, state.subject, state.kind, state.granularity
+            ),
             source=state.source,
             subject=state.subject,
             kind=state.kind,
             granularity=state.granularity,
-            last_event_ts=_ensure_utc(state.last_event_ts) if state.last_event_ts is not None else None,
+            last_event_ts=_ensure_utc(state.last_event_ts)
+            if state.last_event_ts is not None
+            else None,
             updated_at=_ensure_utc(state.updated_at),
             meta_jsonb=dict(state.meta),
         )
@@ -262,7 +288,9 @@ class DBFeedRecordRepository:
             subject=row.subject,
             kind=row.kind,
             granularity=row.granularity,
-            last_event_ts=_ensure_utc(row.last_event_ts) if row.last_event_ts is not None else None,
+            last_event_ts=_ensure_utc(row.last_event_ts)
+            if row.last_event_ts is not None
+            else None,
             updated_at=_ensure_utc(row.updated_at),
             meta=dict(row.meta_jsonb or {}),
         )
@@ -272,12 +300,16 @@ def _watermark_id(source: str, subject: str, kind: str, granularity: str) -> str
     return f"{source}:{subject}:{kind}:{granularity}"
 
 
-def _record_id(source: str, subject: str, kind: str, granularity: str, ts_event: datetime) -> str:
-    fingerprint = f"{source}|{subject}|{kind}|{granularity}|{_ensure_utc(ts_event).isoformat()}"
+def _record_id(
+    source: str, subject: str, kind: str, granularity: str, ts_event: datetime
+) -> str:
+    fingerprint = (
+        f"{source}|{subject}|{kind}|{granularity}|{_ensure_utc(ts_event).isoformat()}"
+    )
     return hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()  # noqa: S324
 
 
 def _ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

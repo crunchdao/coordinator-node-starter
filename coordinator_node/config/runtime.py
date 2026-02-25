@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -21,14 +21,20 @@ class RuntimeSettings:
     secure_cert_dir: str | None
 
     @classmethod
-    def from_env(cls) -> "RuntimeSettings":
+    def from_env(cls) -> RuntimeSettings:
         checkpoint = int(os.getenv("CHECKPOINT_INTERVAL_SECONDS", "900"))
         return cls(
             checkpoint_interval_seconds=checkpoint,
-            score_interval_seconds=int(os.getenv("SCORE_INTERVAL_SECONDS", str(min(60, checkpoint)))),
-            model_runner_node_host=os.getenv("MODEL_RUNNER_NODE_HOST", "model-orchestrator"),
+            score_interval_seconds=int(
+                os.getenv("SCORE_INTERVAL_SECONDS", str(min(60, checkpoint)))
+            ),
+            model_runner_node_host=os.getenv(
+                "MODEL_RUNNER_NODE_HOST", "model-orchestrator"
+            ),
             model_runner_node_port=int(os.getenv("MODEL_RUNNER_NODE_PORT", "9091")),
-            model_runner_timeout_seconds=float(os.getenv("MODEL_RUNNER_TIMEOUT_SECONDS", "60")),
+            model_runner_timeout_seconds=float(
+                os.getenv("MODEL_RUNNER_TIMEOUT_SECONDS", "60")
+            ),
             crunch_id=os.getenv("CRUNCH_ID", "starter-challenge"),
             crunch_pubkey=os.getenv("CRUNCH_PUBKEY", ""),
             network=os.getenv("NETWORK", "devnet"),

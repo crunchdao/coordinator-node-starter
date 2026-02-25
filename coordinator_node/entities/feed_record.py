@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @dataclass
@@ -16,8 +16,8 @@ class FeedRecord:
     kind: str
     granularity: str
     ts_event: datetime
-    values: dict[str, Any]                                       # contract.raw_input_type
-    meta: dict[str, Any] = field(default_factory=dict)           # contract.meta_type (Meta)
+    values: dict[str, Any]  # contract.raw_input_type
+    meta: dict[str, Any] = field(default_factory=dict)  # contract.meta_type (Meta)
     ts_ingested: datetime = field(default_factory=_utc_now)
 
 

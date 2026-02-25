@@ -1,8 +1,9 @@
 """Metrics evaluation context — shared state for cross-model metrics."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -15,8 +16,8 @@ class MetricsContext:
     """
 
     model_id: str
-    window_start: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    window_end: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    window_start: datetime = field(default_factory=lambda: datetime.now(UTC))
+    window_end: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     # All models' predictions in this window: model_id → list of prediction dicts
     all_model_predictions: dict[str, list[dict[str, Any]]] = field(default_factory=dict)

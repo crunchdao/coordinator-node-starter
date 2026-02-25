@@ -15,14 +15,14 @@ Usage in a notebook or script:
 The coordinator URL is baked into the challenge package. Data is
 automatically fetched and cached on first run.
 """
+
 from __future__ import annotations
 
-import json
 import logging
-import os
-from datetime import datetime, timedelta, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,7 @@ class BacktestResult:
     def predictions_df(self):
         """Return predictions as a pandas DataFrame."""
         import pandas as pd
+
         return pd.DataFrame(self._predictions)
 
     def _repr_html_(self) -> str:
@@ -61,8 +62,8 @@ class BacktestResult:
         return f"""
         <div style="font-family: monospace; padding: 10px;">
             <h3>Backtest Result</h3>
-            <p>Subject: <b>{self.config.get('subject', 'N/A')}</b> |
-               Period: {self.config.get('start', '?')} → {self.config.get('end', '?')} |
+            <p>Subject: <b>{self.config.get("subject", "N/A")}</b> |
+               Period: {self.config.get("start", "?")} → {self.config.get("end", "?")} |
                Predictions: {pred_count} | Scored: {scored}</p>
             <table border="1" cellpadding="5" style="border-collapse: collapse;">
                 <tr><th>Metric</th><th>Value</th></tr>
@@ -84,7 +85,9 @@ class BacktestResult:
             return None
         try:
             import requests
+
             from starter_challenge.config import COORDINATOR_URL
+
             url = f"{COORDINATOR_URL.rstrip('/')}/reports/models/{model_id}/diversity"
             resp = requests.get(url, timeout=10)
             if resp.status_code == 200:
@@ -112,14 +115,21 @@ class BacktestResult:
 
         # Group metrics
         window_keys = {"score_recent", "score_steady", "score_anchor"}
-        diversity_keys = {"model_correlation", "ensemble_correlation", "contribution", "fnc"}
+        diversity_keys = {
+            "model_correlation",
+            "ensemble_correlation",
+            "contribution",
+            "fnc",
+        }
 
         for key, value in self.metrics.items():
             if key not in diversity_keys:
                 lines.append(f"    {key:20s} {value:+.6f}")
 
         # Show diversity-related metrics separately if present
-        diversity_metrics = {k: v for k, v in self.metrics.items() if k in diversity_keys}
+        diversity_metrics = {
+            k: v for k, v in self.metrics.items() if k in diversity_keys
+        }
         if diversity_metrics:
             lines.append("─" * 60)
             lines.append("  DIVERSITY (vs. production ensemble):")
@@ -167,6 +177,7 @@ class BacktestClient:
     ):
         if coordinator_url is None:
             from starter_challenge.config import COORDINATOR_URL
+
             coordinator_url = COORDINATOR_URL
         self.coordinator_url = coordinator_url.rstrip("/")
         self.cache_dir = Path(cache_dir)
@@ -187,8 +198,12 @@ class BacktestClient:
         challenge config if not specified.
         """
         import requests
+
         from starter_challenge.config import (
-            DEFAULT_SOURCE, DEFAULT_SUBJECT, DEFAULT_KIND, DEFAULT_GRANULARITY,
+            DEFAULT_GRANULARITY,
+            DEFAULT_KIND,
+            DEFAULT_SOURCE,
+            DEFAULT_SUBJECT,
         )
 
         source = source or DEFAULT_SOURCE
@@ -213,7 +228,7 @@ class BacktestClient:
                 continue
             date_str = entry.get("date", "")
             try:
-                file_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                file_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
             except ValueError:
                 continue
             if start_dt <= file_date <= end_dt:
@@ -239,8 +254,11 @@ class BacktestClient:
             local_path.write_bytes(file_resp.content)
             downloaded.append(local_path)
 
-        logger.info("pulled %d files (%d from cache)", len(downloaded),
-                     sum(1 for p in downloaded if p.exists()))
+        logger.info(
+            "pulled %d files (%d from cache)",
+            len(downloaded),
+            sum(1 for p in downloaded if p.exists()),
+        )
         return downloaded
 
     def list_cached(
@@ -252,8 +270,12 @@ class BacktestClient:
     ) -> list[Path]:
         """Return cached parquet file paths for given dimensions."""
         from starter_challenge.config import (
-            DEFAULT_SOURCE, DEFAULT_SUBJECT, DEFAULT_KIND, DEFAULT_GRANULARITY,
+            DEFAULT_GRANULARITY,
+            DEFAULT_KIND,
+            DEFAULT_SOURCE,
+            DEFAULT_SUBJECT,
         )
+
         source = source or DEFAULT_SOURCE
         subject = subject or DEFAULT_SUBJECT
         kind = kind or DEFAULT_KIND
@@ -287,6 +309,7 @@ class BacktestRunner:
         """Try to load InferenceOutput from the coordinator config."""
         try:
             from coordinator_node.crunch_config import InferenceOutput
+
             return InferenceOutput
         except ImportError:
             return None
@@ -346,8 +369,12 @@ class BacktestRunner:
         Returns a BacktestResult with predictions DataFrame and metrics.
         """
         import pandas as pd
+
         from starter_challenge.config import (
-            DEFAULT_SOURCE, DEFAULT_SUBJECT, DEFAULT_KIND, DEFAULT_GRANULARITY,
+            DEFAULT_GRANULARITY,
+            DEFAULT_KIND,
+            DEFAULT_SOURCE,
+            DEFAULT_SUBJECT,
         )
 
         source = source or DEFAULT_SOURCE
@@ -363,15 +390,21 @@ class BacktestRunner:
         if not data_dir.exists() or not list(data_dir.glob("*.parquet")):
             logger.info("No cached data found, pulling from coordinator...")
             client = BacktestClient(cache_dir=str(self.cache_dir))
-            client.pull(source=source, subject=subject, kind=kind,
-                        granularity=granularity, start=start, end=end)
+            client.pull(
+                source=source,
+                subject=subject,
+                kind=kind,
+                granularity=granularity,
+                start=start,
+                end=end,
+            )
 
         # Read and concat all matching parquet files
         frames = []
         for parquet_file in sorted(data_dir.glob("*.parquet")):
             date_str = parquet_file.stem
             try:
-                file_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                file_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
             except ValueError:
                 continue
             if start_dt <= file_date <= end_dt:
@@ -383,7 +416,11 @@ class BacktestRunner:
                 f"The coordinator may not have backfill data for this range yet."
             )
 
-        df = pd.concat(frames, ignore_index=True).sort_values("ts_event").reset_index(drop=True)
+        df = (
+            pd.concat(frames, ignore_index=True)
+            .sort_values("ts_event")
+            .reset_index(drop=True)
+        )
 
         # Convert ts_event to datetime if needed
         if not pd.api.types.is_datetime64_any_dtype(df["ts_event"]):
@@ -400,10 +437,10 @@ class BacktestRunner:
             if hasattr(current_ts, "to_pydatetime"):
                 current_ts = current_ts.to_pydatetime()
             if current_ts.tzinfo is None:
-                current_ts = current_ts.replace(tzinfo=timezone.utc)
+                current_ts = current_ts.replace(tzinfo=UTC)
 
             # Build window for tick()
-            window_df = df.iloc[max(0, i - window_size + 1):i + 1]
+            window_df = df.iloc[max(0, i - window_size + 1) : i + 1]
             tick_data = _df_to_tick_data(window_df, subject)
             self.model.tick(tick_data)
 
@@ -429,15 +466,23 @@ class BacktestRunner:
                     try:
                         score_result = self.scoring_fn(output, actual)
                     except Exception as exc:
-                        score_result = {"value": 0.0, "success": False, "failed_reason": str(exc)}
+                        score_result = {
+                            "value": 0.0,
+                            "success": False,
+                            "failed_reason": str(exc),
+                        }
 
-                predictions.append({
-                    "ts": current_ts,
-                    "output": output,
-                    "actual": actual,
-                    "score": score_result.get("value") if score_result else None,
-                    "score_success": score_result.get("success", True) if score_result else None,
-                })
+                predictions.append(
+                    {
+                        "ts": current_ts,
+                        "output": output,
+                        "actual": actual,
+                        "score": score_result.get("value") if score_result else None,
+                        "score_success": score_result.get("success", True)
+                        if score_result
+                        else None,
+                    }
+                )
 
                 last_predict_ts = current_ts
 
@@ -508,14 +553,16 @@ def _df_to_tick_data(window_df, subject: str) -> dict[str, Any]:
         else:
             ts_int = int(ts)
 
-        candles.append({
-            "ts": ts_int,
-            "open": _safe_float(row.get("open")) or 0.0,
-            "high": _safe_float(row.get("high")) or 0.0,
-            "low": _safe_float(row.get("low")) or 0.0,
-            "close": _safe_float(row.get("close")) or 0.0,
-            "volume": _safe_float(row.get("volume")) or 0.0,
-        })
+        candles.append(
+            {
+                "ts": ts_int,
+                "open": _safe_float(row.get("open")) or 0.0,
+                "high": _safe_float(row.get("high")) or 0.0,
+                "low": _safe_float(row.get("low")) or 0.0,
+                "close": _safe_float(row.get("close")) or 0.0,
+                "volume": _safe_float(row.get("volume")) or 0.0,
+            }
+        )
 
     asof_ts = candles[-1]["ts"] if candles else 0
     return {
@@ -532,7 +579,8 @@ def _compute_metrics(predictions: list[dict[str, Any]]) -> dict[str, float]:
     Multi-metrics (IC, hit rate, etc.) computed using the same registry as the coordinator.
     """
     scored = [
-        p for p in predictions
+        p
+        for p in predictions
         if p.get("score") is not None and p.get("score_success", True)
     ]
 
@@ -544,7 +592,7 @@ def _compute_metrics(predictions: list[dict[str, Any]]) -> dict[str, float]:
     if hasattr(now, "timestamp"):
         pass  # already datetime
     else:
-        now = datetime.fromtimestamp(now, tz=timezone.utc)
+        now = datetime.fromtimestamp(now, tz=UTC)
 
     windows = {
         "score_recent": timedelta(hours=24),
@@ -555,25 +603,38 @@ def _compute_metrics(predictions: list[dict[str, Any]]) -> dict[str, float]:
     metrics: dict[str, float] = {}
     for name, window in windows.items():
         cutoff = now - window
-        window_scores = [
-            p["score"] for p in scored
-            if _ts_ge(p["ts"], cutoff)
-        ]
-        metrics[name] = sum(window_scores) / len(window_scores) if window_scores else 0.0
+        window_scores = [p["score"] for p in scored if _ts_ge(p["ts"], cutoff)]
+        metrics[name] = (
+            sum(window_scores) / len(window_scores) if window_scores else 0.0
+        )
 
     # Multi-metric enrichment (best-effort — coordinator_node may not be installed)
     try:
-        from coordinator_node.metrics.registry import get_default_registry
         from coordinator_node.metrics.context import MetricsContext
+        from coordinator_node.metrics.registry import get_default_registry
 
         registry = get_default_registry()
-        active_metrics = ["ic", "ic_sharpe", "hit_rate", "mean_return",
-                          "max_drawdown", "sortino_ratio", "turnover"]
+        active_metrics = [
+            "ic",
+            "ic_sharpe",
+            "hit_rate",
+            "mean_return",
+            "max_drawdown",
+            "sortino_ratio",
+            "turnover",
+        ]
 
         # Convert backtest predictions to the format the registry expects
-        pred_dicts = [{"inference_output": p.get("output", {"value": 0.0})} for p in scored]
+        pred_dicts = [
+            {"inference_output": p.get("output", {"value": 0.0})} for p in scored
+        ]
         score_dicts = [
-            {"result": {"value": p["score"], "actual_return": (p.get("actual") or {}).get("return", 0.0)}}
+            {
+                "result": {
+                    "value": p["score"],
+                    "actual_return": (p.get("actual") or {}).get("return", 0.0),
+                }
+            }
             for p in scored
         ]
         ctx = MetricsContext(model_id="backtest")
@@ -590,13 +651,14 @@ def _ts_ge(ts, cutoff: datetime) -> bool:
     """Check if timestamp >= cutoff, handling mixed types."""
     if hasattr(ts, "timestamp"):
         return ts >= cutoff
-    return datetime.fromtimestamp(ts, tz=timezone.utc) >= cutoff
+    return datetime.fromtimestamp(ts, tz=UTC) >= cutoff
 
 
 def _default_scoring_fn() -> Callable[[dict, dict], dict]:
     """Try to import the challenge's scoring function, fall back to basic."""
     try:
         from starter_challenge.scoring import score_prediction
+
         return score_prediction
     except ImportError:
         pass
@@ -605,7 +667,11 @@ def _default_scoring_fn() -> Callable[[dict, dict], dict]:
         pred_val = float(prediction.get("value", 0.0))
         actual_return = float(ground_truth.get("return", 0.0))
         # Simple directional score: +1 if prediction direction matches, -1 otherwise
-        correct = (pred_val > 0 and actual_return > 0) or (pred_val < 0 and actual_return < 0) or (pred_val == 0)
+        correct = (
+            (pred_val > 0 and actual_return > 0)
+            or (pred_val < 0 and actual_return < 0)
+            or (pred_val == 0)
+        )
         return {"value": 1.0 if correct else -1.0, "success": True}
 
     return _basic_score
@@ -615,12 +681,12 @@ def _parse_date(value) -> datetime:
     """Parse a date string or pass through datetime."""
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
+            return value.replace(tzinfo=UTC)
         return value
     for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ"):
         try:
             dt = datetime.strptime(value, fmt)
-            return dt.replace(tzinfo=timezone.utc)
+            return dt.replace(tzinfo=UTC)
         except ValueError:
             continue
     raise ValueError(f"Cannot parse date: {value!r}")

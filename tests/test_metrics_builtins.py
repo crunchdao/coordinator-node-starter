@@ -1,4 +1,5 @@
 """Tests for built-in metric implementations."""
+
 from __future__ import annotations
 
 import unittest
@@ -146,7 +147,9 @@ class TestSortinoRatio(unittest.TestCase):
         self.assertIsInstance(sortino, float)
 
     def test_too_few_returns_zero(self):
-        self.assertAlmostEqual(compute_sortino_ratio([_pred(1.0)], [_score(0, 0.01)], _ctx()), 0.0)
+        self.assertAlmostEqual(
+            compute_sortino_ratio([_pred(1.0)], [_score(0, 0.01)], _ctx()), 0.0
+        )
 
 
 class TestTurnover(unittest.TestCase):
@@ -168,20 +171,26 @@ class TestModelCorrelation(unittest.TestCase):
     def test_identical_models_correlation_one(self):
         my_preds = [_pred(1.0), _pred(2.0), _pred(3.0)]
         other_preds = [_pred(1.0), _pred(2.0), _pred(3.0)]
-        ctx = _ctx(model_id="m1", all_model_predictions={
-            "m1": my_preds,
-            "m2": other_preds,
-        })
+        ctx = _ctx(
+            model_id="m1",
+            all_model_predictions={
+                "m1": my_preds,
+                "m2": other_preds,
+            },
+        )
         corr = compute_model_correlation(my_preds, [], ctx)
         self.assertAlmostEqual(corr, 1.0, places=5)
 
     def test_opposite_models_correlation_negative(self):
         my_preds = [_pred(1.0), _pred(2.0), _pred(3.0)]
         other_preds = [_pred(3.0), _pred(2.0), _pred(1.0)]
-        ctx = _ctx(model_id="m1", all_model_predictions={
-            "m1": my_preds,
-            "m2": other_preds,
-        })
+        ctx = _ctx(
+            model_id="m1",
+            all_model_predictions={
+                "m1": my_preds,
+                "m2": other_preds,
+            },
+        )
         corr = compute_model_correlation(my_preds, [], ctx)
         self.assertAlmostEqual(corr, -1.0, places=5)
 
@@ -192,10 +201,13 @@ class TestModelCorrelation(unittest.TestCase):
 
     def test_excludes_ensemble_models(self):
         my_preds = [_pred(1.0), _pred(2.0), _pred(3.0)]
-        ctx = _ctx(model_id="m1", all_model_predictions={
-            "m1": my_preds,
-            "__ensemble_main__": [_pred(1.5), _pred(2.5), _pred(3.5)],
-        })
+        ctx = _ctx(
+            model_id="m1",
+            all_model_predictions={
+                "m1": my_preds,
+                "__ensemble_main__": [_pred(1.5), _pred(2.5), _pred(3.5)],
+            },
+        )
         corr = compute_model_correlation(my_preds, [], ctx)
         self.assertAlmostEqual(corr, 0.0)  # no real peers
 

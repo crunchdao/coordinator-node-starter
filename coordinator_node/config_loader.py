@@ -11,6 +11,7 @@ Resolution order:
 4. `runtime_definitions.crunch_config:CrunchConfig` (new-style name)
 5. `coordinator_node.crunch_config:CrunchConfig` (engine default)
 """
+
 from __future__ import annotations
 
 import importlib
@@ -54,7 +55,9 @@ def _resolve_config() -> Any:
         if config is not None:
             logger.info("Loaded config from CRUNCH_CONFIG_MODULE=%s", explicit)
             return config
-        logger.warning("CRUNCH_CONFIG_MODULE=%s failed to load, trying fallbacks", explicit)
+        logger.warning(
+            "CRUNCH_CONFIG_MODULE=%s failed to load, trying fallbacks", explicit
+        )
 
     # 2. Operator's runtime_definitions (try multiple conventions)
     failed_paths: list[str] = []
@@ -73,6 +76,7 @@ def _resolve_config() -> Any:
 
     # 3. Engine default
     from coordinator_node.crunch_config import CrunchConfig
+
     if failed_paths:
         logger.warning(
             "Operator config found at %s but failed to instantiate — "

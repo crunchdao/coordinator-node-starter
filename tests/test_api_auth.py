@@ -1,9 +1,10 @@
 """Tests for API key authentication middleware."""
+
 from __future__ import annotations
 
 import unittest
 
-from fastapi import FastAPI, APIRouter
+from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 
 from coordinator_node.middleware.auth import APIKeyMiddleware
@@ -75,7 +76,9 @@ class TestNoApiKey(unittest.TestCase):
 
     def test_admin_open(self):
         self.assertEqual(self.client.post("/reports/backfill").status_code, 200)
-        self.assertEqual(self.client.post("/reports/checkpoints/cp1/confirm").status_code, 200)
+        self.assertEqual(
+            self.client.post("/reports/checkpoints/cp1/confirm").status_code, 200
+        )
 
     def test_custom_open(self):
         self.assertEqual(self.client.get("/custom/data").status_code, 200)
@@ -99,7 +102,9 @@ class TestApiKeyAdminOnly(unittest.TestCase):
 
     def test_admin_rejected_without_key(self):
         self.assertEqual(self.client.post("/reports/backfill").status_code, 401)
-        self.assertEqual(self.client.post("/reports/checkpoints/cp1/confirm").status_code, 401)
+        self.assertEqual(
+            self.client.post("/reports/checkpoints/cp1/confirm").status_code, 401
+        )
 
     def test_custom_rejected_without_key(self):
         self.assertEqual(self.client.get("/custom/data").status_code, 401)
@@ -144,8 +149,12 @@ class TestApiKeyReadAuth(unittest.TestCase):
 
     def test_read_with_key(self):
         headers = {"X-API-Key": "secret123"}
-        self.assertEqual(self.client.get("/reports/predictions", headers=headers).status_code, 200)
-        self.assertEqual(self.client.get("/reports/snapshots", headers=headers).status_code, 200)
+        self.assertEqual(
+            self.client.get("/reports/predictions", headers=headers).status_code, 200
+        )
+        self.assertEqual(
+            self.client.get("/reports/snapshots", headers=headers).status_code, 200
+        )
 
     def test_admin_still_gated(self):
         self.assertEqual(self.client.post("/reports/backfill").status_code, 401)
@@ -156,12 +165,16 @@ class TestApiKeyReadAuth(unittest.TestCase):
 class TestBearerCaseInsensitive(unittest.TestCase):
     def test_lowercase_bearer(self):
         client = TestClient(_make_app(api_key="key1"))
-        resp = client.post("/reports/backfill", headers={"Authorization": "bearer key1"})
+        resp = client.post(
+            "/reports/backfill", headers={"Authorization": "bearer key1"}
+        )
         self.assertEqual(resp.status_code, 200)
 
     def test_mixed_case_bearer(self):
         client = TestClient(_make_app(api_key="key1"))
-        resp = client.post("/reports/backfill", headers={"Authorization": "Bearer key1"})
+        resp = client.post(
+            "/reports/backfill", headers={"Authorization": "Bearer key1"}
+        )
         self.assertEqual(resp.status_code, 200)
 
 

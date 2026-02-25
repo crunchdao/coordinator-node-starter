@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from coordinator_node.entities.feed_record import FeedRecord
-from coordinator_node.feeds import FeedFetchRequest, create_default_registry
 from coordinator_node.db.feed_records import DBFeedRecordRepository
 from coordinator_node.db.session import create_session
+from coordinator_node.entities.feed_record import FeedRecord
+from coordinator_node.feeds import FeedFetchRequest, create_default_registry
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +39,13 @@ class FeedReader:
         self.window_size = window_size
 
     @classmethod
-    def from_env(cls) -> "FeedReader":
+    def from_env(cls) -> FeedReader:
         subjects_raw = os.getenv("FEED_SUBJECTS", os.getenv("FEED_ASSETS", "BTC"))
         subjects = [p.strip() for p in subjects_raw.split(",") if p.strip()] or ["BTC"]
         return cls(
-            source=os.getenv("FEED_SOURCE", os.getenv("FEED_PROVIDER", "pyth")).strip().lower(),
+            source=os.getenv("FEED_SOURCE", os.getenv("FEED_PROVIDER", "pyth"))
+            .strip()
+            .lower(),
             subjects=subjects,
             kind=os.getenv("FEED_KIND", "tick").strip().lower(),
             granularity=os.getenv("FEED_GRANULARITY", "1s").strip(),
@@ -73,7 +75,7 @@ class FeedReader:
         return {
             "symbol": self.subject,
             "asof_ts": asof_ts,
-            "candles_1m": candles[-self.window_size:],
+            "candles_1m": candles[-self.window_size :],
         }
 
     def get_latest_candles(
@@ -106,7 +108,7 @@ class FeedReader:
                 )
 
             candles: list[dict[str, Any]] = []
-            for record in records[-max(1, limit):]:
+            for record in records[-max(1, limit) :]:
                 values = record.values or {}
                 price = self._record_price(record)
                 if price is None:
@@ -114,21 +116,27 @@ class FeedReader:
                 ts_event = int(self._ensure_utc(record.ts_event).timestamp())
 
                 if record.kind == "candle":
-                    candles.append({
-                        "ts": ts_event,
-                        "open": float(values.get("open", price)),
-                        "high": float(values.get("high", price)),
-                        "low": float(values.get("low", price)),
-                        "close": float(values.get("close", price)),
-                        "volume": float(values.get("volume", 0.0)),
-                    })
+                    candles.append(
+                        {
+                            "ts": ts_event,
+                            "open": float(values.get("open", price)),
+                            "high": float(values.get("high", price)),
+                            "low": float(values.get("low", price)),
+                            "close": float(values.get("close", price)),
+                            "volume": float(values.get("volume", 0.0)),
+                        }
+                    )
                 else:
-                    candles.append({
-                        "ts": ts_event,
-                        "open": price, "high": price,
-                        "low": price, "close": price,
-                        "volume": 0.0,
-                    })
+                    candles.append(
+                        {
+                            "ts": ts_event,
+                            "open": price,
+                            "high": price,
+                            "low": price,
+                            "close": price,
+                            "volume": 0.0,
+                        }
+                    )
 
             result[symbol] = candles
 
@@ -161,7 +169,9 @@ class FeedReader:
             )
 
         if not records:
-            self._recover_window(start=start - timedelta(minutes=2), end=end + timedelta(minutes=2))
+            self._recover_window(
+                start=start - timedelta(minutes=2), end=end + timedelta(minutes=2)
+            )
             with create_session() as session:
                 repo = DBFeedRecordRepository(session)
                 records = repo.fetch_records(
@@ -189,7 +199,7 @@ class FeedReader:
             )
 
         candles: list[dict[str, Any]] = []
-        for record in records[-max(1, limit):]:
+        for record in records[-max(1, limit) :]:
             price = self._record_price(record)
             if price is None:
                 continue
@@ -197,21 +207,27 @@ class FeedReader:
 
             if record.kind == "candle":
                 values = record.values or {}
-                candles.append({
-                    "ts": ts_event,
-                    "open": float(values.get("open", price)),
-                    "high": float(values.get("high", price)),
-                    "low": float(values.get("low", price)),
-                    "close": float(values.get("close", price)),
-                    "volume": float(values.get("volume", 0.0)),
-                })
+                candles.append(
+                    {
+                        "ts": ts_event,
+                        "open": float(values.get("open", price)),
+                        "high": float(values.get("high", price)),
+                        "low": float(values.get("low", price)),
+                        "close": float(values.get("close", price)),
+                        "volume": float(values.get("volume", 0.0)),
+                    }
+                )
             else:
-                candles.append({
-                    "ts": ts_event,
-                    "open": price, "high": price,
-                    "low": price, "close": price,
-                    "volume": 0.0,
-                })
+                candles.append(
+                    {
+                        "ts": ts_event,
+                        "open": price,
+                        "high": price,
+                        "low": price,
+                        "close": price,
+                        "volume": 0.0,
+                    }
+                )
         return candles
 
     def _latest_record(self, at_or_before: datetime) -> Any:
@@ -248,17 +264,19 @@ class FeedReader:
             repo = DBFeedRecordRepository(session)
             domain: list[FeedRecord] = []
             for row in records:
-                ts_event = datetime.fromtimestamp(int(row.ts_event), tz=timezone.utc)
-                domain.append(FeedRecord(
-                    source=row.source or self.source,
-                    subject=row.subject,
-                    kind=row.kind,
-                    granularity=row.granularity,
-                    ts_event=ts_event,
-                    values=dict(row.values),
-                    meta=dict(row.metadata),
-                    ts_ingested=datetime.now(timezone.utc),
-                ))
+                ts_event = datetime.fromtimestamp(int(row.ts_event), tz=UTC)
+                domain.append(
+                    FeedRecord(
+                        source=row.source or self.source,
+                        subject=row.subject,
+                        kind=row.kind,
+                        granularity=row.granularity,
+                        ts_event=ts_event,
+                        values=dict(row.values),
+                        meta=dict(row.metadata),
+                        ts_ingested=datetime.now(UTC),
+                    )
+                )
             if domain:
                 repo.append_records(domain)
 
@@ -266,6 +284,7 @@ class FeedReader:
     def _run_async(coro: Any) -> list:
         try:
             import asyncio
+
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
@@ -294,5 +313,5 @@ class FeedReader:
     @staticmethod
     def _ensure_utc(value: datetime) -> datetime:
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)

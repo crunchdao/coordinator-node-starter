@@ -3,18 +3,18 @@
 Imports all base types and defaults from the coordinator-node library.
 Only defines what's different for this competition.
 """
+
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from coordinator_node.crunch_config import (
     CrunchConfig as BaseCrunchConfig,
-    Meta,
+)
+from coordinator_node.crunch_config import (
     GroundTruth,
     InferenceOutput,
     ScoreResult,
-    PredictionScope,
-    Aggregation,
 )
 
 
@@ -67,5 +67,7 @@ class CrunchConfig(BaseCrunchConfig):
     raw_input_type: type[BaseModel] = RawInput
     ground_truth_type: type[BaseModel] = GroundTruth
     input_type: type[BaseModel] = InferenceInput
-    output_type: type[BaseModel] = InferenceOutput      # ← customize for your prediction format
-    score_type: type[BaseModel] = ScoreResult            # ← customize for your scoring metrics
+    output_type: type[BaseModel] = (
+        InferenceOutput  # ← customize for your prediction format
+    )
+    score_type: type[BaseModel] = ScoreResult  # ← customize for your scoring metrics

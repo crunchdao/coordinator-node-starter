@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from math import floor
-from typing import Any, Sequence
+from typing import Any
 
 import requests
 
 from coordinator_node.feeds.base import DataFeed, FeedHandle, FeedSink
 from coordinator_node.feeds.contracts import (
-    SubjectDescriptor,
+    FeedDataRecord,
     FeedFetchRequest,
     FeedSubscription,
-    FeedDataRecord,
+    SubjectDescriptor,
 )
 from coordinator_node.feeds.registry import FeedSettings
 
@@ -80,7 +81,7 @@ class PythFeed(DataFeed):
         drift = float(((self._fallback_tick % 9) - 4) * 2.5)
         updated = max(1_000.0, base + drift)
         self._fallback_price[asset] = updated
-        ts_event = int(target_ts or datetime.now(timezone.utc).timestamp())
+        ts_event = int(target_ts or datetime.now(UTC).timestamp())
         return updated, ts_event
 
     async def list_subjects(self) -> Sequence[SubjectDescriptor]:
@@ -131,7 +132,7 @@ class PythFeed(DataFeed):
             watermark: dict[str, int] = {}
             while True:
                 try:
-                    now_ts = int(datetime.now(timezone.utc).timestamp())
+                    now_ts = int(datetime.now(UTC).timestamp())
                     req = FeedFetchRequest(
                         subjects=sub.subjects,
                         kind=sub.kind,
@@ -181,7 +182,7 @@ class PythFeed(DataFeed):
             parsed = by_feed_id.get(feed_id.lower())
 
             value: float | None = None
-            ts_event: int = int(req.end_ts or datetime.now(timezone.utc).timestamp())
+            ts_event: int = int(req.end_ts or datetime.now(UTC).timestamp())
 
             if parsed:
                 price = parsed.get("price") if isinstance(parsed, dict) else None
@@ -190,7 +191,10 @@ class PythFeed(DataFeed):
                         raw_price = int(price.get("price", 0))
                         expo = int(price.get("expo", 0))
                         publish_time = int(
-                            price.get("publish_time", req.end_ts or datetime.now(timezone.utc).timestamp())
+                            price.get(
+                                "publish_time",
+                                req.end_ts or datetime.now(UTC).timestamp(),
+                            )
                         )
                         value = float(raw_price) * (10**expo)
                         ts_event = int(publish_time)

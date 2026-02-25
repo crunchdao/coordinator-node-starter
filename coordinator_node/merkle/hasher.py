@@ -1,4 +1,5 @@
 """Canonical hashing for snapshots and Merkle tree nodes."""
+
 from __future__ import annotations
 
 import hashlib

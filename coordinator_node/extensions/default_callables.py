@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 
-def default_score_prediction(prediction: dict[str, Any], ground_truth: dict[str, Any]) -> dict[str, Any]:
+def default_score_prediction(
+    prediction: dict[str, Any], ground_truth: dict[str, Any]
+) -> dict[str, Any]:
     """Default scoring callable placeholder for template runtime wiring."""
     return {
         "value": 0.0,

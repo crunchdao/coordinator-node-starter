@@ -1,7 +1,8 @@
 """Model, scoring, and leaderboard tables."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import Column
@@ -10,7 +11,7 @@ from sqlmodel import Field, SQLModel
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class ModelRow(SQLModel, table=True):
@@ -23,13 +24,16 @@ class ModelRow(SQLModel, table=True):
     player_name: str
 
     overall_score_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )
     scores_by_scope_jsonb: list[dict[str, Any]] = Field(
-        default_factory=list, sa_column=Column(JSONB),
+        default_factory=list,
+        sa_column=Column(JSONB),
     )
     meta_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )
 
     created_at: datetime = Field(default_factory=utc_now, index=True)
@@ -43,8 +47,10 @@ class LeaderboardRow(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now, index=True)
 
     entries_jsonb: list[dict[str, Any]] = Field(
-        default_factory=list, sa_column=Column(JSONB),
+        default_factory=list,
+        sa_column=Column(JSONB),
     )
     meta_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )

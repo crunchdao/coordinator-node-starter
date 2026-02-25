@@ -9,6 +9,7 @@ by fetching the proof and independently recomputing hashes.
 
 Dependencies: requests (pip install requests)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -51,17 +52,23 @@ def verify_proof(leaf_hash: str, path: list[dict], expected_root: str) -> bool:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Verify Merkle inclusion proof for a snapshot")
+    parser = argparse.ArgumentParser(
+        description="Verify Merkle inclusion proof for a snapshot"
+    )
     parser.add_argument("--coordinator-url", required=True, help="Coordinator base URL")
     parser.add_argument("--snapshot-id", required=True, help="Snapshot ID to verify")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed output")
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Show detailed output"
+    )
     args = parser.parse_args()
 
     base = args.coordinator_url.rstrip("/")
 
     # 1. Fetch the proof
     print(f"Fetching proof for {args.snapshot_id}...")
-    resp = requests.get(f"{base}/reports/merkle/proof", params={"snapshot_id": args.snapshot_id})
+    resp = requests.get(
+        f"{base}/reports/merkle/proof", params={"snapshot_id": args.snapshot_id}
+    )
     if resp.status_code != 200:
         print(f"FAIL: Could not fetch proof (HTTP {resp.status_code}): {resp.text}")
         sys.exit(1)
@@ -74,7 +81,7 @@ def main() -> None:
         print(f"  path steps:   {len(proof['path'])}")
 
     # 2. Fetch the snapshot data to independently compute its hash
-    print(f"Fetching snapshot data...")
+    print("Fetching snapshot data...")
     resp = requests.get(f"{base}/reports/snapshots", params={"limit": 1000})
     if resp.status_code != 200:
         print(f"FAIL: Could not fetch snapshots (HTTP {resp.status_code})")
@@ -93,7 +100,7 @@ def main() -> None:
         print(f"  computed_hash: {computed_hash}")
 
     if computed_hash != proof["snapshot_content_hash"]:
-        print(f"FAIL: Content hash mismatch!")
+        print("FAIL: Content hash mismatch!")
         print(f"  Expected (from proof): {proof['snapshot_content_hash']}")
         print(f"  Computed (from data):  {computed_hash}")
         print("  → The snapshot data has been tampered with.")
@@ -114,12 +121,16 @@ def main() -> None:
             if verify_proof(computed_hash, proof["path"], snapshots_root):
                 print("✓ Merkle proof valid — snapshot is in cycle's mini-tree")
             else:
-                print("FAIL: Merkle proof invalid — path does not lead to snapshots_root")
+                print(
+                    "FAIL: Merkle proof invalid — path does not lead to snapshots_root"
+                )
                 sys.exit(1)
 
             # Verify chaining
             if cycle["previous_cycle_root"]:
-                expected_chained = sha256_concat(cycle["previous_cycle_root"], snapshots_root)
+                expected_chained = sha256_concat(
+                    cycle["previous_cycle_root"], snapshots_root
+                )
             else:
                 expected_chained = snapshots_root
 

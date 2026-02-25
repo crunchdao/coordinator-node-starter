@@ -1,8 +1,9 @@
 """Tests for the model diversity feedback endpoint."""
+
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from coordinator_node.entities.prediction import SnapshotRecord
 from coordinator_node.workers.report_worker import get_model_diversity
@@ -28,14 +29,16 @@ class InMemoryLeaderboardRepository:
         return self._latest
 
 
-NOW = datetime.now(timezone.utc)
+NOW = datetime.now(UTC)
 
 
 class TestDiversityEndpoint(unittest.TestCase):
     def test_returns_diversity_metrics(self):
         snap = SnapshotRecord(
-            id="snap1", model_id="m1",
-            period_start=NOW - timedelta(hours=1), period_end=NOW,
+            id="snap1",
+            model_id="m1",
+            period_start=NOW - timedelta(hours=1),
+            period_end=NOW,
             prediction_count=10,
             result_summary={
                 "value": 0.5,
@@ -47,9 +50,11 @@ class TestDiversityEndpoint(unittest.TestCase):
             },
         )
         snap_repo = InMemorySnapshotRepository([snap])
-        lb_repo = InMemoryLeaderboardRepository([
-            {"model_id": "m1", "rank": 3},
-        ])
+        lb_repo = InMemoryLeaderboardRepository(
+            [
+                {"model_id": "m1", "rank": 3},
+            ]
+        )
 
         result = get_model_diversity("m1", snap_repo, lb_repo)
 
@@ -63,8 +68,10 @@ class TestDiversityEndpoint(unittest.TestCase):
 
     def test_high_correlation_guidance(self):
         snap = SnapshotRecord(
-            id="snap1", model_id="m1",
-            period_start=NOW - timedelta(hours=1), period_end=NOW,
+            id="snap1",
+            model_id="m1",
+            period_start=NOW - timedelta(hours=1),
+            period_end=NOW,
             prediction_count=10,
             result_summary={
                 "model_correlation": 0.85,
@@ -84,8 +91,10 @@ class TestDiversityEndpoint(unittest.TestCase):
 
     def test_unique_model_positive_guidance(self):
         snap = SnapshotRecord(
-            id="snap1", model_id="m1",
-            period_start=NOW - timedelta(hours=1), period_end=NOW,
+            id="snap1",
+            model_id="m1",
+            period_start=NOW - timedelta(hours=1),
+            period_end=NOW,
             prediction_count=10,
             result_summary={
                 "ic": 0.05,
@@ -106,14 +115,17 @@ class TestDiversityEndpoint(unittest.TestCase):
         lb_repo = InMemoryLeaderboardRepository()
 
         from fastapi import HTTPException
+
         with self.assertRaises(HTTPException) as ctx:
             get_model_diversity("nonexistent", snap_repo, lb_repo)
         self.assertEqual(ctx.exception.status_code, 404)
 
     def test_diversity_score_zero_for_perfect_correlation(self):
         snap = SnapshotRecord(
-            id="snap1", model_id="m1",
-            period_start=NOW - timedelta(hours=1), period_end=NOW,
+            id="snap1",
+            model_id="m1",
+            period_start=NOW - timedelta(hours=1),
+            period_end=NOW,
             prediction_count=5,
             result_summary={"model_correlation": 1.0},
         )

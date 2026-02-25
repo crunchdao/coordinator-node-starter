@@ -1,21 +1,26 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
+from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.entities.feed_record import FeedRecord
 from coordinator_node.entities.model import Model
 from coordinator_node.entities.prediction import (
-    CheckpointRecord, CheckpointStatus, PredictionStatus,
-    ScoreRecord, ScoredPrediction, SnapshotRecord,
+    CheckpointRecord,
+    CheckpointStatus,
+    PredictionStatus,
+    ScoredPrediction,
+    ScoreRecord,
+    SnapshotRecord,
 )
-from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.workers.report_worker import (
     auto_report_schema,
-    get_checkpoints,
+    confirm_checkpoint,
     get_checkpoint_emission,
     get_checkpoint_emission_cli_format,
     get_checkpoint_payload,
+    get_checkpoints,
     get_feeds,
     get_feeds_tail,
     get_latest_checkpoint,
@@ -29,10 +34,8 @@ from coordinator_node.workers.report_worker import (
     get_report_schema_leaderboard_columns,
     get_report_schema_metrics_widgets,
     get_snapshots,
-    confirm_checkpoint,
     update_checkpoint_status,
 )
-
 
 # ── In-memory repositories ──────────────────────────────────────────────
 
@@ -54,7 +57,9 @@ class InMemoryModelRepository:
 
 class InMemoryLeaderboardRepository:
     def __init__(self, entries=None, meta=None):
-        self._latest = {"entries": entries or [], "meta": meta or {}} if entries else None
+        self._latest = (
+            {"entries": entries or [], "meta": meta or {}} if entries else None
+        )
 
     def save(self, entries, meta=None):
         self._latest = {"entries": entries, "meta": meta or {}}
@@ -64,14 +69,20 @@ class InMemoryLeaderboardRepository:
 
 
 class InMemoryFeedRecordRepository:
-    def __init__(self, records: list[FeedRecord] | None = None, summaries: list[dict] | None = None):
+    def __init__(
+        self,
+        records: list[FeedRecord] | None = None,
+        summaries: list[dict] | None = None,
+    ):
         self._records = records or []
         self._summaries = summaries or []
 
     def list_indexed_feeds(self):
         return list(self._summaries)
 
-    def tail_records(self, *, source=None, subject=None, kind=None, granularity=None, limit=20):
+    def tail_records(
+        self, *, source=None, subject=None, kind=None, granularity=None, limit=20
+    ):
         rows = list(self._records)
         if source:
             rows = [r for r in rows if r.source == source]
@@ -82,7 +93,9 @@ class InMemoryFeedRecordRepository:
 
 
 class InMemoryPredictionRepository:
-    def __init__(self, scored_predictions: dict[str, list[ScoredPrediction]] | None = None):
+    def __init__(
+        self, scored_predictions: dict[str, list[ScoredPrediction]] | None = None
+    ):
         self._data = scored_predictions or {}
 
     def query_scores(self, *, model_ids, _from=None, to=None):
@@ -138,16 +151,27 @@ class InMemoryCheckpointRepository:
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
-NOW = datetime(2026, 2, 13, 12, 0, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 2, 13, 12, 0, 0, tzinfo=UTC)
 
 
 def _make_model(model_id="m1", name="model-alpha", player_id="p1", player_name="alice"):
-    return Model(id=model_id, name=name, player_id=player_id,
-                 player_name=player_name, deployment_identifier="d1")
+    return Model(
+        id=model_id,
+        name=name,
+        player_id=player_id,
+        player_name=player_name,
+        deployment_identifier="d1",
+    )
 
 
-def _make_scored_prediction(model_id, score_value, performed_at=None, scope_key="BTC:60s",
-                            success=True, failed_reason=None):
+def _make_scored_prediction(
+    model_id,
+    score_value,
+    performed_at=None,
+    scope_key="BTC:60s",
+    success=True,
+    failed_reason=None,
+):
     ts = performed_at or NOW
     score = ScoreRecord(
         id=f"SCR_{model_id}_{score_value}",
@@ -171,8 +195,9 @@ def _make_scored_prediction(model_id, score_value, performed_at=None, scope_key=
     )
 
 
-def _make_checkpoint(checkpoint_id="cp1", status=CheckpointStatus.PENDING,
-                     entries=None, meta=None):
+def _make_checkpoint(
+    checkpoint_id="cp1", status=CheckpointStatus.PENDING, entries=None, meta=None
+):
     return CheckpointRecord(
         id=checkpoint_id,
         period_start=NOW - timedelta(days=7),
@@ -228,9 +253,15 @@ class TestScoredPrediction(unittest.TestCase):
 
     def test_without_score(self):
         sp = ScoredPrediction(
-            id="p1", input_id="i1", model_id="m1", prediction_config_id=None,
-            scope_key="BTC:60s", scope={}, status=PredictionStatus.PENDING,
-            exec_time_ms=5.0, score=None,
+            id="p1",
+            input_id="i1",
+            model_id="m1",
+            prediction_config_id=None,
+            scope_key="BTC:60s",
+            scope={},
+            status=PredictionStatus.PENDING,
+            exec_time_ms=5.0,
+            score=None,
         )
         self.assertIsNone(sp.score)
 
@@ -270,6 +301,7 @@ class TestReportSchema(unittest.TestCase):
 class TestGetNodeInfo(unittest.TestCase):
     def test_returns_crunch_identity(self):
         from fastapi.testclient import TestClient
+
         from coordinator_node.workers.report_worker import app
 
         with TestClient(app) as client:
@@ -317,10 +349,36 @@ class TestGetModels(unittest.TestCase):
 class TestGetLeaderboard(unittest.TestCase):
     def test_returns_sorted_entries(self):
         entries = [
-            {"model_id": "m2", "rank": 2, "model_name": "beta", "cruncher_name": "bob",
-             "score": {"metrics": {"score_recent": 0.5}, "ranking": {"key": "score_recent", "value": 0.5, "direction": "desc"}, "payload": {}}},
-            {"model_id": "m1", "rank": 1, "model_name": "alpha", "cruncher_name": "alice",
-             "score": {"metrics": {"score_recent": 0.8}, "ranking": {"key": "score_recent", "value": 0.8, "direction": "desc"}, "payload": {}}},
+            {
+                "model_id": "m2",
+                "rank": 2,
+                "model_name": "beta",
+                "cruncher_name": "bob",
+                "score": {
+                    "metrics": {"score_recent": 0.5},
+                    "ranking": {
+                        "key": "score_recent",
+                        "value": 0.5,
+                        "direction": "desc",
+                    },
+                    "payload": {},
+                },
+            },
+            {
+                "model_id": "m1",
+                "rank": 1,
+                "model_name": "alpha",
+                "cruncher_name": "alice",
+                "score": {
+                    "metrics": {"score_recent": 0.8},
+                    "ranking": {
+                        "key": "score_recent",
+                        "value": 0.8,
+                        "direction": "desc",
+                    },
+                    "payload": {},
+                },
+            },
         ]
         result = get_leaderboard(InMemoryLeaderboardRepository(entries=entries))
         self.assertEqual(len(result), 2)
@@ -335,10 +393,20 @@ class TestGetLeaderboard(unittest.TestCase):
 
     def test_excludes_ensemble_models_by_default(self):
         entries = [
-            {"model_id": "m1", "rank": 1, "model_name": "alpha", "cruncher_name": "alice",
-             "score": {"metrics": {"score_recent": 0.8}, "ranking": {}}},
-            {"model_id": "__ensemble_main__", "rank": 2, "model_name": "ensemble", "cruncher_name": "",
-             "score": {"metrics": {"score_recent": 0.9}, "ranking": {}}},
+            {
+                "model_id": "m1",
+                "rank": 1,
+                "model_name": "alpha",
+                "cruncher_name": "alice",
+                "score": {"metrics": {"score_recent": 0.8}, "ranking": {}},
+            },
+            {
+                "model_id": "__ensemble_main__",
+                "rank": 2,
+                "model_name": "ensemble",
+                "cruncher_name": "",
+                "score": {"metrics": {"score_recent": 0.9}, "ranking": {}},
+            },
         ]
         result = get_leaderboard(InMemoryLeaderboardRepository(entries=entries))
         self.assertEqual(len(result), 1)
@@ -346,12 +414,24 @@ class TestGetLeaderboard(unittest.TestCase):
 
     def test_includes_ensemble_models_when_requested(self):
         entries = [
-            {"model_id": "m1", "rank": 1, "model_name": "alpha", "cruncher_name": "alice",
-             "score": {"metrics": {"score_recent": 0.8}, "ranking": {}}},
-            {"model_id": "__ensemble_main__", "rank": 2, "model_name": "ensemble", "cruncher_name": "",
-             "score": {"metrics": {"score_recent": 0.9}, "ranking": {}}},
+            {
+                "model_id": "m1",
+                "rank": 1,
+                "model_name": "alpha",
+                "cruncher_name": "alice",
+                "score": {"metrics": {"score_recent": 0.8}, "ranking": {}},
+            },
+            {
+                "model_id": "__ensemble_main__",
+                "rank": 2,
+                "model_name": "ensemble",
+                "cruncher_name": "",
+                "score": {"metrics": {"score_recent": 0.9}, "ranking": {}},
+            },
         ]
-        result = get_leaderboard(InMemoryLeaderboardRepository(entries=entries), include_ensembles=True)
+        result = get_leaderboard(
+            InMemoryLeaderboardRepository(entries=entries), include_ensembles=True
+        )
         self.assertEqual(len(result), 2)
         model_ids = {r["model_id"] for r in result}
         self.assertIn("__ensemble_main__", model_ids)
@@ -361,7 +441,15 @@ class TestGetLeaderboard(unittest.TestCase):
 
 
 class TestGetModelsGlobal(unittest.TestCase):
-    def _call(self, pred_repo=None, model_repo=None, snapshot_repo=None, model_ids=None, start=None, end=None):
+    def _call(
+        self,
+        pred_repo=None,
+        model_repo=None,
+        snapshot_repo=None,
+        model_ids=None,
+        start=None,
+        end=None,
+    ):
         return get_models_global(
             prediction_repo=pred_repo or InMemoryPredictionRepository(),
             snapshot_repo=snapshot_repo or InMemorySnapshotRepository(),
@@ -443,7 +531,9 @@ class TestGetModelsGlobal(unittest.TestCase):
 
 
 class TestGetModelsParams(unittest.TestCase):
-    def _call(self, pred_repo=None, model_repo=None, model_ids=None, start=None, end=None):
+    def _call(
+        self, pred_repo=None, model_repo=None, model_ids=None, start=None, end=None
+    ):
         return get_models_params(
             prediction_repo=pred_repo or InMemoryPredictionRepository(),
             model_repo=model_repo or InMemoryModelRepository(),
@@ -457,10 +547,12 @@ class TestGetModelsParams(unittest.TestCase):
         self.assertEqual(result, [])
 
     def test_groups_by_scope_key(self):
-        preds = {"m1": [
-            _make_scored_prediction("m1", 0.8, scope_key="BTC:60s"),
-            _make_scored_prediction("m1", 0.6, scope_key="ETH:60s"),
-        ]}
+        preds = {
+            "m1": [
+                _make_scored_prediction("m1", 0.8, scope_key="BTC:60s"),
+                _make_scored_prediction("m1", 0.6, scope_key="ETH:60s"),
+            ]
+        }
         result = self._call(
             pred_repo=InMemoryPredictionRepository(preds),
             model_ids=["m1"],
@@ -501,7 +593,9 @@ class TestGetModelsParams(unittest.TestCase):
 
 
 class TestGetPredictions(unittest.TestCase):
-    def _call(self, pred_repo=None, model_repo=None, model_ids=None, start=None, end=None):
+    def _call(
+        self, pred_repo=None, model_repo=None, model_ids=None, start=None, end=None
+    ):
         return get_predictions(
             prediction_repo=pred_repo or InMemoryPredictionRepository(),
             model_repo=model_repo or InMemoryModelRepository(),
@@ -531,9 +625,16 @@ class TestGetPredictions(unittest.TestCase):
 
     def test_handles_prediction_without_score(self):
         sp = ScoredPrediction(
-            id="p1", input_id="i1", model_id="m1", prediction_config_id=None,
-            scope_key="BTC:60s", scope={}, status=PredictionStatus.PENDING,
-            exec_time_ms=5.0, performed_at=NOW, score=None,
+            id="p1",
+            input_id="i1",
+            model_id="m1",
+            prediction_config_id=None,
+            scope_key="BTC:60s",
+            scope={},
+            status=PredictionStatus.PENDING,
+            exec_time_ms=5.0,
+            performed_at=NOW,
+            score=None,
         )
         preds = {"m1": [sp]}
         result = self._call(
@@ -549,10 +650,12 @@ class TestGetPredictions(unittest.TestCase):
     def test_results_sorted_by_performed_at(self):
         t1 = NOW - timedelta(hours=2)
         t2 = NOW - timedelta(hours=1)
-        preds = {"m1": [
-            _make_scored_prediction("m1", 0.5, performed_at=t2),
-            _make_scored_prediction("m1", 0.3, performed_at=t1),
-        ]}
+        preds = {
+            "m1": [
+                _make_scored_prediction("m1", 0.5, performed_at=t2),
+                _make_scored_prediction("m1", 0.3, performed_at=t1),
+            ]
+        }
         result = self._call(
             pred_repo=InMemoryPredictionRepository(preds),
             model_ids=["m1"],
@@ -568,8 +671,13 @@ class TestGetPredictions(unittest.TestCase):
 class TestGetFeeds(unittest.TestCase):
     def test_returns_indexed_summaries(self):
         summaries = [
-            {"source": "binance", "subject": "BTC", "kind": "candle", "granularity": "1m",
-             "record_count": 100},
+            {
+                "source": "binance",
+                "subject": "BTC",
+                "kind": "candle",
+                "granularity": "1m",
+                "record_count": 100,
+            },
         ]
         result = get_feeds(InMemoryFeedRecordRepository(summaries=summaries))
         self.assertEqual(len(result), 1)
@@ -586,18 +694,32 @@ class TestGetFeeds(unittest.TestCase):
 class TestGetFeedsTail(unittest.TestCase):
     def test_returns_recent_records(self):
         records = [
-            FeedRecord(source="pyth", subject="BTC", kind="tick", granularity="1s",
-                       ts_event=NOW - timedelta(seconds=i), values={"price": 50000.0 + i})
+            FeedRecord(
+                source="pyth",
+                subject="BTC",
+                kind="tick",
+                granularity="1s",
+                ts_event=NOW - timedelta(seconds=i),
+                values={"price": 50000.0 + i},
+            )
             for i in range(5)
         ]
-        result = get_feeds_tail(InMemoryFeedRecordRepository(records=records),
-                                "pyth", "BTC", "tick", "1s", 3)
+        result = get_feeds_tail(
+            InMemoryFeedRecordRepository(records=records),
+            "pyth",
+            "BTC",
+            "tick",
+            "1s",
+            3,
+        )
         self.assertEqual(len(result), 3)
         self.assertIn("values", result[0])
         self.assertIn("ts_event", result[0])
 
     def test_returns_empty_when_no_records(self):
-        result = get_feeds_tail(InMemoryFeedRecordRepository(), "pyth", "BTC", "tick", "1s", 10)
+        result = get_feeds_tail(
+            InMemoryFeedRecordRepository(), "pyth", "BTC", "tick", "1s", 10
+        )
         self.assertEqual(result, [])
 
 
@@ -607,9 +729,14 @@ class TestGetFeedsTail(unittest.TestCase):
 class TestGetSnapshots(unittest.TestCase):
     def test_returns_snapshot_list(self):
         snapshots = [
-            SnapshotRecord(id="s1", model_id="m1", period_start=NOW - timedelta(hours=1),
-                           period_end=NOW, prediction_count=10,
-                           result_summary={"score_recent": 0.8}),
+            SnapshotRecord(
+                id="s1",
+                model_id="m1",
+                period_start=NOW - timedelta(hours=1),
+                period_end=NOW,
+                prediction_count=10,
+                result_summary={"score_recent": 0.8},
+            ),
         ]
         result = get_snapshots(InMemorySnapshotRepository(snapshots))
         self.assertEqual(len(result), 1)
@@ -623,10 +750,20 @@ class TestGetSnapshots(unittest.TestCase):
 
     def test_filters_by_model_id(self):
         snapshots = [
-            SnapshotRecord(id="s1", model_id="m1", period_start=NOW - timedelta(hours=1),
-                           period_end=NOW, prediction_count=5),
-            SnapshotRecord(id="s2", model_id="m2", period_start=NOW - timedelta(hours=1),
-                           period_end=NOW, prediction_count=3),
+            SnapshotRecord(
+                id="s1",
+                model_id="m1",
+                period_start=NOW - timedelta(hours=1),
+                period_end=NOW,
+                prediction_count=5,
+            ),
+            SnapshotRecord(
+                id="s2",
+                model_id="m2",
+                period_start=NOW - timedelta(hours=1),
+                period_end=NOW,
+                prediction_count=3,
+            ),
         ]
         result = get_snapshots(InMemorySnapshotRepository(snapshots), model_id="m1")
         self.assertEqual(len(result), 1)
@@ -658,6 +795,7 @@ class TestGetLatestCheckpoint(unittest.TestCase):
 
     def test_raises_404_when_empty(self):
         from fastapi import HTTPException
+
         with self.assertRaises(HTTPException) as ctx:
             get_latest_checkpoint(InMemoryCheckpointRepository())
         self.assertEqual(ctx.exception.status_code, 404)
@@ -675,6 +813,7 @@ class TestGetCheckpointPayload(unittest.TestCase):
 
     def test_raises_404_for_missing_checkpoint(self):
         from fastapi import HTTPException
+
         with self.assertRaises(HTTPException) as ctx:
             get_checkpoint_payload("missing", InMemoryCheckpointRepository())
         self.assertEqual(ctx.exception.status_code, 404)
@@ -693,13 +832,17 @@ class TestConfirmCheckpoint(unittest.TestCase):
 
     def test_rejects_non_pending(self):
         from fastapi import HTTPException
+
         cp = _make_checkpoint("cp1", status=CheckpointStatus.SUBMITTED)
         with self.assertRaises(HTTPException) as ctx:
-            confirm_checkpoint("cp1", {"tx_hash": "0xabc"}, InMemoryCheckpointRepository([cp]))
+            confirm_checkpoint(
+                "cp1", {"tx_hash": "0xabc"}, InMemoryCheckpointRepository([cp])
+            )
         self.assertEqual(ctx.exception.status_code, 409)
 
     def test_rejects_missing_tx_hash(self):
         from fastapi import HTTPException
+
         cp = _make_checkpoint("cp1")
         with self.assertRaises(HTTPException) as ctx:
             confirm_checkpoint("cp1", {}, InMemoryCheckpointRepository([cp]))
@@ -707,8 +850,11 @@ class TestConfirmCheckpoint(unittest.TestCase):
 
     def test_raises_404_for_missing_checkpoint(self):
         from fastapi import HTTPException
+
         with self.assertRaises(HTTPException) as ctx:
-            confirm_checkpoint("missing", {"tx_hash": "0x"}, InMemoryCheckpointRepository())
+            confirm_checkpoint(
+                "missing", {"tx_hash": "0x"}, InMemoryCheckpointRepository()
+            )
         self.assertEqual(ctx.exception.status_code, 404)
 
 
@@ -730,22 +876,31 @@ class TestUpdateCheckpointStatus(unittest.TestCase):
 
     def test_rejects_invalid_transition(self):
         from fastapi import HTTPException
+
         cp = _make_checkpoint("cp1", status=CheckpointStatus.PENDING)
         with self.assertRaises(HTTPException) as ctx:
-            update_checkpoint_status("cp1", {"status": "PAID"}, InMemoryCheckpointRepository([cp]))
+            update_checkpoint_status(
+                "cp1", {"status": "PAID"}, InMemoryCheckpointRepository([cp])
+            )
         self.assertEqual(ctx.exception.status_code, 409)
 
     def test_rejects_invalid_status_value(self):
         from fastapi import HTTPException
+
         cp = _make_checkpoint("cp1", status=CheckpointStatus.PENDING)
         with self.assertRaises(HTTPException) as ctx:
-            update_checkpoint_status("cp1", {"status": "BOGUS"}, InMemoryCheckpointRepository([cp]))
+            update_checkpoint_status(
+                "cp1", {"status": "BOGUS"}, InMemoryCheckpointRepository([cp])
+            )
         self.assertEqual(ctx.exception.status_code, 422)
 
     def test_raises_404_for_missing_checkpoint(self):
         from fastapi import HTTPException
+
         with self.assertRaises(HTTPException) as ctx:
-            update_checkpoint_status("missing", {"status": "SUBMITTED"}, InMemoryCheckpointRepository())
+            update_checkpoint_status(
+                "missing", {"status": "SUBMITTED"}, InMemoryCheckpointRepository()
+            )
         self.assertEqual(ctx.exception.status_code, 404)
 
 
@@ -761,12 +916,14 @@ class TestGetCheckpointEmission(unittest.TestCase):
 
     def test_raises_404_when_no_entries(self):
         from fastapi import HTTPException
+
         cp = _make_checkpoint("cp1", entries=[])
         with self.assertRaises(HTTPException):
             get_checkpoint_emission("cp1", InMemoryCheckpointRepository([cp]))
 
     def test_raises_404_for_missing_checkpoint(self):
         from fastapi import HTTPException
+
         with self.assertRaises(HTTPException):
             get_checkpoint_emission("missing", InMemoryCheckpointRepository())
 
@@ -778,7 +935,9 @@ class TestGetCheckpointEmissionCliFormat(unittest.TestCase):
     def test_returns_cli_format(self):
         meta = {"ranking": [{"model_id": "m1"}, {"model_id": "m2"}]}
         cp = _make_checkpoint("cp1", entries=[SAMPLE_EMISSION], meta=meta)
-        result = get_checkpoint_emission_cli_format("cp1", InMemoryCheckpointRepository([cp]))
+        result = get_checkpoint_emission_cli_format(
+            "cp1", InMemoryCheckpointRepository([cp])
+        )
         self.assertEqual(result["crunch"], "CRUNCHpubkey123")
         self.assertIn("crunchEmission", result)
         self.assertIn("computeProvider", result)
@@ -790,9 +949,12 @@ class TestGetCheckpointEmissionCliFormat(unittest.TestCase):
 
     def test_raises_404_when_no_entries(self):
         from fastapi import HTTPException
+
         cp = _make_checkpoint("cp1", entries=[])
         with self.assertRaises(HTTPException):
-            get_checkpoint_emission_cli_format("cp1", InMemoryCheckpointRepository([cp]))
+            get_checkpoint_emission_cli_format(
+                "cp1", InMemoryCheckpointRepository([cp])
+            )
 
 
 # ── /reports/emissions/latest ────────────────────────────────────────────
@@ -808,11 +970,13 @@ class TestGetLatestEmission(unittest.TestCase):
 
     def test_raises_404_when_no_checkpoints(self):
         from fastapi import HTTPException
+
         with self.assertRaises(HTTPException):
             get_latest_emission(InMemoryCheckpointRepository())
 
     def test_raises_404_when_no_emission_data(self):
         from fastapi import HTTPException
+
         cp = _make_checkpoint("cp1", entries=[])
         with self.assertRaises(HTTPException):
             get_latest_emission(InMemoryCheckpointRepository([cp]))

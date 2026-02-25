@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -9,7 +9,7 @@ class ExtensionSettings:
     scoring_function: str
 
     @classmethod
-    def from_env(cls) -> "ExtensionSettings":
+    def from_env(cls) -> ExtensionSettings:
         return cls(
             scoring_function=os.getenv(
                 "SCORING_FUNCTION",

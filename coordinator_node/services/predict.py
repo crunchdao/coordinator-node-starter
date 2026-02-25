@@ -1,25 +1,41 @@
 """Base predict service: get data, store predictions, resolve actuals."""
+
 from __future__ import annotations
 
 import asyncio
 import contextlib
 import logging
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
-from coordinator_node.entities.model import Model
-from coordinator_node.entities.prediction import InputRecord, PredictionRecord, PredictionStatus
-from coordinator_node.db.repositories import DBInputRepository, DBModelRepository, DBPredictionRepository
 from coordinator_node.crunch_config import CrunchConfig
+from coordinator_node.db.repositories import (
+    DBInputRepository,
+    DBModelRepository,
+    DBPredictionRepository,
+)
+from coordinator_node.entities.model import Model
+from coordinator_node.entities.prediction import (
+    InputRecord,
+    PredictionRecord,
+    PredictionStatus,
+)
 from coordinator_node.services.feed_reader import FeedReader
 
 try:
-    from model_runner_client.grpc.generated.commons_pb2 import Argument, Variant, VariantType
+    from model_runner_client.grpc.generated.commons_pb2 import (
+        Argument,
+        Variant,
+        VariantType,
+    )
     from model_runner_client.model_concurrent_runners.dynamic_subclass_model_concurrent_runner import (
         DynamicSubclassModelConcurrentRunner,
     )
-    from model_runner_client.model_concurrent_runners.model_concurrent_runner import ModelConcurrentRunner
+    from model_runner_client.model_concurrent_runners.model_concurrent_runner import (
+        ModelConcurrentRunner,
+    )
     from model_runner_client.security.credentials import SecureCredentials
     from model_runner_client.security.gateway_credentials import GatewayCredentials
     from model_runner_client.utils.datatype_transformer import encode_data
@@ -104,23 +120,40 @@ class PredictService:
             self.register_model(self._to_model(model_run))
 
     def _build_record(
-        self, *, model_id: str, input_id: str, scope_key: str,
-        scope: dict[str, Any], status: str, output: dict[str, Any],
-        now: datetime, resolvable_at: datetime,
-        exec_time_ms: float = 0.0, config_id: str | None = None,
+        self,
+        *,
+        model_id: str,
+        input_id: str,
+        scope_key: str,
+        scope: dict[str, Any],
+        status: str,
+        output: dict[str, Any],
+        now: datetime,
+        resolvable_at: datetime,
+        exec_time_ms: float = 0.0,
+        config_id: str | None = None,
     ) -> PredictionRecord:
         """Construct a PredictionRecord from model runner output."""
         suffix = "ABS" if status == PredictionStatus.ABSENT else "PRE"
-        safe_key = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in scope_key)
-        pred_id = f"{suffix}_{model_id}_{safe_key}_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}"
+        safe_key = "".join(
+            ch if ch.isalnum() or ch in "-_" else "_" for ch in scope_key
+        )
+        pred_id = (
+            f"{suffix}_{model_id}_{safe_key}_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}"
+        )
 
         return PredictionRecord(
-            id=pred_id, input_id=input_id, model_id=model_id,
+            id=pred_id,
+            input_id=input_id,
+            model_id=model_id,
             prediction_config_id=config_id,
             scope_key=scope_key,
             scope={k: v for k, v in scope.items() if k != "scope_key"},
-            status=status, exec_time_ms=exec_time_ms,
-            inference_output=output, performed_at=now, resolvable_at=resolvable_at,
+            status=status,
+            exec_time_ms=exec_time_ms,
+            inference_output=output,
+            performed_at=now,
+            resolvable_at=resolvable_at,
         )
 
     def _save(self, predictions: list[PredictionRecord]) -> None:
@@ -131,11 +164,16 @@ class PredictService:
             if self.logger.isEnabledFor(logging.DEBUG):
                 for p in predictions:
                     out = p.inference_output or {}
-                    summary = {k: round(v, 6) if isinstance(v, float) else v
-                               for k, v in list(out.items())[:3]}
+                    summary = {
+                        k: round(v, 6) if isinstance(v, float) else v
+                        for k, v in list(out.items())[:3]
+                    }
                     self.logger.debug(
                         "  model=%s scope=%s status=%s output=%s",
-                        p.model_id, p.scope_key, p.status, summary,
+                        p.model_id,
+                        p.scope_key,
+                        p.status,
+                        summary,
                     )
 
     # ── runner lifecycle ──
@@ -177,10 +215,13 @@ class PredictService:
             if not MODEL_RUNNER_PROTO_AVAILABLE:
                 raise RuntimeError("model-runner-client dependency is required")
             self._runner = DynamicSubclassModelConcurrentRunner(
-                host=self._runner_host, port=self._runner_port,
-                crunch_id=self.crunch_id, base_classname=self.base_classname,
+                host=self._runner_host,
+                port=self._runner_port,
+                crunch_id=self.crunch_id,
+                base_classname=self.base_classname,
                 timeout=self._runner_timeout,
-                max_consecutive_failures=100, max_consecutive_timeouts=100,
+                max_consecutive_failures=100,
+                max_consecutive_timeouts=100,
                 **self._build_credentials(),
             )
         if not self._runner_initialized:
@@ -234,11 +275,13 @@ class PredictService:
     def _to_model(model_run) -> Model:
         infos = getattr(model_run, "infos", {}) or {}
         return Model(
-            id=str(getattr(model_run, "model_id")),
+            id=str(model_run.model_id),
             name=str(getattr(model_run, "model_name", "unknown-model")),
             player_id=str(infos.get("cruncher_id", "unknown-player")),
             player_name=str(infos.get("cruncher_name", "Unknown")),
-            deployment_identifier=str(getattr(model_run, "deployment_id", "unknown-deployment")),
+            deployment_identifier=str(
+                getattr(model_run, "deployment_id", "unknown-deployment")
+            ),
         )
 
     # ── proto encoding ──
@@ -246,10 +289,18 @@ class PredictService:
     @staticmethod
     def _encode_tick(inference_input: dict[str, Any]) -> tuple:
         if MODEL_RUNNER_PROTO_AVAILABLE:
-            return ([Argument(
-                position=1,
-                data=Variant(type=VariantType.JSON, value=encode_data(VariantType.JSON, inference_input)),
-            )], [])
+            return (
+                [
+                    Argument(
+                        position=1,
+                        data=Variant(
+                            type=VariantType.JSON,
+                            value=encode_data(VariantType.JSON, inference_input),
+                        ),
+                    )
+                ],
+                [],
+            )
         return (inference_input,)
 
     # ── proto type mapping ──
@@ -260,14 +311,18 @@ class PredictService:
     def _get_variant_type(cls, type_name: str) -> Any:
         """Resolve a CallMethodArg type string to a VariantType enum value."""
         if not cls._VARIANT_TYPE_MAP and MODEL_RUNNER_PROTO_AVAILABLE:
-            cls._VARIANT_TYPE_MAP.update({
-                "STRING": VariantType.STRING,
-                "INT": VariantType.INT,
-                "FLOAT": VariantType.DOUBLE,
-                "DOUBLE": VariantType.DOUBLE,
-                "JSON": VariantType.JSON,
-            })
-        return cls._VARIANT_TYPE_MAP.get(type_name.upper(), cls._VARIANT_TYPE_MAP.get("STRING"))
+            cls._VARIANT_TYPE_MAP.update(
+                {
+                    "STRING": VariantType.STRING,
+                    "INT": VariantType.INT,
+                    "FLOAT": VariantType.DOUBLE,
+                    "DOUBLE": VariantType.DOUBLE,
+                    "JSON": VariantType.JSON,
+                }
+            )
+        return cls._VARIANT_TYPE_MAP.get(
+            type_name.upper(), cls._VARIANT_TYPE_MAP.get("STRING")
+        )
 
     def _encode_predict(self, scope: dict[str, Any]) -> tuple:
         """Encode arguments according to ``contract.call_method.args``.

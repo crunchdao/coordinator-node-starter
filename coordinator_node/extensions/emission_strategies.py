@@ -10,6 +10,7 @@ Usage in crunch_config.py:
     class CrunchConfig(BaseCrunchConfig):
         build_emission = contribution_weighted_emission
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -114,17 +115,18 @@ def contribution_weighted_emission(
         frac64_values[0] += diff
 
     cruncher_rewards = [
-        CruncherReward(cruncher_index=i, reward_pct=frac64_values[i])
-        for i in range(n)
+        CruncherReward(cruncher_index=i, reward_pct=frac64_values[i]) for i in range(n)
     ]
 
     compute_rewards = (
         [ProviderReward(provider=compute_provider, reward_pct=FRAC_64_MULTIPLIER)]
-        if compute_provider else []
+        if compute_provider
+        else []
     )
     data_rewards = (
         [ProviderReward(provider=data_provider, reward_pct=FRAC_64_MULTIPLIER)]
-        if data_provider else []
+        if data_provider
+        else []
     )
 
     return EmissionCheckpoint(

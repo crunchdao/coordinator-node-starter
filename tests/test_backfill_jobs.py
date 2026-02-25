@@ -1,10 +1,11 @@
 """Tests for DBBackfillJobRepository."""
+
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, create_engine
 
 from coordinator_node.db.backfill_jobs import BackfillJobStatus, DBBackfillJobRepository
 from coordinator_node.db.tables.backfill import BackfillJobRow
@@ -32,8 +33,8 @@ class TestDBBackfillJobRepository(unittest.TestCase):
             subject="BTC",
             kind="candle",
             granularity="1m",
-            start_ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            end_ts=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            start_ts=datetime(2026, 1, 1, tzinfo=UTC),
+            end_ts=datetime(2026, 2, 1, tzinfo=UTC),
         )
         defaults.update(overrides)
         return self.repo.create(**defaults)
@@ -51,7 +52,11 @@ class TestDBBackfillJobRepository(unittest.TestCase):
         job = self._create_job()
         # SQLite strips tzinfo; compare naive
         expected = datetime(2026, 1, 1)
-        actual = job.cursor_ts.replace(tzinfo=None) if job.cursor_ts.tzinfo else job.cursor_ts
+        actual = (
+            job.cursor_ts.replace(tzinfo=None)
+            if job.cursor_ts.tzinfo
+            else job.cursor_ts
+        )
         self.assertEqual(actual, expected)
 
     def test_get_returns_job(self):
@@ -100,12 +105,18 @@ class TestDBBackfillJobRepository(unittest.TestCase):
 
     def test_update_progress(self):
         job = self._create_job()
-        cursor = datetime(2026, 1, 15, tzinfo=timezone.utc)
-        self.repo.update_progress(job.id, cursor_ts=cursor, records_written=500, pages_fetched=10)
+        cursor = datetime(2026, 1, 15, tzinfo=UTC)
+        self.repo.update_progress(
+            job.id, cursor_ts=cursor, records_written=500, pages_fetched=10
+        )
 
         updated = self.repo.get(job.id)
         # SQLite strips tzinfo; compare naive
-        actual_cursor = updated.cursor_ts.replace(tzinfo=None) if updated.cursor_ts.tzinfo else updated.cursor_ts
+        actual_cursor = (
+            updated.cursor_ts.replace(tzinfo=None)
+            if updated.cursor_ts.tzinfo
+            else updated.cursor_ts
+        )
         self.assertEqual(actual_cursor, datetime(2026, 1, 15))
         self.assertEqual(updated.records_written, 500)
         self.assertEqual(updated.pages_fetched, 10)
@@ -114,7 +125,7 @@ class TestDBBackfillJobRepository(unittest.TestCase):
         # Should not raise
         self.repo.update_progress(
             "nonexistent",
-            cursor_ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            cursor_ts=datetime(2026, 1, 1, tzinfo=UTC),
             records_written=0,
             pages_fetched=0,
         )
@@ -126,7 +137,9 @@ class TestDBBackfillJobRepository(unittest.TestCase):
 
     def test_set_status_with_error(self):
         job = self._create_job()
-        self.repo.set_status(job.id, BackfillJobStatus.FAILED, error="Connection timeout")
+        self.repo.set_status(
+            job.id, BackfillJobStatus.FAILED, error="Connection timeout"
+        )
         updated = self.repo.get(job.id)
         self.assertEqual(updated.status, BackfillJobStatus.FAILED)
         self.assertEqual(updated.error, "Connection timeout")

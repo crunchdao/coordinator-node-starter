@@ -1,9 +1,9 @@
 """Merkle service: commit cycles, commit checkpoints, generate proofs."""
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 
 from coordinator_node.db.tables.merkle import MerkleCycleRow, MerkleNodeRow
 from coordinator_node.entities.prediction import SnapshotRecord
@@ -11,13 +11,10 @@ from coordinator_node.merkle.hasher import canonical_snapshot_hash, sha256_conca
 from coordinator_node.merkle.tree import (
     MerkleNode,
     MerkleProof,
-    ProofStep,
     build_merkle_tree,
     generate_proof,
     get_root,
-    verify_proof,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +31,8 @@ class MerkleService:
 
     def __init__(
         self,
-        merkle_cycle_repository: "DBMerkleCycleRepository",
-        merkle_node_repository: "DBMerkleNodeRepository",
+        merkle_cycle_repository: DBMerkleCycleRepository,
+        merkle_node_repository: DBMerkleNodeRepository,
     ):
         self.cycle_repo = merkle_cycle_repository
         self.node_repo = merkle_node_repository
@@ -52,7 +49,7 @@ class MerkleService:
         if not snapshots:
             return None
 
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
         cycle_id = f"CYC_{now.strftime('%Y%m%d_%H%M%S_%f')}"
 
         # Compute content hashes and build leaves (sorted by model_id for determinism)
@@ -66,13 +63,15 @@ class MerkleService:
                 prediction_count=snap.prediction_count,
                 result_summary=snap.result_summary,
             )
-            leaves.append(MerkleNode(
-                hash=content_hash,
-                level=0,
-                position=i,
-                snapshot_id=snap.id,
-                snapshot_content_hash=content_hash,
-            ))
+            leaves.append(
+                MerkleNode(
+                    hash=content_hash,
+                    level=0,
+                    position=i,
+                    snapshot_id=snap.id,
+                    snapshot_content_hash=content_hash,
+                )
+            )
 
         # Build tree
         all_nodes = build_merkle_tree(leaves)
@@ -112,11 +111,13 @@ class MerkleService:
                 hash=node.hash,
                 left_child_id=(
                     f"MRK_{cycle_id}_{node.left.level}_{node.left.position}"
-                    if node.left else None
+                    if node.left
+                    else None
                 ),
                 right_child_id=(
                     f"MRK_{cycle_id}_{node.right.level}_{node.right.position}"
-                    if node.right else None
+                    if node.right
+                    else None
                 ),
                 snapshot_id=node.snapshot_id,
                 snapshot_content_hash=node.snapshot_content_hash,
@@ -126,7 +127,10 @@ class MerkleService:
 
         logger.info(
             "Merkle cycle %s: %d snapshots, snapshots_root=%s, chained_root=%s",
-            cycle_id, len(sorted_snapshots), snapshots_root[:16], chained_root[:16],
+            cycle_id,
+            len(sorted_snapshots),
+            snapshots_root[:16],
+            chained_root[:16],
         )
         return cycle
 
@@ -141,7 +145,7 @@ class MerkleService:
 
         Returns the merkle_root hash, or None if no cycles.
         """
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
 
         cycles = self.cycle_repo.find(since=period_start, until=period_end)
         if not cycles:
@@ -152,11 +156,13 @@ class MerkleService:
         sorted_cycles = sorted(cycles, key=lambda c: c.created_at)
         leaves: list[MerkleNode] = []
         for i, cycle in enumerate(sorted_cycles):
-            leaves.append(MerkleNode(
-                hash=cycle.chained_root,
-                level=0,
-                position=i,
-            ))
+            leaves.append(
+                MerkleNode(
+                    hash=cycle.chained_root,
+                    level=0,
+                    position=i,
+                )
+            )
 
         all_nodes = build_merkle_tree(leaves)
         root = get_root(all_nodes)
@@ -173,11 +179,13 @@ class MerkleService:
                 hash=node.hash,
                 left_child_id=(
                     f"MRK_{checkpoint_id}_{node.left.level}_{node.left.position}"
-                    if node.left else None
+                    if node.left
+                    else None
                 ),
                 right_child_id=(
                     f"MRK_{checkpoint_id}_{node.right.level}_{node.right.position}"
-                    if node.right else None
+                    if node.right
+                    else None
                 ),
                 snapshot_id=None,
                 snapshot_content_hash=None,
@@ -187,7 +195,9 @@ class MerkleService:
 
         logger.info(
             "Merkle checkpoint %s: %d cycles, root=%s",
-            checkpoint_id, len(sorted_cycles), merkle_root[:16],
+            checkpoint_id,
+            len(sorted_cycles),
+            merkle_root[:16],
         )
         return merkle_root
 

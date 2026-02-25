@@ -1,8 +1,9 @@
 """Tests for ensemble service — weights, filters, virtual model creation."""
+
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from coordinator_node.services.ensemble import (
@@ -17,7 +18,9 @@ from coordinator_node.services.ensemble import (
 )
 
 
-def _pred(value: float, input_id: str = "inp1", scope_key: str = "BTC-60") -> dict[str, Any]:
+def _pred(
+    value: float, input_id: str = "inp1", scope_key: str = "BTC-60"
+) -> dict[str, Any]:
     return {
         "inference_output": {"value": value},
         "input_id": input_id,
@@ -47,7 +50,7 @@ class TestInverseVariance(unittest.TestCase):
 
     def test_lower_variance_higher_weight(self):
         preds = {
-            "stable": [_pred(1.0), _pred(1.1)],   # low variance
+            "stable": [_pred(1.0), _pred(1.1)],  # low variance
             "volatile": [_pred(1.0), _pred(10.0)],  # high variance
         }
         weights = inverse_variance({}, preds)
@@ -125,7 +128,7 @@ class TestBuildEnsemblePredictions(unittest.TestCase):
             "m2": [_pred(6.0, "inp1", "BTC-60")],
         }
 
-        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        now = datetime(2026, 1, 1, tzinfo=UTC)
         result = build_ensemble_predictions("main", weights, preds, now)
 
         self.assertEqual(len(result), 1)
@@ -173,8 +176,10 @@ class TestBuildEnsemblePredictions(unittest.TestCase):
 
 class TestEnsembleMetrics(unittest.TestCase):
     def test_ensemble_correlation(self):
-        from coordinator_node.metrics.ensemble_metrics import compute_ensemble_correlation
         from coordinator_node.metrics.context import MetricsContext
+        from coordinator_node.metrics.ensemble_metrics import (
+            compute_ensemble_correlation,
+        )
 
         preds = [_pred(1.0), _pred(2.0), _pred(3.0)]
         ctx = MetricsContext(
@@ -185,9 +190,9 @@ class TestEnsembleMetrics(unittest.TestCase):
         self.assertAlmostEqual(corr, 1.0, places=5)
 
     def test_fnc_single_model_equals_ic(self):
-        from coordinator_node.metrics.ensemble_metrics import compute_fnc
         from coordinator_node.metrics.builtins import compute_ic
         from coordinator_node.metrics.context import MetricsContext
+        from coordinator_node.metrics.ensemble_metrics import compute_fnc
 
         preds = [_pred(1.0), _pred(2.0), _pred(3.0)]
         scores = [{"result": {"actual_return": 0.01 * (i + 1)}} for i in range(3)]
@@ -202,8 +207,8 @@ class TestEnsembleMetrics(unittest.TestCase):
         self.assertAlmostEqual(fnc, ic, places=5)
 
     def test_contribution_positive_for_good_model(self):
-        from coordinator_node.metrics.ensemble_metrics import compute_contribution
         from coordinator_node.metrics.context import MetricsContext
+        from coordinator_node.metrics.ensemble_metrics import compute_contribution
 
         # Model m1 has high IC, m2 has low — m1 should have positive contribution
         preds_m1 = [_pred(float(i)) for i in range(1, 6)]

@@ -1,9 +1,9 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.entities.model import Model
 from coordinator_node.entities.prediction import InputRecord, PredictionRecord
-from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.services.realtime_predict import RealtimePredictService
 
 
@@ -104,7 +104,10 @@ class InMemoryPredictionRepository:
                 "id": "CFG_1",
                 "scope_key": "BTC-60-60",
                 "scope_template": {"subject": "BTC", "horizon": 60, "step": 60},
-                "schedule": {"prediction_interval_seconds": 60, "resolve_after_seconds": 60},
+                "schedule": {
+                    "prediction_interval_seconds": 60,
+                    "resolve_after_seconds": 60,
+                },
                 "active": True,
                 "order": 1,
             }
@@ -131,8 +134,9 @@ class NoConfigPredictionRepository(InMemoryPredictionRepository):
         return []
 
 
-def _make_service(feed_reader=None, prediction_repo=None, input_repo=None,
-                  runner=None, contract=None):
+def _make_service(
+    feed_reader=None, prediction_repo=None, input_repo=None, runner=None, contract=None
+):
     return RealtimePredictService(
         checkpoint_interval_seconds=60,
         feed_reader=feed_reader or FakeFeedReader(),
@@ -149,7 +153,9 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
         repo = InMemoryPredictionRepository()
         service = _make_service(prediction_repo=repo)
 
-        await service.run_once(raw_input={"symbol": "BTC", "asof_ts": 123}, now=datetime.now(timezone.utc))
+        await service.run_once(
+            raw_input={"symbol": "BTC", "asof_ts": 123}, now=datetime.now(UTC)
+        )
 
         self.assertIn("m1", service._known_models)
         self.assertGreaterEqual(len(repo.saved_predictions), 1)
@@ -167,7 +173,7 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
             prediction_repo=repo,
         )
 
-        await service.run_once(now=datetime.now(timezone.utc))
+        await service.run_once(now=datetime.now(UTC))
 
         self.assertGreaterEqual(len(repo.saved_predictions), 1)
         self.assertIsNotNone(repo.saved_predictions[0].input_id)
@@ -176,10 +182,14 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
         service = _make_service(prediction_repo=NoConfigPredictionRepository())
 
         with self.assertLogs("RealtimePredictService", level="INFO") as logs:
-            changed = await service.run_once(raw_input={"symbol": "BTC"}, now=datetime.now(timezone.utc))
+            changed = await service.run_once(
+                raw_input={"symbol": "BTC"}, now=datetime.now(UTC)
+            )
 
         self.assertFalse(changed)
-        self.assertTrue(any("No active prediction configs" in line for line in logs.output))
+        self.assertTrue(
+            any("No active prediction configs" in line for line in logs.output)
+        )
 
     async def test_run_once_marks_failed_on_output_validation_error(self):
         from pydantic import BaseModel, Field
@@ -189,7 +199,11 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
 
         class BadRunner(FakeRunner):
             async def call(self, method, args):
-                return {FakeModelRun("m1"): FakePredictionResult(result={"value": "not-a-number"})}
+                return {
+                    FakeModelRun("m1"): FakePredictionResult(
+                        result={"value": "not-a-number"}
+                    )
+                }
 
         repo = InMemoryPredictionRepository()
         service = _make_service(
@@ -199,14 +213,17 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
         )
 
         with self.assertLogs("RealtimePredictService", level="ERROR") as logs:
-            changed = await service.run_once(raw_input={"symbol": "BTC"}, now=datetime.now(timezone.utc))
+            changed = await service.run_once(
+                raw_input={"symbol": "BTC"}, now=datetime.now(UTC)
+            )
 
         self.assertTrue(changed)
         pred = repo.saved_predictions[0]
         self.assertEqual(pred.status, "FAILED")
         self.assertIn("_validation_error", pred.inference_output)
-        self.assertTrue(any("INFERENCE_OUTPUT_VALIDATION_ERROR" in line for line in logs.output))
-
+        self.assertTrue(
+            any("INFERENCE_OUTPUT_VALIDATION_ERROR" in line for line in logs.output)
+        )
 
     async def test_run_once_sets_input_scope_with_feed_dimensions(self):
         """Regression: input scope must include source/subject/kind/granularity
@@ -225,7 +242,7 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
             input_repo=input_repo,
         )
 
-        await service.run_once(raw_input={"symbol": "BTC"}, now=datetime.now(timezone.utc))
+        await service.run_once(raw_input={"symbol": "BTC"}, now=datetime.now(UTC))
 
         self.assertEqual(len(input_repo.records), 1)
         inp = input_repo.records[0]
@@ -246,7 +263,7 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
             input_repo=input_repo,
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await service.run_once(raw_input={"symbol": "BTC"}, now=now)
 
         self.assertEqual(len(input_repo.records), 1)
@@ -254,10 +271,9 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(inp.resolvable_at)
         self.assertGreater(inp.resolvable_at, now)
 
-
     async def test_custom_call_method_uses_configured_method_name(self):
         """Finding F: CallMethodConfig controls which gRPC method is called."""
-        from coordinator_node.crunch_config import CallMethodConfig, CallMethodArg
+        from coordinator_node.crunch_config import CallMethodArg, CallMethodConfig
 
         class CapturingRunner(FakeRunner):
             def __init__(self):
@@ -282,28 +298,32 @@ class TestRealtimePredictService(unittest.IsolatedAsyncioTestCase):
         )
         repo = InMemoryPredictionRepository()
         # Provide scope_template values that match the custom args
-        repo.fetch_active_configs = lambda: [{
-            "id": "CFG_T",
-            "scope_key": "BTC-trade",
-            "scope_template": {"symbol": "BTCUSDT", "side": "LONG"},
-            "schedule": {"prediction_interval_seconds": 60, "resolve_after_seconds": 60},
-            "active": True,
-            "order": 1,
-        }]
+        repo.fetch_active_configs = lambda: [
+            {
+                "id": "CFG_T",
+                "scope_key": "BTC-trade",
+                "scope_template": {"symbol": "BTCUSDT", "side": "LONG"},
+                "schedule": {
+                    "prediction_interval_seconds": 60,
+                    "resolve_after_seconds": 60,
+                },
+                "active": True,
+                "order": 1,
+            }
+        ]
         service = _make_service(
             prediction_repo=repo,
             runner=runner,
             contract=contract,
         )
 
-        await service.run_once(raw_input={"symbol": "BTC"}, now=datetime.now(timezone.utc))
+        await service.run_once(raw_input={"symbol": "BTC"}, now=datetime.now(UTC))
 
         self.assertEqual(runner.captured_method, "trade")
         self.assertGreaterEqual(len(repo.saved_predictions), 1)
 
     async def test_default_call_method_is_predict(self):
         """Default CallMethodConfig calls 'predict' with (subject, horizon, step)."""
-        from coordinator_node.crunch_config import CallMethodConfig
 
         contract = CrunchConfig()
         self.assertEqual(contract.call_method.method, "predict")

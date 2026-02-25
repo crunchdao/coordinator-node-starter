@@ -4,13 +4,12 @@ Issue #9: Backtest harness hardcodes {"value": float} output shape.
 When InferenceOutput is customized (e.g. trade orders), the backtest
 should validate/coerce outputs using the schema, not hardcode {"value": ...}.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
-import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class TestBacktestOutputShape:

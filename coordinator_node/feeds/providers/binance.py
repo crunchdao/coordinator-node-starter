@@ -1,24 +1,27 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Sequence
+from datetime import UTC, datetime
+from typing import Any
 
 import requests
 
 from coordinator_node.feeds.base import DataFeed, FeedHandle, FeedSink
 from coordinator_node.feeds.contracts import (
-    SubjectDescriptor,
+    FeedDataRecord,
     FeedFetchRequest,
     FeedSubscription,
-    FeedDataRecord,
+    SubjectDescriptor,
 )
 from coordinator_node.feeds.registry import FeedSettings
 
 try:  # pragma: no cover - covered through injection tests
     from binance.client import Client as BinanceSDKClient
-except Exception:  # pragma: no cover - keep runtime resilient when dependency is missing
+except (
+    Exception
+):  # pragma: no cover - keep runtime resilient when dependency is missing
     BinanceSDKClient = None
 
 
@@ -33,7 +36,9 @@ class BinanceRestClient:
 
     def __post_init__(self) -> None:
         if self.sdk_client is None:
-            self.sdk_client = _build_default_sdk_client(timeout_seconds=self.timeout_seconds)
+            self.sdk_client = _build_default_sdk_client(
+                timeout_seconds=self.timeout_seconds
+            )
 
     def exchange_info(self) -> dict[str, Any]:
         if self.sdk_client is not None:
@@ -213,7 +218,7 @@ class BinanceFeed(DataFeed):
             watermark: dict[str, int] = {}
             while True:
                 try:
-                    now_ts = int(datetime.now(timezone.utc).timestamp())
+                    now_ts = int(datetime.now(UTC).timestamp())
                     req = FeedFetchRequest(
                         subjects=sub.subjects,
                         kind=sub.kind,
@@ -254,7 +259,9 @@ class BinanceFeed(DataFeed):
                 _logger.warning(
                     "Binance returned 0 records for subject=%r kind=%r granularity=%r. "
                     "Binance requires full pair symbols (e.g. BTCUSDT, not BTC).",
-                    subject, req.kind, req.granularity,
+                    subject,
+                    req.kind,
+                    req.granularity,
                 )
 
         return records
@@ -307,12 +314,14 @@ class BinanceFeed(DataFeed):
     async def _fetch_depth(self, req: FeedFetchRequest) -> list[FeedDataRecord]:
         """Fetch order book depth snapshots for requested subjects."""
         records: list[FeedDataRecord] = []
-        now_ts = int(datetime.now(timezone.utc).timestamp())
+        now_ts = int(datetime.now(UTC).timestamp())
         depth_limit = int(self.settings.options.get("depth_limit", "10"))
 
         for asset in req.subjects:
             try:
-                data = await asyncio.to_thread(self.client.depth, asset, limit=depth_limit)
+                data = await asyncio.to_thread(
+                    self.client.depth, asset, limit=depth_limit
+                )
             except Exception as exc:
                 _logger.warning("depth fetch failed for %s: %s", asset, exc)
                 continue
@@ -329,7 +338,9 @@ class BinanceFeed(DataFeed):
             best_bid = bid_prices[0] if bid_prices else 0.0
             best_ask = ask_prices[0] if ask_prices else 0.0
             spread = best_ask - best_bid
-            mid_price = (best_bid + best_ask) / 2.0 if (best_bid + best_ask) > 0 else 0.0
+            mid_price = (
+                (best_bid + best_ask) / 2.0 if (best_bid + best_ask) > 0 else 0.0
+            )
 
             total_bid_qty = sum(bid_qtys)
             total_ask_qty = sum(ask_qtys)
@@ -339,31 +350,33 @@ class BinanceFeed(DataFeed):
                 else 0.0
             )
 
-            records.append(FeedDataRecord(
-                subject=asset,
-                kind="depth",
-                granularity=req.granularity,
-                ts_event=now_ts,
-                values={
-                    "best_bid": best_bid,
-                    "best_ask": best_ask,
-                    "spread": spread,
-                    "mid_price": mid_price,
-                    "bid_depth": total_bid_qty,
-                    "ask_depth": total_ask_qty,
-                    "imbalance": imbalance,
-                    "bids_top": [[p, q] for p, q in zip(bid_prices, bid_qtys)],
-                    "asks_top": [[p, q] for p, q in zip(ask_prices, ask_qtys)],
-                },
-                source="binance",
-            ))
+            records.append(
+                FeedDataRecord(
+                    subject=asset,
+                    kind="depth",
+                    granularity=req.granularity,
+                    ts_event=now_ts,
+                    values={
+                        "best_bid": best_bid,
+                        "best_ask": best_ask,
+                        "spread": spread,
+                        "mid_price": mid_price,
+                        "bid_depth": total_bid_qty,
+                        "ask_depth": total_ask_qty,
+                        "imbalance": imbalance,
+                        "bids_top": [[p, q] for p, q in zip(bid_prices, bid_qtys)],
+                        "asks_top": [[p, q] for p, q in zip(ask_prices, ask_qtys)],
+                    },
+                    source="binance",
+                )
+            )
 
         return records
 
     async def _fetch_funding(self, req: FeedFetchRequest) -> list[FeedDataRecord]:
         """Fetch funding rate and mark price from Binance Futures."""
         records: list[FeedDataRecord] = []
-        now_ts = int(datetime.now(timezone.utc).timestamp())
+        now_ts = int(datetime.now(UTC).timestamp())
 
         for asset in req.subjects:
             try:
@@ -381,32 +394,30 @@ class BinanceFeed(DataFeed):
             next_funding_ts = int(mark_data.get("nextFundingTime", 0)) // 1000
 
             # Basis = (mark - index) / index — a mean-reversion signal
-            basis = (
-                (mark_price - index_price) / index_price
-                if index_price > 0
-                else 0.0
-            )
+            basis = (mark_price - index_price) / index_price if index_price > 0 else 0.0
 
-            records.append(FeedDataRecord(
-                subject=asset,
-                kind="funding",
-                granularity=req.granularity,
-                ts_event=now_ts,
-                values={
-                    "funding_rate": funding_rate,
-                    "mark_price": mark_price,
-                    "index_price": index_price,
-                    "basis": basis,
-                    "next_funding_ts": next_funding_ts,
-                },
-                source="binance",
-            ))
+            records.append(
+                FeedDataRecord(
+                    subject=asset,
+                    kind="funding",
+                    granularity=req.granularity,
+                    ts_event=now_ts,
+                    values={
+                        "funding_rate": funding_rate,
+                        "mark_price": mark_price,
+                        "index_price": index_price,
+                        "basis": basis,
+                        "next_funding_ts": next_funding_ts,
+                    },
+                    source="binance",
+                )
+            )
 
         return records
 
     async def _fetch_ticks(self, req: FeedFetchRequest) -> list[FeedDataRecord]:
         records: list[FeedDataRecord] = []
-        now_ts = int(datetime.now(timezone.utc).timestamp())
+        now_ts = int(datetime.now(UTC).timestamp())
 
         for asset in req.subjects:
             try:

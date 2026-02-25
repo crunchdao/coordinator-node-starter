@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Callable, Mapping
 
 from coordinator_node.feeds.base import DataFeed
 
@@ -22,7 +22,9 @@ class DataFeedRegistry:
     def __init__(self) -> None:
         self._factories: dict[str, FeedFactory] = {}
 
-    def register(self, provider: str, factory: FeedFactory, *, replace: bool = False) -> None:
+    def register(
+        self, provider: str, factory: FeedFactory, *, replace: bool = False
+    ) -> None:
         key = _normalize_provider(provider)
         if not replace and key in self._factories:
             raise ValueError(f"Feed provider '{key}' already registered")
@@ -31,12 +33,16 @@ class DataFeedRegistry:
     def providers(self) -> list[str]:
         return sorted(self._factories.keys())
 
-    def create(self, provider: str, options: Mapping[str, str] | None = None) -> DataFeed:
+    def create(
+        self, provider: str, options: Mapping[str, str] | None = None
+    ) -> DataFeed:
         key = _normalize_provider(provider)
         factory = self._factories.get(key)
         if factory is None:
             allowed = ", ".join(self.providers()) or "<none>"
-            raise ValueError(f"Unknown feed provider '{key}'. Allowed providers: {allowed}")
+            raise ValueError(
+                f"Unknown feed provider '{key}'. Allowed providers: {allowed}"
+            )
 
         settings = FeedSettings(provider=key, options=dict(options or {}))
         return factory(settings)

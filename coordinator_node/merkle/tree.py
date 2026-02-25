@@ -1,9 +1,8 @@
 """Binary Merkle tree construction and proof generation."""
+
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
-from typing import Any
 
 from coordinator_node.merkle.hasher import sha256_concat
 
@@ -11,11 +10,12 @@ from coordinator_node.merkle.hasher import sha256_concat
 @dataclass
 class MerkleNode:
     """In-memory node used during tree construction."""
+
     hash: str
     level: int
     position: int
-    left: "MerkleNode | None" = None
-    right: "MerkleNode | None" = None
+    left: MerkleNode | None = None
+    right: MerkleNode | None = None
     snapshot_id: str | None = None
     snapshot_content_hash: str | None = None
 

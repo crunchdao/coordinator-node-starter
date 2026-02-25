@@ -3,10 +3,9 @@ from __future__ import annotations
 import os
 import subprocess
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import requests
-
 
 _MODEL_FAILURE_MARKERS = [
     "BAD_IMPLEMENTATION",
@@ -69,7 +68,7 @@ def main() -> int:
     print(f"[verify-e2e] base_url={base_url} timeout={timeout_seconds}s")
 
     deadline = time.time() + timeout_seconds
-    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    since = datetime.now(UTC) - timedelta(hours=1)
 
     last_error: str | None = None
 
@@ -80,7 +79,9 @@ def main() -> int:
             model_logs = _read_model_orchestrator_logs()
             failure = _detect_model_runner_failure(model_logs)
             if failure is not None:
-                print(f"[verify-e2e] ⚠️  model error in logs (non-fatal): {failure[:120]}")
+                print(
+                    f"[verify-e2e] ⚠️  model error in logs (non-fatal): {failure[:120]}"
+                )
 
             health = _get_json(base_url, "/healthz")
             if health.get("status") != "ok":
@@ -91,7 +92,7 @@ def main() -> int:
                 raise RuntimeError("no models registered yet")
 
             model_id = models[0]["model_id"]
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             predictions = _get_json(
                 base_url,
                 "/reports/predictions",
@@ -106,7 +107,8 @@ def main() -> int:
             scored = [
                 row
                 for row in predictions
-                if row.get("score_value") is not None and row.get("score_failed") is False
+                if row.get("score_value") is not None
+                and row.get("score_failed") is False
             ]
             if scored and leaderboard:
                 # Sanity: check scores are not all zero (catches stub scoring / broken ground truth)

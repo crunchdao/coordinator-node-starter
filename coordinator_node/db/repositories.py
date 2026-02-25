@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Iterable
+from collections.abc import Iterable
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlmodel import Session, delete, select
 
-from coordinator_node.entities.model import Model
-from coordinator_node.entities.prediction import (
-    CheckpointRecord, CheckpointStatus, InputRecord, InputStatus,
-    PredictionRecord, PredictionStatus, ScoreRecord, SnapshotRecord,
-)
 from coordinator_node.db.tables import (
     CheckpointRow,
     InputRow,
@@ -21,6 +17,17 @@ from coordinator_node.db.tables import (
     PredictionRow,
     ScoreRow,
     SnapshotRow,
+)
+from coordinator_node.entities.model import Model
+from coordinator_node.entities.prediction import (
+    CheckpointRecord,
+    CheckpointStatus,
+    InputRecord,
+    InputStatus,
+    PredictionRecord,
+    PredictionStatus,
+    ScoreRecord,
+    SnapshotRecord,
 )
 from coordinator_node.schemas import ScheduledPredictionConfigEnvelope
 
@@ -60,7 +67,7 @@ class DBModelRepository:
             existing.overall_score_jsonb = row.overall_score_jsonb
             existing.scores_by_scope_jsonb = row.scores_by_scope_jsonb
             existing.meta_jsonb = row.meta_jsonb
-            existing.updated_at = datetime.now(timezone.utc)
+            existing.updated_at = datetime.now(UTC)
 
         self._session.commit()
 
@@ -95,9 +102,8 @@ class DBModelRepository:
             scores_by_scope_jsonb=model.scores_by_scope,
             meta_jsonb=model.meta,
             created_at=model.created_at,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
-
 
 
 class DBInputRepository:
@@ -127,8 +133,12 @@ class DBInputRepository:
         self._session.commit()
 
     def find(
-        self, *, status: str | None = None, resolvable_before: datetime | None = None,
-        since: datetime | None = None, until: datetime | None = None,
+        self,
+        *,
+        status: str | None = None,
+        resolvable_before: datetime | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
         limit: int | None = None,
     ) -> list[InputRecord]:
         stmt = select(InputRow).order_by(InputRow.received_at.asc())
@@ -143,12 +153,19 @@ class DBInputRepository:
         if limit is not None:
             stmt = stmt.limit(max(1, int(limit)))
         rows = self._session.exec(stmt).all()
-        return [InputRecord(
-            id=r.id, status=InputStatus(r.status), raw_data=r.raw_data_jsonb or {},
-            actuals=r.actuals_jsonb, scope=r.scope_jsonb or {},
-            meta=r.meta_jsonb or {}, received_at=r.received_at,
-            resolvable_at=r.resolvable_at,
-        ) for r in rows]
+        return [
+            InputRecord(
+                id=r.id,
+                status=InputStatus(r.status),
+                raw_data=r.raw_data_jsonb or {},
+                actuals=r.actuals_jsonb,
+                scope=r.scope_jsonb or {},
+                meta=r.meta_jsonb or {},
+                received_at=r.received_at,
+                resolvable_at=r.resolvable_at,
+            )
+            for r in rows
+        ]
 
 
 class DBPredictionRepository:
@@ -178,10 +195,15 @@ class DBPredictionRepository:
             self.save(prediction)
 
     def find(
-        self, *, status: str | list[str] | None = None,
-        scope_key: str | None = None, model_id: str | None = None,
-        since: datetime | None = None, until: datetime | None = None,
-        resolvable_before: datetime | None = None, limit: int | None = None,
+        self,
+        *,
+        status: str | list[str] | None = None,
+        scope_key: str | None = None,
+        model_id: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        resolvable_before: datetime | None = None,
+        limit: int | None = None,
     ) -> list[PredictionRecord]:
         stmt = select(PredictionRow)
         if status is not None:
@@ -213,20 +235,27 @@ class DBPredictionRepository:
         ).all()
         configs: list[dict[str, Any]] = []
         for row in rows:
-            envelope = ScheduledPredictionConfigEnvelope.model_validate({
-                "id": row.id, "scope_key": row.scope_key,
-                "scope_template": row.scope_template_jsonb or {},
-                "schedule": row.schedule_jsonb or {},
-                "active": row.active, "order": row.order,
-                "meta": row.meta_jsonb or {},
-            })
+            envelope = ScheduledPredictionConfigEnvelope.model_validate(
+                {
+                    "id": row.id,
+                    "scope_key": row.scope_key,
+                    "scope_template": row.scope_template_jsonb or {},
+                    "schedule": row.schedule_jsonb or {},
+                    "active": row.active,
+                    "order": row.order,
+                    "meta": row.meta_jsonb or {},
+                }
+            )
             configs.append(envelope.model_dump())
         return configs
 
     def query_scores(
-        self, *, model_ids: list[str],
-        _from: datetime | None = None, to: datetime | None = None,
-    ) -> dict[str, list["ScoredPrediction"]]:
+        self,
+        *,
+        model_ids: list[str],
+        _from: datetime | None = None,
+        to: datetime | None = None,
+    ) -> dict[str, list[ScoredPrediction]]:
         """Return predictions with scores joined, grouped by model_id."""
         from coordinator_node.entities.prediction import ScoredPrediction
 
@@ -249,7 +278,9 @@ class DBPredictionRepository:
                     id=score_row.id,
                     prediction_id=score_row.prediction_id,
                     result=score_row.result_jsonb or {},
-                    success=score_row.success if score_row.success is not None else True,
+                    success=score_row.success
+                    if score_row.success is not None
+                    else True,
                     failed_reason=score_row.failed_reason,
                     scored_at=score_row.scored_at,
                 )
@@ -330,8 +361,12 @@ class DBScoreRepository:
         self._session.commit()
 
     def find(
-        self, *, prediction_id: str | None = None, model_id: str | None = None,
-        since: datetime | None = None, until: datetime | None = None,
+        self,
+        *,
+        prediction_id: str | None = None,
+        model_id: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
         limit: int | None = None,
     ) -> list[ScoreRecord]:
         stmt = select(ScoreRow)
@@ -345,11 +380,17 @@ class DBScoreRepository:
             stmt = stmt.limit(max(1, int(limit)))
         stmt = stmt.order_by(ScoreRow.scored_at.asc())
         rows = self._session.exec(stmt).all()
-        return [ScoreRecord(
-            id=r.id, prediction_id=r.prediction_id, result=r.result_jsonb or {},
-            success=bool(r.success), failed_reason=r.failed_reason,
-            scored_at=r.scored_at,
-        ) for r in rows]
+        return [
+            ScoreRecord(
+                id=r.id,
+                prediction_id=r.prediction_id,
+                result=r.result_jsonb or {},
+                success=bool(r.success),
+                failed_reason=r.failed_reason,
+                scored_at=r.scored_at,
+            )
+            for r in rows
+        ]
 
 
 class DBLeaderboardRepository:
@@ -359,9 +400,13 @@ class DBLeaderboardRepository:
     def rollback(self) -> None:
         self._session.rollback()
 
-    def save(self, leaderboard_entries: list[dict[str, Any]], meta: dict[str, Any] | None = None) -> None:
+    def save(
+        self,
+        leaderboard_entries: list[dict[str, Any]],
+        meta: dict[str, Any] | None = None,
+    ) -> None:
         row = LeaderboardRow(
-            id=f"LBR_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S.%f')[:-3]}",
+            id=f"LBR_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S.%f')[:-3]}",
             entries_jsonb=leaderboard_entries,
             meta_jsonb=meta or {},
         )
@@ -415,8 +460,11 @@ class DBSnapshotRepository:
         self._session.commit()
 
     def find(
-        self, *, model_id: str | None = None,
-        since: datetime | None = None, until: datetime | None = None,
+        self,
+        *,
+        model_id: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
         limit: int | None = None,
     ) -> list[SnapshotRecord]:
         stmt = select(SnapshotRow)
@@ -430,14 +478,19 @@ class DBSnapshotRepository:
             stmt = stmt.limit(max(1, int(limit)))
         stmt = stmt.order_by(SnapshotRow.created_at.asc())
         rows = self._session.exec(stmt).all()
-        return [SnapshotRecord(
-            id=r.id, model_id=r.model_id,
-            period_start=r.period_start, period_end=r.period_end,
-            prediction_count=r.prediction_count,
-            result_summary=r.result_summary_jsonb or {},
-            meta=r.meta_jsonb or {},
-            created_at=r.created_at,
-        ) for r in rows]
+        return [
+            SnapshotRecord(
+                id=r.id,
+                model_id=r.model_id,
+                period_start=r.period_start,
+                period_end=r.period_end,
+                prediction_count=r.prediction_count,
+                result_summary=r.result_summary_jsonb or {},
+                meta=r.meta_jsonb or {},
+                created_at=r.created_at,
+            )
+            for r in rows
+        ]
 
 
 class DBCheckpointRepository:
@@ -471,7 +524,9 @@ class DBCheckpointRepository:
         self._session.commit()
 
     def find(
-        self, *, status: str | None = None,
+        self,
+        *,
+        status: str | None = None,
         limit: int | None = None,
     ) -> list[CheckpointRecord]:
         stmt = select(CheckpointRow)
@@ -481,14 +536,20 @@ class DBCheckpointRepository:
             stmt = stmt.limit(max(1, int(limit)))
         stmt = stmt.order_by(CheckpointRow.created_at.desc())
         rows = self._session.exec(stmt).all()
-        return [CheckpointRecord(
-            id=r.id,
-            period_start=r.period_start, period_end=r.period_end,
-            status=CheckpointStatus(r.status), entries=r.entries_jsonb or [],
-            meta=r.meta_jsonb or {},
-            created_at=r.created_at,
-            tx_hash=r.tx_hash, submitted_at=r.submitted_at,
-        ) for r in rows]
+        return [
+            CheckpointRecord(
+                id=r.id,
+                period_start=r.period_start,
+                period_end=r.period_end,
+                status=CheckpointStatus(r.status),
+                entries=r.entries_jsonb or [],
+                meta=r.meta_jsonb or {},
+                created_at=r.created_at,
+                tx_hash=r.tx_hash,
+                submitted_at=r.submitted_at,
+            )
+            for r in rows
+        ]
 
     def get_latest(self) -> CheckpointRecord | None:
         row = self._session.exec(
@@ -498,11 +559,14 @@ class DBCheckpointRepository:
             return None
         return CheckpointRecord(
             id=row.id,
-            period_start=row.period_start, period_end=row.period_end,
-            status=CheckpointStatus(row.status), entries=row.entries_jsonb or [],
+            period_start=row.period_start,
+            period_end=row.period_end,
+            status=CheckpointStatus(row.status),
+            entries=row.entries_jsonb or [],
             meta=row.meta_jsonb or {},
             created_at=row.created_at,
-            tx_hash=row.tx_hash, submitted_at=row.submitted_at,
+            tx_hash=row.tx_hash,
+            submitted_at=row.submitted_at,
         )
 
     def update_merkle_root(self, checkpoint_id: str, merkle_root: str) -> None:
@@ -537,7 +601,10 @@ class DBMerkleCycleRepository:
         ).first()
 
     def find(
-        self, *, since: datetime | None = None, until: datetime | None = None,
+        self,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
         limit: int | None = None,
     ) -> list[MerkleCycleRow]:
         stmt = select(MerkleCycleRow)
@@ -568,15 +635,23 @@ class DBMerkleNodeRepository:
         self._session.commit()
 
     def find_by_cycle_id(self, cycle_id: str) -> list[MerkleNodeRow]:
-        stmt = select(MerkleNodeRow).where(
-            MerkleNodeRow.cycle_id == cycle_id,
-        ).order_by(MerkleNodeRow.level.asc(), MerkleNodeRow.position.asc())
+        stmt = (
+            select(MerkleNodeRow)
+            .where(
+                MerkleNodeRow.cycle_id == cycle_id,
+            )
+            .order_by(MerkleNodeRow.level.asc(), MerkleNodeRow.position.asc())
+        )
         return list(self._session.exec(stmt).all())
 
     def find_by_checkpoint_id(self, checkpoint_id: str) -> list[MerkleNodeRow]:
-        stmt = select(MerkleNodeRow).where(
-            MerkleNodeRow.checkpoint_id == checkpoint_id,
-        ).order_by(MerkleNodeRow.level.asc(), MerkleNodeRow.position.asc())
+        stmt = (
+            select(MerkleNodeRow)
+            .where(
+                MerkleNodeRow.checkpoint_id == checkpoint_id,
+            )
+            .order_by(MerkleNodeRow.level.asc(), MerkleNodeRow.position.asc())
+        )
         return list(self._session.exec(stmt).all())
 
     def find_by_snapshot_id(self, snapshot_id: str) -> MerkleNodeRow | None:

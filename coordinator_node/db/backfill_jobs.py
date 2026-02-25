@@ -1,8 +1,9 @@
 """Repository for backfill job persistence."""
+
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlmodel import Session, select
 
@@ -51,7 +52,9 @@ class DBBackfillJobRepository:
     def get(self, job_id: str) -> BackfillJobRow | None:
         return self._session.get(BackfillJobRow, job_id)
 
-    def find(self, *, status: str | None = None, limit: int = 100) -> list[BackfillJobRow]:
+    def find(
+        self, *, status: str | None = None, limit: int = 100
+    ) -> list[BackfillJobRow]:
         stmt = select(BackfillJobRow).order_by(BackfillJobRow.created_at.desc())
         if status is not None:
             stmt = stmt.where(BackfillJobRow.status == status)
@@ -61,7 +64,11 @@ class DBBackfillJobRepository:
     def get_running(self) -> BackfillJobRow | None:
         stmt = (
             select(BackfillJobRow)
-            .where(BackfillJobRow.status.in_([BackfillJobStatus.PENDING, BackfillJobStatus.RUNNING]))
+            .where(
+                BackfillJobRow.status.in_(
+                    [BackfillJobStatus.PENDING, BackfillJobStatus.RUNNING]
+                )
+            )
             .limit(1)
         )
         return self._session.exec(stmt).first()
@@ -80,7 +87,7 @@ class DBBackfillJobRepository:
         row.cursor_ts = _ensure_utc(cursor_ts)
         row.records_written = records_written
         row.pages_fetched = pages_fetched
-        row.updated_at = datetime.now(timezone.utc)
+        row.updated_at = datetime.now(UTC)
         self._session.commit()
 
     def set_status(
@@ -95,7 +102,7 @@ class DBBackfillJobRepository:
             return
         row.status = status
         row.error = error
-        row.updated_at = datetime.now(timezone.utc)
+        row.updated_at = datetime.now(UTC)
         self._session.commit()
 
     def rollback(self) -> None:
@@ -104,5 +111,5 @@ class DBBackfillJobRepository:
 
 def _ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

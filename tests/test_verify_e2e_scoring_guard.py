@@ -4,9 +4,8 @@ Issue #4: The 0.0 scoring stub can slip past E2E verification.
 The all-identical check should be a failure, not just a warning.
 Also, the scoring stub itself should be detectable at startup.
 """
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 
 class TestScoringStubDetection:
@@ -21,7 +20,11 @@ class TestScoringStubDetection:
 
         is_stub, reason = ScoreService.detect_scoring_stub(stub_scorer)
         assert is_stub is True
-        assert "constant" in reason.lower() or "stub" in reason.lower() or "identical" in reason.lower()
+        assert (
+            "constant" in reason.lower()
+            or "stub" in reason.lower()
+            or "identical" in reason.lower()
+        )
 
     def test_accepts_real_scoring_function(self):
         """A scoring function that produces varied outputs is not a stub."""
@@ -60,6 +63,7 @@ class TestVerifyE2EAllIdenticalScores:
         ]
 
         from scripts.verify_e2e import check_score_quality
+
         passed, reason = check_score_quality(scored)
         assert passed is False
         assert "identical" in reason.lower()
@@ -73,6 +77,7 @@ class TestVerifyE2EAllIdenticalScores:
         ]
 
         from scripts.verify_e2e import check_score_quality
+
         passed, reason = check_score_quality(scored)
         assert passed is True
 
@@ -84,5 +89,6 @@ class TestVerifyE2EAllIdenticalScores:
         ]
 
         from scripts.verify_e2e import check_score_quality
+
         passed, reason = check_score_quality(scored)
         assert passed is False

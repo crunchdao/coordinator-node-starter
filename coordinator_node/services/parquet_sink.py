@@ -1,13 +1,13 @@
 """Hive-partitioned parquet writer for backfill data."""
+
 from __future__ import annotations
 
 import json
 import logging
-import os
 from collections import defaultdict
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -19,19 +19,21 @@ logger = logging.getLogger(__name__)
 # Standard value columns that get flattened from the values dict
 STANDARD_VALUE_COLUMNS = ("open", "high", "low", "close", "volume")
 
-SCHEMA = pa.schema([
-    ("ts_event", pa.timestamp("us", tz="UTC")),
-    ("source", pa.string()),
-    ("subject", pa.string()),
-    ("kind", pa.string()),
-    ("granularity", pa.string()),
-    ("open", pa.float64()),
-    ("high", pa.float64()),
-    ("low", pa.float64()),
-    ("close", pa.float64()),
-    ("volume", pa.float64()),
-    ("meta", pa.string()),  # JSON string for non-standard fields
-])
+SCHEMA = pa.schema(
+    [
+        ("ts_event", pa.timestamp("us", tz="UTC")),
+        ("source", pa.string()),
+        ("subject", pa.string()),
+        ("kind", pa.string()),
+        ("granularity", pa.string()),
+        ("open", pa.float64()),
+        ("high", pa.float64()),
+        ("low", pa.float64()),
+        ("close", pa.float64()),
+        ("volume", pa.float64()),
+        ("meta", pa.string()),  # JSON string for non-standard fields
+    ]
+)
 
 
 class ParquetBackfillSink:
@@ -46,12 +48,20 @@ class ParquetBackfillSink:
     def append_records(self, records: Iterable[FeedRecord]) -> int:
         """Write records to parquet, grouped by date. Merges with existing files."""
         # Group records by (source, subject, kind, granularity, date)
-        grouped: dict[tuple[str, str, str, str, str], list[FeedRecord]] = defaultdict(list)
+        grouped: dict[tuple[str, str, str, str, str], list[FeedRecord]] = defaultdict(
+            list
+        )
         count = 0
         for record in records:
             ts = _ensure_utc(record.ts_event)
             date_str = ts.strftime("%Y-%m-%d")
-            key = (record.source, record.subject, record.kind, record.granularity, date_str)
+            key = (
+                record.source,
+                record.subject,
+                record.kind,
+                record.granularity,
+                date_str,
+            )
             grouped[key].append(record)
             count += 1
 
@@ -77,14 +87,18 @@ class ParquetBackfillSink:
                 rel_path = parquet_path.relative_to(self.base_dir)
                 # Extract date from filename (YYYY-MM-DD.parquet)
                 date_str = parquet_path.stem
-                manifest.append({
-                    "path": str(rel_path),
-                    "records": metadata.num_rows,
-                    "size_bytes": parquet_path.stat().st_size,
-                    "date": date_str,
-                })
+                manifest.append(
+                    {
+                        "path": str(rel_path),
+                        "records": metadata.num_rows,
+                        "size_bytes": parquet_path.stat().st_size,
+                        "date": date_str,
+                    }
+                )
             except Exception as exc:
-                logger.warning("Failed to read parquet metadata for %s: %s", parquet_path, exc)
+                logger.warning(
+                    "Failed to read parquet metadata for %s: %s", parquet_path, exc
+                )
 
         return manifest
 
@@ -95,8 +109,17 @@ class ParquetBackfillSink:
             return full_path
         return None
 
-    def _file_path(self, source: str, subject: str, kind: str, granularity: str, date_str: str) -> Path:
-        return self.base_dir / source / subject / kind / granularity / f"{date_str}.parquet"
+    def _file_path(
+        self, source: str, subject: str, kind: str, granularity: str, date_str: str
+    ) -> Path:
+        return (
+            self.base_dir
+            / source
+            / subject
+            / kind
+            / granularity
+            / f"{date_str}.parquet"
+        )
 
     def _write_or_merge(self, path: Path, records: list[FeedRecord]) -> None:
         """Write records to parquet, merging with existing file if present."""
@@ -158,19 +181,22 @@ def _records_to_table(records: list[FeedRecord]) -> pa.Table:
             extra["_record_meta"] = record.meta
         metas.append(json.dumps(extra) if extra else "{}")
 
-    return pa.table({
-        "ts_event": pa.array(ts_events, type=pa.timestamp("us", tz="UTC")),
-        "source": pa.array(sources, type=pa.string()),
-        "subject": pa.array(subjects, type=pa.string()),
-        "kind": pa.array(kinds, type=pa.string()),
-        "granularity": pa.array(granularities, type=pa.string()),
-        "open": pa.array(opens, type=pa.float64()),
-        "high": pa.array(highs, type=pa.float64()),
-        "low": pa.array(lows, type=pa.float64()),
-        "close": pa.array(closes, type=pa.float64()),
-        "volume": pa.array(volumes, type=pa.float64()),
-        "meta": pa.array(metas, type=pa.string()),
-    }, schema=SCHEMA)
+    return pa.table(
+        {
+            "ts_event": pa.array(ts_events, type=pa.timestamp("us", tz="UTC")),
+            "source": pa.array(sources, type=pa.string()),
+            "subject": pa.array(subjects, type=pa.string()),
+            "kind": pa.array(kinds, type=pa.string()),
+            "granularity": pa.array(granularities, type=pa.string()),
+            "open": pa.array(opens, type=pa.float64()),
+            "high": pa.array(highs, type=pa.float64()),
+            "low": pa.array(lows, type=pa.float64()),
+            "close": pa.array(closes, type=pa.float64()),
+            "volume": pa.array(volumes, type=pa.float64()),
+            "meta": pa.array(metas, type=pa.string()),
+        },
+        schema=SCHEMA,
+    )
 
 
 def _deduplicate_by_ts(table: pa.Table) -> pa.Table:
@@ -199,5 +225,5 @@ def _safe_float(value) -> float | None:
 
 def _ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

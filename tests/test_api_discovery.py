@@ -1,4 +1,5 @@
 """Tests for API router auto-discovery."""
+
 from __future__ import annotations
 
 import os
@@ -10,7 +11,11 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from coordinator_node.api_discovery import mount_api_routers, _mount_from_directory, _mount_from_path
+from coordinator_node.api_discovery import (
+    _mount_from_directory,
+    _mount_from_path,
+    mount_api_routers,
+)
 
 
 class TestMountFromDirectory(unittest.TestCase):
@@ -19,14 +24,16 @@ class TestMountFromDirectory(unittest.TestCase):
             api_dir = Path(tmpdir) / "api"
             api_dir.mkdir()
             (api_dir / "__init__.py").write_text("")
-            (api_dir / "greet.py").write_text(textwrap.dedent("""
+            (api_dir / "greet.py").write_text(
+                textwrap.dedent("""
                 from fastapi import APIRouter
                 router = APIRouter(prefix="/greet")
 
                 @router.get("/hello")
                 def hello():
                     return {"msg": "hi"}
-            """))
+            """)
+            )
 
             app = FastAPI()
             count = _mount_from_directory(app, str(api_dir))
@@ -43,14 +50,16 @@ class TestMountFromDirectory(unittest.TestCase):
             api_dir = Path(tmpdir) / "api"
             api_dir.mkdir()
             (api_dir / "__init__.py").write_text("")
-            (api_dir / "_internal.py").write_text(textwrap.dedent("""
+            (api_dir / "_internal.py").write_text(
+                textwrap.dedent("""
                 from fastapi import APIRouter
                 router = APIRouter()
 
                 @router.get("/secret")
                 def secret():
                     return {"hidden": True}
-            """))
+            """)
+            )
 
             app = FastAPI()
             count = _mount_from_directory(app, str(api_dir))
@@ -79,14 +88,16 @@ class TestMountFromDirectory(unittest.TestCase):
             (api_dir / "__init__.py").write_text("")
 
             for name in ["beta", "alpha"]:
-                (api_dir / f"{name}.py").write_text(textwrap.dedent(f"""
+                (api_dir / f"{name}.py").write_text(
+                    textwrap.dedent(f"""
                     from fastapi import APIRouter
                     router = APIRouter(prefix="/{name}")
 
                     @router.get("/ping")
                     def ping():
                         return {{"source": "{name}"}}
-                """))
+                """)
+                )
 
             app = FastAPI()
             count = _mount_from_directory(app, str(api_dir))
@@ -117,6 +128,7 @@ class TestMountFromPath(unittest.TestCase):
 
         mod = types.ModuleType("_test_api_mod")
         from fastapi import APIRouter
+
         mod.router = APIRouter(prefix="/explicit")
 
         @mod.router.get("/test")
@@ -145,6 +157,7 @@ class TestMountFromPath(unittest.TestCase):
     def test_non_router_attribute_returns_zero(self):
         import sys
         import types
+
         mod = types.ModuleType("_test_non_router")
         mod.router = "not a router"
         sys.modules["_test_non_router"] = mod
@@ -161,6 +174,7 @@ class TestMountApiRouters(unittest.TestCase):
     def test_env_var_api_routes(self):
         import sys
         import types
+
         from fastapi import APIRouter
 
         mod = types.ModuleType("_test_env_routes")

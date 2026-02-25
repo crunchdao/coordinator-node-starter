@@ -2,16 +2,22 @@ from __future__ import annotations
 
 import importlib
 import inspect
-from typing import Callable
+from collections.abc import Callable
 
 
-def resolve_callable(path: str, required_params: tuple[str, ...] | None = None) -> Callable:
+def resolve_callable(
+    path: str, required_params: tuple[str, ...] | None = None
+) -> Callable:
     if ":" not in path:
-        raise ValueError(f"Invalid callable path '{path}'. Expected '<module>:<callable>'.")
+        raise ValueError(
+            f"Invalid callable path '{path}'. Expected '<module>:<callable>'."
+        )
 
     module_name, attr_name = path.split(":", maxsplit=1)
     if not module_name or not attr_name:
-        raise ValueError(f"Invalid callable path '{path}'. Expected '<module>:<callable>'.")
+        raise ValueError(
+            f"Invalid callable path '{path}'. Expected '<module>:<callable>'."
+        )
 
     module = importlib.import_module(module_name)
     target = getattr(module, attr_name)
@@ -25,7 +31,9 @@ def resolve_callable(path: str, required_params: tuple[str, ...] | None = None) 
     return target
 
 
-def _validate_signature(path: str, target: Callable, required_params: tuple[str, ...]) -> None:
+def _validate_signature(
+    path: str, target: Callable, required_params: tuple[str, ...]
+) -> None:
     signature = inspect.signature(target)
     param_names = tuple(signature.parameters.keys())
 

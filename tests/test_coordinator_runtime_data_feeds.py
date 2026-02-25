@@ -72,7 +72,9 @@ class TestCoordinatorRuntimeDataFeeds(unittest.TestCase):
         registry = DataFeedRegistry()
         registry.register("pyth", lambda settings: DummyFeed(settings))
 
-        feed = registry.create_from_env({"FEED_PROVIDER": "pyth", "FEED_OPT_ASSETS": "BTCUSD"})
+        feed = registry.create_from_env(
+            {"FEED_PROVIDER": "pyth", "FEED_OPT_ASSETS": "BTCUSD"}
+        )
 
         self.assertEqual(feed.settings.provider, "pyth")
         self.assertEqual(feed.settings.options["assets"], "BTCUSD")

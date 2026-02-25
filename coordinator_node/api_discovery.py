@@ -11,6 +11,7 @@ Scan directory is controlled by:
 
 Both mechanisms can be used together.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -18,7 +19,6 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, FastAPI
 
@@ -89,7 +89,9 @@ def _mount_from_directory(app: FastAPI, directory: str) -> int:
         if router is not None and isinstance(router, APIRouter):
             app.include_router(router)
             count += 1
-            logger.info("Mounted router from %s (%d routes)", py_file.name, len(router.routes))
+            logger.info(
+                "Mounted router from %s (%d routes)", py_file.name, len(router.routes)
+            )
         else:
             logger.debug("No router found in %s, skipping", py_file.name)
 

@@ -4,17 +4,19 @@ Revision ID: 001
 Revises:
 Create Date: 2026-02-14
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
+
 # revision identifiers
 revision: str = "001"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -77,8 +79,12 @@ def upgrade() -> None:
         sa.Column("id", sa.String(), primary_key=True),
         sa.Column("input_id", sa.String(), sa.ForeignKey("inputs.id"), nullable=False),
         sa.Column("model_id", sa.String(), sa.ForeignKey("models.id"), nullable=False),
-        sa.Column("prediction_config_id", sa.String(),
-                  sa.ForeignKey("scheduled_prediction_configs.id"), nullable=True),
+        sa.Column(
+            "prediction_config_id",
+            sa.String(),
+            sa.ForeignKey("scheduled_prediction_configs.id"),
+            nullable=True,
+        ),
         sa.Column("scope_key", sa.String(), nullable=False),
         sa.Column("scope_jsonb", postgresql.JSONB(), server_default="{}"),
         sa.Column("status", sa.String(), nullable=False),
@@ -100,7 +106,12 @@ def upgrade() -> None:
     op.create_table(
         "scores",
         sa.Column("id", sa.String(), primary_key=True),
-        sa.Column("prediction_id", sa.String(), sa.ForeignKey("predictions.id"), nullable=False),
+        sa.Column(
+            "prediction_id",
+            sa.String(),
+            sa.ForeignKey("predictions.id"),
+            nullable=False,
+        ),
         sa.Column("result_jsonb", postgresql.JSONB(), server_default="{}"),
         sa.Column("success", sa.Boolean(), nullable=True),
         sa.Column("failed_reason", sa.String(), nullable=True),
@@ -163,8 +174,11 @@ def upgrade() -> None:
     op.create_index("ix_feed_records_kind", "feed_records", ["kind"])
     op.create_index("ix_feed_records_granularity", "feed_records", ["granularity"])
     op.create_index("ix_feed_records_ts_event", "feed_records", ["ts_event"])
-    op.create_index("idx_feed_records_lookup", "feed_records",
-                    ["source", "subject", "kind", "granularity", "ts_event"])
+    op.create_index(
+        "idx_feed_records_lookup",
+        "feed_records",
+        ["source", "subject", "kind", "granularity", "ts_event"],
+    )
 
     op.create_table(
         "feed_ingestion_state",
@@ -208,21 +222,29 @@ def upgrade() -> None:
         sa.Column("snapshot_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("created_at", sa.DateTime(), nullable=False),
     )
-    op.create_index("ix_merkle_cycles_previous_cycle_id", "merkle_cycles", ["previous_cycle_id"])
+    op.create_index(
+        "ix_merkle_cycles_previous_cycle_id", "merkle_cycles", ["previous_cycle_id"]
+    )
     op.create_index("ix_merkle_cycles_chained_root", "merkle_cycles", ["chained_root"])
     op.create_index("ix_merkle_cycles_created_at", "merkle_cycles", ["created_at"])
 
     op.create_table(
         "merkle_nodes",
         sa.Column("id", sa.String(), primary_key=True),
-        sa.Column("checkpoint_id", sa.String(), sa.ForeignKey("checkpoints.id"), nullable=True),
-        sa.Column("cycle_id", sa.String(), sa.ForeignKey("merkle_cycles.id"), nullable=True),
+        sa.Column(
+            "checkpoint_id", sa.String(), sa.ForeignKey("checkpoints.id"), nullable=True
+        ),
+        sa.Column(
+            "cycle_id", sa.String(), sa.ForeignKey("merkle_cycles.id"), nullable=True
+        ),
         sa.Column("level", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("position", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("hash", sa.String(), nullable=False),
         sa.Column("left_child_id", sa.String(), nullable=True),
         sa.Column("right_child_id", sa.String(), nullable=True),
-        sa.Column("snapshot_id", sa.String(), sa.ForeignKey("snapshots.id"), nullable=True),
+        sa.Column(
+            "snapshot_id", sa.String(), sa.ForeignKey("snapshots.id"), nullable=True
+        ),
         sa.Column("snapshot_content_hash", sa.String(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
     )

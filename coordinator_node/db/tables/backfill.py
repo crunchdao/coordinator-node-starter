@@ -1,16 +1,14 @@
 """Backfill job tracking table."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
 
-from sqlalchemy import Column
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class BackfillJobRow(SQLModel, table=True):
@@ -25,13 +23,13 @@ class BackfillJobRow(SQLModel, table=True):
 
     start_ts: datetime
     end_ts: datetime
-    cursor_ts: Optional[datetime] = Field(default=None)
+    cursor_ts: datetime | None = Field(default=None)
 
     records_written: int = Field(default=0)
     pages_fetched: int = Field(default=0)
 
     status: str = Field(default="pending", index=True)
-    error: Optional[str] = Field(default=None)
+    error: str | None = Field(default=None)
 
     created_at: datetime = Field(default_factory=utc_now, index=True)
     updated_at: datetime = Field(default_factory=utc_now, index=True)

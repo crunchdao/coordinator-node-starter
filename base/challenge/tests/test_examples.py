@@ -1,8 +1,8 @@
 """Tests for the example tracker models."""
+
 from __future__ import annotations
 
 import pytest
-
 from starter_challenge.examples.mean_reversion_tracker import MeanReversionTracker
 from starter_challenge.examples.trend_following_tracker import TrendFollowingTracker
 from starter_challenge.examples.volatility_regime_tracker import VolatilityRegimeTracker
@@ -10,7 +10,14 @@ from starter_challenge.examples.volatility_regime_tracker import VolatilityRegim
 
 def _make_candles(closes: list[float], base_ts: int = 1700000000) -> list[dict]:
     return [
-        {"ts": base_ts + i * 60, "open": c, "high": c + 5, "low": c - 5, "close": c, "volume": 100}
+        {
+            "ts": base_ts + i * 60,
+            "open": c,
+            "high": c + 5,
+            "low": c - 5,
+            "close": c,
+            "volume": 100,
+        }
         for i, c in enumerate(closes)
     ]
 
@@ -28,11 +35,13 @@ DOWNTREND_CLOSES = [40000 - i * 50 for i in range(10)]
 EMPTY_TICK = {"symbol": "BTC", "asof_ts": 0, "candles_1m": []}
 
 
-@pytest.fixture(params=[
-    MeanReversionTracker,
-    TrendFollowingTracker,
-    VolatilityRegimeTracker,
-])
+@pytest.fixture(
+    params=[
+        MeanReversionTracker,
+        TrendFollowingTracker,
+        VolatilityRegimeTracker,
+    ]
+)
 def tracker(request):
     """Parametrize over all example trackers."""
     return request.param()

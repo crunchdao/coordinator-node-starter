@@ -34,8 +34,27 @@ packages = ["coordinator_node"]
 [tool.uv]
 package = true
 
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = [
+    "E402",   # module-level imports (some files do sys.path setup first)
+    "E501",   # line length handled by formatter
+    "F401",   # re-exports in __init__.py are intentional
+    "F811",   # redefinitions in tests (helper class overrides)
+    "F821",   # forward-ref type annotations resolved at runtime
+    "F841",   # unused variables (often intentional _ pattern)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["coordinator_node"]
+
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
     "pytest>=9.0",
+    "ruff>=0.9",
 ]

@@ -4,6 +4,7 @@ Issue #5 (continued): The validation must also run during DB migration
 when scheduled_prediction_configs are loaded, not just at predict worker
 startup.
 """
+
 from __future__ import annotations
 
 import pytest

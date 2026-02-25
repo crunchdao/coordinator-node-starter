@@ -8,9 +8,9 @@ from typing import Any
 from sqlalchemy import text
 from sqlmodel import SQLModel, delete
 
+from coordinator_node.db.session import create_session, engine
 from coordinator_node.db.tables import PredictionConfigRow
 from coordinator_node.schemas import ScheduledPredictionConfigEnvelope
-from coordinator_node.db.session import create_session, engine
 
 MINUTE = 60
 
@@ -39,7 +39,11 @@ def default_scheduled_prediction_configs() -> list[dict[str, Any]]:
     return [
         {
             "scope_key": "BTC-60-60",
-            "scope_template": {"asset": "BTC", "horizon": 1 * MINUTE, "step": 1 * MINUTE},
+            "scope_template": {
+                "asset": "BTC",
+                "horizon": 1 * MINUTE,
+                "step": 1 * MINUTE,
+            },
             "schedule": {
                 "prediction_interval_seconds": 1 * MINUTE,
                 "resolve_after_seconds": 1 * MINUTE,
@@ -88,6 +92,7 @@ def validate_scheduled_configs(configs: list[dict[str, Any]]) -> None:
 # Alembic migrations directory resolution
 # ---------------------------------------------------------------------------
 
+
 def _find_alembic_dir() -> Path | None:
     """Locate the Alembic migrations directory.
 
@@ -101,6 +106,7 @@ def _find_alembic_dir() -> Path | None:
     not included in the wheel).  Callers should fall back to
     ``SQLModel.metadata.create_all()`` in that case.
     """
+
     def _is_valid(p: Path) -> bool:
         return p.is_dir() and (p / "env.py").exists() and (p / "versions").is_dir()
 
@@ -141,6 +147,7 @@ def _run_alembic_upgrade(alembic_dir: Path | None = None) -> None:
         )
 
     from alembic.config import Config
+
     from alembic import command
 
     # Set a lock timeout so ALTER TABLE won't block forever on concurrent reads
@@ -175,9 +182,11 @@ def migrate() -> None:
     print("➡️  Upserting scheduled prediction configs...")
     with create_session() as session:
         # Drop FK temporarily so we can replace prediction configs
-        session.exec(text(
-            "ALTER TABLE predictions DROP CONSTRAINT IF EXISTS predictions_prediction_config_id_fkey"
-        ))
+        session.exec(
+            text(
+                "ALTER TABLE predictions DROP CONSTRAINT IF EXISTS predictions_prediction_config_id_fkey"
+            )
+        )
         session.exec(delete(PredictionConfigRow))
         for idx, config in enumerate(configs, start=1):
             envelope = ScheduledPredictionConfigEnvelope.model_validate(config)
@@ -224,9 +233,10 @@ def _stamp_alembic_if_needed() -> None:
         return  # No migrations available — nothing to stamp
 
     from alembic.config import Config
+    from sqlalchemy import inspect as sa_inspect
+
     from alembic import command
 
-    from sqlalchemy import inspect as sa_inspect
     inspector = sa_inspect(engine)
     if inspector.has_table("models") and not inspector.has_table("alembic_version"):
         print("➡️  Stamping existing DB at Alembic revision 001...")
@@ -245,6 +255,7 @@ def auto_migrate() -> None:
     """
     try:
         from sqlalchemy import inspect as sa_inspect
+
         inspector = sa_inspect(engine)
         if not inspector.has_table("models"):
             migrate()

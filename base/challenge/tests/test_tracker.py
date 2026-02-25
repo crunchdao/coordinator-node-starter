@@ -1,8 +1,8 @@
 """Tests for TrackerBase subject-keyed data storage."""
+
 from __future__ import annotations
 
 import pytest
-
 from starter_challenge.tracker import TrackerBase
 
 

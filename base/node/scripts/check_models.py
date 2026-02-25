@@ -3,6 +3,7 @@
 Waits for at least one model to reach RUNNING state.
 Reports failed models as warnings but only fails if ZERO models run.
 """
+
 from __future__ import annotations
 
 import os
@@ -14,8 +15,16 @@ import time
 
 def _read_orchestrator_logs() -> str:
     cmd = [
-        "docker", "compose", "-f", "docker-compose.yml",
-        "--env-file", ".local.env", "logs", "model-orchestrator", "--tail", "500",
+        "docker",
+        "compose",
+        "-f",
+        "docker-compose.yml",
+        "--env-file",
+        ".local.env",
+        "logs",
+        "model-orchestrator",
+        "--tail",
+        "500",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     return (result.stdout or "") + "\n" + (result.stderr or "")
@@ -37,9 +46,17 @@ def _count_model_states(log_text: str) -> dict[str, str]:
 def _count_expected_models() -> int:
     """Count models in models.dev.yml (if accessible)."""
     cmd = [
-        "docker", "compose", "-f", "docker-compose.yml",
-        "--env-file", ".local.env", "exec", "-T", "model-orchestrator",
-        "cat", "/app/data/models.dev.yml",
+        "docker",
+        "compose",
+        "-f",
+        "docker-compose.yml",
+        "--env-file",
+        ".local.env",
+        "exec",
+        "-T",
+        "model-orchestrator",
+        "cat",
+        "/app/data/models.dev.yml",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if result.returncode != 0:
@@ -75,7 +92,9 @@ def main() -> int:
                 print(f"[check-models] ⚠  {len(stopped)} model(s) failed: {stopped}")
                 for mid in stopped:
                     for line in logs.splitlines():
-                        if f"Model {mid}" in line and ("STOPPED" in line or "FAILED" in line):
+                        if f"Model {mid}" in line and (
+                            "STOPPED" in line or "FAILED" in line
+                        ):
                             print(f"  model {mid}: {line.strip()[-120:]}")
                             break
 

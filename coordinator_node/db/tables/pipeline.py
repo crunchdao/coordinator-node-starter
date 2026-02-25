@@ -1,8 +1,9 @@
 """Core pipeline tables: inputs → predictions → scores, plus prediction configs."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import Column, Index
 from sqlalchemy.dialects.postgresql import JSONB
@@ -10,7 +11,7 @@ from sqlmodel import Field, SQLModel
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class InputRow(SQLModel, table=True):
@@ -20,20 +21,24 @@ class InputRow(SQLModel, table=True):
     status: str = Field(default="RECEIVED", index=True)
 
     raw_data_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )
-    actuals_jsonb: Optional[dict[str, Any]] = Field(
-        default=None, sa_column=Column(JSONB, nullable=True),
+    actuals_jsonb: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column(JSONB, nullable=True),
     )
     scope_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )
     meta_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )
 
     received_at: datetime = Field(default_factory=utc_now, index=True)
-    resolvable_at: Optional[datetime] = Field(default=None, index=True)
+    resolvable_at: datetime | None = Field(default=None, index=True)
 
 
 class PredictionRow(SQLModel, table=True):
@@ -42,31 +47,34 @@ class PredictionRow(SQLModel, table=True):
     id: str = Field(primary_key=True)
     input_id: str = Field(index=True, foreign_key="inputs.id")
     model_id: str = Field(index=True, foreign_key="models.id")
-    prediction_config_id: Optional[str] = Field(
-        default=None, foreign_key="scheduled_prediction_configs.id", index=True,
+    prediction_config_id: str | None = Field(
+        default=None,
+        foreign_key="scheduled_prediction_configs.id",
+        index=True,
     )
 
     scope_key: str = Field(index=True)
     scope_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )
 
     status: str = Field(index=True)
     exec_time_ms: float
 
     inference_output_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )
     meta_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )
 
     performed_at: datetime = Field(default_factory=utc_now, index=True)
     resolvable_at: datetime = Field(index=True)
 
-    __table_args__ = (
-        Index("idx_predictions_lookup", "model_id", "scope_key"),
-    )
+    __table_args__ = (Index("idx_predictions_lookup", "model_id", "scope_key"),)
 
 
 class ScoreRow(SQLModel, table=True):
@@ -76,10 +84,11 @@ class ScoreRow(SQLModel, table=True):
     prediction_id: str = Field(index=True, foreign_key="predictions.id")
 
     result_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )
-    success: Optional[bool] = None
-    failed_reason: Optional[str] = None
+    success: bool | None = None
+    failed_reason: str | None = None
     scored_at: datetime = Field(default_factory=utc_now, index=True)
 
 
@@ -94,12 +103,14 @@ class SnapshotRow(SQLModel, table=True):
     prediction_count: int = Field(default=0)
 
     result_summary_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )
     meta_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )
-    content_hash: Optional[str] = Field(default=None, index=True)
+    content_hash: str | None = Field(default=None, index=True)
 
     created_at: datetime = Field(default_factory=utc_now, index=True)
 
@@ -114,17 +125,19 @@ class CheckpointRow(SQLModel, table=True):
     status: str = Field(default="PENDING", index=True)
 
     entries_jsonb: list[dict[str, Any]] = Field(
-        default_factory=list, sa_column=Column(JSONB),
+        default_factory=list,
+        sa_column=Column(JSONB),
     )
     meta_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )
 
-    merkle_root: Optional[str] = Field(default=None)
+    merkle_root: str | None = Field(default=None)
 
     created_at: datetime = Field(default_factory=utc_now, index=True)
-    tx_hash: Optional[str] = Field(default=None)
-    submitted_at: Optional[datetime] = Field(default=None)
+    tx_hash: str | None = Field(default=None)
+    submitted_at: datetime | None = Field(default=None)
 
 
 class PredictionConfigRow(SQLModel, table=True):
@@ -134,15 +147,18 @@ class PredictionConfigRow(SQLModel, table=True):
 
     scope_key: str = Field(index=True)
     scope_template_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )
     schedule_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )
 
     active: bool = Field(index=True, default=True)
     order: int = Field(default=0)
 
     meta_jsonb: dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSONB),
+        default_factory=dict,
+        sa_column=Column(JSONB),
     )

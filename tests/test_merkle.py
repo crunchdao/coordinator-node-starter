@@ -1,12 +1,13 @@
 """Tests for Merkle tree tamper evidence."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 
-import pytest
-
+from coordinator_node.db.tables.merkle import MerkleCycleRow, MerkleNodeRow
+from coordinator_node.entities.prediction import SnapshotRecord
 from coordinator_node.merkle.hasher import canonical_snapshot_hash, sha256_concat
+from coordinator_node.merkle.service import MerkleService
 from coordinator_node.merkle.tree import (
     MerkleNode,
     build_merkle_tree,
@@ -14,10 +15,6 @@ from coordinator_node.merkle.tree import (
     get_root,
     verify_proof,
 )
-from coordinator_node.merkle.service import MerkleService
-from coordinator_node.entities.prediction import SnapshotRecord
-from coordinator_node.db.tables.merkle import MerkleCycleRow, MerkleNodeRow
-
 
 # ── Hasher tests ──
 
@@ -25,38 +22,38 @@ from coordinator_node.db.tables.merkle import MerkleCycleRow, MerkleNodeRow
 class TestCanonicalSnapshotHash:
     def test_deterministic(self):
         """Same inputs always produce the same hash."""
-        now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
         h1 = canonical_snapshot_hash("model_a", now, now, 10, {"mae": 0.5})
         h2 = canonical_snapshot_hash("model_a", now, now, 10, {"mae": 0.5})
         assert h1 == h2
 
     def test_different_model_id(self):
-        now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
         h1 = canonical_snapshot_hash("model_a", now, now, 10, {"mae": 0.5})
         h2 = canonical_snapshot_hash("model_b", now, now, 10, {"mae": 0.5})
         assert h1 != h2
 
     def test_different_prediction_count(self):
-        now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
         h1 = canonical_snapshot_hash("model_a", now, now, 10, {"mae": 0.5})
         h2 = canonical_snapshot_hash("model_a", now, now, 11, {"mae": 0.5})
         assert h1 != h2
 
     def test_different_result_summary(self):
-        now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
         h1 = canonical_snapshot_hash("model_a", now, now, 10, {"mae": 0.5})
         h2 = canonical_snapshot_hash("model_a", now, now, 10, {"mae": 0.6})
         assert h1 != h2
 
     def test_result_summary_key_order_irrelevant(self):
         """JSON sort_keys ensures order doesn't matter."""
-        now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
         h1 = canonical_snapshot_hash("m", now, now, 1, {"a": 1, "b": 2})
         h2 = canonical_snapshot_hash("m", now, now, 1, {"b": 2, "a": 1})
         assert h1 == h2
 
     def test_returns_hex_string(self):
-        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        now = datetime(2026, 1, 1, tzinfo=UTC)
         h = canonical_snapshot_hash("m", now, now, 1, {})
         assert len(h) == 64  # SHA-256 hex
         assert all(c in "0123456789abcdef" for c in h)
@@ -116,10 +113,7 @@ class TestBuildMerkleTree:
         assert root.hash == expected_root
 
     def test_four_leaves(self):
-        leaves = [
-            MerkleNode(hash=f"leaf{i}", level=0, position=i)
-            for i in range(4)
-        ]
+        leaves = [MerkleNode(hash=f"leaf{i}", level=0, position=i) for i in range(4)]
         nodes = build_merkle_tree(leaves)
         root = get_root(nodes)
         l01 = sha256_concat("leaf0", "leaf1")
@@ -128,10 +122,7 @@ class TestBuildMerkleTree:
 
     def test_proof_and_verify(self):
         """End-to-end: build tree, generate proof, verify it."""
-        leaves = [
-            MerkleNode(hash=f"h{i}", level=0, position=i)
-            for i in range(5)
-        ]
+        leaves = [MerkleNode(hash=f"h{i}", level=0, position=i) for i in range(5)]
         nodes = build_merkle_tree(leaves)
         root = get_root(nodes)
 
@@ -220,7 +211,8 @@ class InMemoryMerkleNodeRepository:
 
     def find_by_hash_in_checkpoint(self, hash_value: str) -> list[MerkleNodeRow]:
         return [
-            n for n in self._nodes.values()
+            n
+            for n in self._nodes.values()
             if n.checkpoint_id is not None and n.hash == hash_value and n.level == 0
         ]
 
@@ -252,7 +244,7 @@ class TestMerkleService:
 
     def test_commit_cycle_single_snapshot(self):
         svc, cycle_repo, node_repo = self._make_service()
-        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        now = datetime(2026, 1, 1, tzinfo=UTC)
         snap = _make_snapshot("model_a", now)
 
         cycle = svc.commit_cycle([snap], now)
@@ -268,7 +260,7 @@ class TestMerkleService:
 
     def test_commit_cycle_multiple_snapshots(self):
         svc, cycle_repo, node_repo = self._make_service()
-        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        now = datetime(2026, 1, 1, tzinfo=UTC)
         snaps = [_make_snapshot(f"model_{i}", now, count=i + 1) for i in range(3)]
 
         cycle = svc.commit_cycle(snaps, now)
@@ -281,8 +273,8 @@ class TestMerkleService:
 
     def test_cycle_chaining(self):
         svc, cycle_repo, _ = self._make_service()
-        now1 = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
-        now2 = datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc)
+        now1 = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        now2 = datetime(2026, 1, 1, 0, 1, tzinfo=UTC)
 
         snap1 = _make_snapshot("m1", now1)
         snap2 = _make_snapshot("m2", now2)
@@ -292,13 +284,15 @@ class TestMerkleService:
 
         assert cycle2.previous_cycle_id == cycle1.id
         assert cycle2.previous_cycle_root == cycle1.chained_root
-        assert cycle2.chained_root == sha256_concat(cycle1.chained_root, cycle2.snapshots_root)
+        assert cycle2.chained_root == sha256_concat(
+            cycle1.chained_root, cycle2.snapshots_root
+        )
 
     def test_commit_checkpoint(self):
         svc, cycle_repo, node_repo = self._make_service()
-        now1 = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
-        now2 = datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc)
-        now3 = datetime(2026, 1, 1, 0, 2, tzinfo=timezone.utc)
+        now1 = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        now2 = datetime(2026, 1, 1, 0, 1, tzinfo=UTC)
+        now3 = datetime(2026, 1, 1, 0, 2, tzinfo=UTC)
 
         svc.commit_cycle([_make_snapshot("m1", now1)], now1)
         svc.commit_cycle([_make_snapshot("m2", now2)], now2)
@@ -319,7 +313,7 @@ class TestMerkleService:
 
     def test_get_proof(self):
         svc, cycle_repo, node_repo = self._make_service()
-        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        now = datetime(2026, 1, 1, tzinfo=UTC)
         snaps = [_make_snapshot(f"m{i}", now) for i in range(4)]
 
         cycle = svc.commit_cycle(snaps, now)
@@ -346,7 +340,7 @@ class TestMerkleService:
     def test_tamper_detection(self):
         """If snapshot content changes, the content hash won't match the Merkle leaf."""
         svc, _, node_repo = self._make_service()
-        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        now = datetime(2026, 1, 1, tzinfo=UTC)
         snap = _make_snapshot("m1", now)
 
         svc.commit_cycle([snap], now)
@@ -358,8 +352,11 @@ class TestMerkleService:
         # "Tamper" with the snapshot
         snap.result_summary["mae"] = 999.0
         tampered_hash = canonical_snapshot_hash(
-            snap.model_id, snap.period_start, snap.period_end,
-            snap.prediction_count, snap.result_summary,
+            snap.model_id,
+            snap.period_start,
+            snap.period_end,
+            snap.prediction_count,
+            snap.result_summary,
         )
 
         # Hashes don't match → tamper detected

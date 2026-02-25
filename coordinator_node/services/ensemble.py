@@ -1,10 +1,11 @@
 """Ensemble service — combine multiple model predictions into virtual meta-models."""
+
 from __future__ import annotations
 
 import logging
-import math
-from datetime import datetime, timezone
-from typing import Any, Callable
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
 
 from coordinator_node.entities.prediction import PredictionRecord, PredictionStatus
 
@@ -85,6 +86,7 @@ def top_n(n: int) -> Callable[[str, dict[str, float]], bool]:
     Note: The filter function is stateful — it must be used with a metrics dict
     that contains a 'value' key (the primary score).
     """
+
     def _filter(model_id: str, metrics: dict[str, float]) -> bool:
         # The actual filtering is done in apply_model_filter which sorts all models
         return True  # placeholder — real logic in apply_model_filter
@@ -95,8 +97,10 @@ def top_n(n: int) -> Callable[[str, dict[str, float]], bool]:
 
 def min_metric(name: str, threshold: float) -> Callable[[str, dict[str, float]], bool]:
     """Factory for a filter that keeps models above a metric threshold."""
+
     def _filter(model_id: str, metrics: dict[str, float]) -> bool:
         return metrics.get(name, 0.0) >= threshold
+
     return _filter
 
 
@@ -123,7 +127,8 @@ def apply_model_filter(
 
     # Standard filter: call per model
     return {
-        m: p for m, p in predictions.items()
+        m: p
+        for m, p in predictions.items()
         if model_filter(m, model_metrics.get(m, {}))
     }
 
@@ -143,7 +148,7 @@ def build_ensemble_predictions(
     inference_output['value'], produces one PredictionRecord per group.
     """
     if now is None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
     virtual_model_id = ensemble_model_id(name)
 
@@ -176,18 +181,20 @@ def build_ensemble_predictions(
 
         ensemble_value = weighted_sum / weight_sum
 
-        ensemble_preds.append(PredictionRecord(
-            id=f"pred_{virtual_model_id}_{input_id}_{scope_key}",
-            input_id=input_id,
-            model_id=virtual_model_id,
-            prediction_config_id=None,
-            scope_key=scope_key,
-            scope=next(iter(model_preds.values()), {}).get("scope", {}),
-            status=PredictionStatus.SCORED,
-            exec_time_ms=0.0,
-            inference_output={"value": ensemble_value},
-            meta={"weights": weights, "ensemble_name": name},
-            performed_at=now,
-        ))
+        ensemble_preds.append(
+            PredictionRecord(
+                id=f"pred_{virtual_model_id}_{input_id}_{scope_key}",
+                input_id=input_id,
+                model_id=virtual_model_id,
+                prediction_config_id=None,
+                scope_key=scope_key,
+                scope=next(iter(model_preds.values()), {}).get("scope", {}),
+                status=PredictionStatus.SCORED,
+                exec_time_ms=0.0,
+                inference_output={"value": ensemble_value},
+                meta={"weights": weights, "ensemble_name": name},
+                performed_at=now,
+            )
+        )
 
     return ensemble_preds

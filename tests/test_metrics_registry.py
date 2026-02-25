@@ -1,4 +1,5 @@
 """Tests for MetricsRegistry."""
+
 from __future__ import annotations
 
 import unittest
@@ -14,7 +15,8 @@ class TestMetricsRegistry(unittest.TestCase):
 
         result = registry.compute(
             metrics=["dummy"],
-            predictions=[], scores=[],
+            predictions=[],
+            scores=[],
             context=MetricsContext(model_id="m1"),
         )
         self.assertEqual(result, {"dummy": 42.0})
@@ -23,7 +25,8 @@ class TestMetricsRegistry(unittest.TestCase):
         registry = MetricsRegistry()
         result = registry.compute(
             metrics=["nonexistent"],
-            predictions=[], scores=[],
+            predictions=[],
+            scores=[],
             context=MetricsContext(model_id="m1"),
         )
         self.assertEqual(result, {})
@@ -37,7 +40,8 @@ class TestMetricsRegistry(unittest.TestCase):
 
         result = registry.compute(
             metrics=["bad"],
-            predictions=[], scores=[],
+            predictions=[],
+            scores=[],
             context=MetricsContext(model_id="m1"),
         )
         self.assertEqual(result, {"bad": 0.0})
@@ -50,7 +54,8 @@ class TestMetricsRegistry(unittest.TestCase):
 
         result = registry.compute(
             metrics=["a", "c"],
-            predictions=[], scores=[],
+            predictions=[],
+            scores=[],
             context=MetricsContext(model_id="m1"),
         )
         self.assertEqual(result, {"a": 1.0, "c": 3.0})
@@ -62,7 +67,9 @@ class TestMetricsRegistry(unittest.TestCase):
         self.assertEqual(registry.available(), ["a_metric", "b_metric"])
 
     def test_get_returns_function(self):
-        fn = lambda p, s, c: 0
+        def fn(p, s, c):
+            return 0
+
         registry = MetricsRegistry()
         registry.register("test", fn)
         self.assertIs(registry.get("test"), fn)
@@ -70,10 +77,20 @@ class TestMetricsRegistry(unittest.TestCase):
 
     def test_default_registry_has_builtins(self):
         registry = get_default_registry()
-        expected = ["hit_rate", "ic", "ic_sharpe", "max_drawdown",
-                     "mean_return", "model_correlation", "sortino_ratio", "turnover"]
+        expected = [
+            "hit_rate",
+            "ic",
+            "ic_sharpe",
+            "max_drawdown",
+            "mean_return",
+            "model_correlation",
+            "sortino_ratio",
+            "turnover",
+        ]
         for name in expected:
-            self.assertIn(name, registry.available(), f"{name} missing from default registry")
+            self.assertIn(
+                name, registry.available(), f"{name} missing from default registry"
+            )
 
 
 if __name__ == "__main__":

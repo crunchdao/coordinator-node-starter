@@ -1,6 +1,17 @@
 COMPOSE := docker compose -f docker-compose.yml --env-file .local.env
 
-.PHONY: deploy down logs test init-db reset-db migrate migration
+.PHONY: deploy down logs fmt lint check test init-db reset-db migrate migration
+
+# ── Code quality ─────────────────────────────────────────────────────
+fmt:
+	uv run ruff format .
+	uv run ruff check --fix . || true
+
+lint:
+	uv run ruff format --check .
+	uv run ruff check .
+
+check: lint test
 
 deploy:
 	$(COMPOSE) build
@@ -20,7 +31,7 @@ down:
 logs:
 	$(COMPOSE) logs -f
 
-test:
+test: lint
 	PYTHONPATH=base/challenge:base/node uv run python -m pytest tests/ -x -q
 
 test-e2e:

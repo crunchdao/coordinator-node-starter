@@ -9,6 +9,7 @@ it runs without the challenge package installed.
 Operator submissions placed in ``/app/config/*-submission/`` are also synced
 and merged into the generated model registry.
 """
+
 from __future__ import annotations
 
 import os
@@ -39,7 +40,8 @@ def find_challenge_package() -> tuple[Path, str] | None:
 def find_examples(examples_dir: Path) -> list[Path]:
     """Find example model files (Python files, excluding __init__.py)."""
     return sorted(
-        p for p in examples_dir.glob("*.py")
+        p
+        for p in examples_dir.glob("*.py")
         if p.name != "__init__.py" and not p.name.startswith("_")
     )
 
@@ -113,16 +115,18 @@ def generate_models_yml(submission_ids: list[str]) -> None:
     lines = ["models:"]
     for idx, sub_id in enumerate(submission_ids, start=1):
         model_name = sub_id.removesuffix("-tracker")
-        lines.extend([
-            f'  - id: "{idx}"',
-            f"    submission_id: {sub_id}",
-            f"    crunch_id: {CRUNCH_ID}",
-            f"    desired_state: RUNNING",
-            f"    model_name: {model_name}",
-            f"    cruncher_name: local-dev",
-            f"    cruncher_id: local-{idx:04d}",
-            "",
-        ])
+        lines.extend(
+            [
+                f'  - id: "{idx}"',
+                f"    submission_id: {sub_id}",
+                f"    crunch_id: {CRUNCH_ID}",
+                "    desired_state: RUNNING",
+                f"    model_name: {model_name}",
+                "    cruncher_name: local-dev",
+                f"    cruncher_id: local-{idx:04d}",
+                "",
+            ]
+        )
 
     MODELS_FILE.parent.mkdir(parents=True, exist_ok=True)
     MODELS_FILE.write_text("\n".join(lines) + "\n")

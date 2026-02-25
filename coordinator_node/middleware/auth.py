@@ -21,11 +21,12 @@ The key can be sent as:
 - `Authorization: Bearer <key>` header
 - `?api_key=<key>` query parameter
 """
+
 from __future__ import annotations
 
 import logging
 import os
-from typing import Callable
+from collections.abc import Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request

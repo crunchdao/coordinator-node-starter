@@ -5,22 +5,27 @@ feed_reader → predict_service → [input_repo, prediction_repo] → score_serv
 
 Covers: PENDING → RESOLVED → SCORED, snapshots, checkpoints with prize distribution.
 """
+
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from coordinator_node.crunch_config import CrunchConfig, FRAC_64_MULTIPLIER
+from coordinator_node.crunch_config import FRAC_64_MULTIPLIER, CrunchConfig
 from coordinator_node.entities.model import Model
 from coordinator_node.entities.prediction import (
-    CheckpointRecord, CheckpointStatus, InputRecord, InputStatus,
-    PredictionRecord, PredictionStatus, ScoreRecord,
+    CheckpointRecord,
+    CheckpointStatus,
+    InputRecord,
+    InputStatus,
+    PredictionRecord,
+    PredictionStatus,
+    ScoreRecord,
 )
 from coordinator_node.services.realtime_predict import RealtimePredictService
 from coordinator_node.services.score import ScoreService
 from coordinator_node.workers.checkpoint_worker import CheckpointService
-
 
 # ── shared in-memory repositories ──
 
@@ -36,13 +41,22 @@ class MemInputRepository:
                 return
         self.records.append(record)
 
-    def find(self, *, status: str | None = None, resolvable_before: datetime | None = None,
-             **kwargs: Any) -> list[InputRecord]:
+    def find(
+        self,
+        *,
+        status: str | None = None,
+        resolvable_before: datetime | None = None,
+        **kwargs: Any,
+    ) -> list[InputRecord]:
         results = list(self.records)
         if status is not None:
             results = [r for r in results if r.status == status]
         if resolvable_before is not None:
-            results = [r for r in results if r.resolvable_at and r.resolvable_at <= resolvable_before]
+            results = [
+                r
+                for r in results
+                if r.resolvable_at and r.resolvable_at <= resolvable_before
+            ]
         return results
 
 
@@ -54,7 +68,10 @@ class MemPredictionRepository:
                 "id": "CFG_1",
                 "scope_key": "BTC-60-60",
                 "scope_template": {"subject": "BTC"},
-                "schedule": {"prediction_interval_seconds": 60, "resolve_after_seconds": 60},
+                "schedule": {
+                    "prediction_interval_seconds": 60,
+                    "resolve_after_seconds": 60,
+                },
                 "active": True,
                 "order": 1,
             },
@@ -71,14 +88,23 @@ class MemPredictionRepository:
         for p in predictions:
             self.save(p)
 
-    def find(self, *, status: str | list[str] | None = None,
-             resolvable_before: datetime | None = None, **kwargs: Any) -> list[PredictionRecord]:
+    def find(
+        self,
+        *,
+        status: str | list[str] | None = None,
+        resolvable_before: datetime | None = None,
+        **kwargs: Any,
+    ) -> list[PredictionRecord]:
         results = list(self._predictions)
         if status is not None:
             statuses = status if isinstance(status, list) else [status]
             results = [p for p in results if p.status in statuses]
         if resolvable_before is not None:
-            results = [p for p in results if p.resolvable_at and p.resolvable_at <= resolvable_before]
+            results = [
+                p
+                for p in results
+                if p.resolvable_at and p.resolvable_at <= resolvable_before
+            ]
         return results
 
     def fetch_active_configs(self) -> list[dict[str, Any]]:
@@ -100,8 +126,14 @@ class MemScoreRepository:
                 return
         self.scores.append(record)
 
-    def find(self, *, prediction_id: str | None = None, since: datetime | None = None,
-             until: datetime | None = None, **kwargs: Any) -> list[ScoreRecord]:
+    def find(
+        self,
+        *,
+        prediction_id: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        **kwargs: Any,
+    ) -> list[ScoreRecord]:
         results = list(self.scores)
         if prediction_id is not None:
             results = [s for s in results if s.prediction_id == prediction_id]
@@ -162,7 +194,9 @@ class MemLeaderboardRepository:
     def __init__(self) -> None:
         self.entries: list[dict[str, Any]] = []
 
-    def save(self, entries: list[dict[str, Any]], meta: dict[str, Any] | None = None) -> None:
+    def save(
+        self, entries: list[dict[str, Any]], meta: dict[str, Any] | None = None
+    ) -> None:
         self.entries = entries
 
     def get_latest(self) -> list[dict[str, Any]]:
@@ -177,7 +211,10 @@ class FakeModelRun:
         self.model_id = model_id
         self.model_name = f"model-{model_id}"
         self.deployment_id = f"dep-{model_id}"
-        self.infos = {"cruncher_id": f"p-{model_id}", "cruncher_name": f"Player {model_id}"}
+        self.infos = {
+            "cruncher_id": f"p-{model_id}",
+            "cruncher_name": f"Player {model_id}",
+        }
 
 
 class FakeResult:
@@ -189,6 +226,7 @@ class FakeResult:
 
 class FakeRunner:
     """Returns deterministic predictions from two models."""
+
     def __init__(self, outputs: dict[str, dict[str, Any]]) -> None:
         self._outputs = outputs
 
@@ -201,7 +239,9 @@ class FakeRunner:
     async def call(self, method: str, args: Any) -> dict:
         if method == "tick":
             return {FakeModelRun(mid): None for mid in self._outputs}
-        return {FakeModelRun(mid): FakeResult(out) for mid, out in self._outputs.items()}
+        return {
+            FakeModelRun(mid): FakeResult(out) for mid, out in self._outputs.items()
+        }
 
 
 class FakeFeedRecord:
@@ -225,9 +265,16 @@ class FakeFeedReader:
     def get_input(self, now: datetime) -> dict[str, Any]:
         return dict(self._data)
 
-    def fetch_window(self, start=None, end=None, source=None, subject=None,
-                     kind=None, granularity=None) -> list:
-        now = datetime.now(timezone.utc)
+    def fetch_window(
+        self,
+        start=None,
+        end=None,
+        source=None,
+        subject=None,
+        kind=None,
+        granularity=None,
+    ) -> list:
+        now = datetime.now(UTC)
         return [
             FakeFeedRecord(100.0, now - timedelta(minutes=5)),
             FakeFeedRecord(105.0, now - timedelta(minutes=1)),
@@ -281,14 +328,20 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         )
 
     @staticmethod
-    def _score_fn(prediction: dict[str, Any], ground_truth: dict[str, Any]) -> dict[str, Any]:
+    def _score_fn(
+        prediction: dict[str, Any], ground_truth: dict[str, Any]
+    ) -> dict[str, Any]:
         pred_val = prediction.get("value", 0)
         actual_return = ground_truth.get("return", 0)
         error = abs(pred_val - actual_return)
-        return {"value": round(1.0 / (1.0 + error), 4), "success": True, "failed_reason": None}
+        return {
+            "value": round(1.0 / (1.0 + error), 4),
+            "success": True,
+            "failed_reason": None,
+        }
 
     async def test_full_lifecycle(self) -> None:
-        now = datetime.now(timezone.utc) - timedelta(minutes=5)
+        now = datetime.now(UTC) - timedelta(minutes=5)
 
         # ── step 1: predict ──
         changed = await self.predict_service.run_once(now=now)
@@ -335,7 +388,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted(ranks), [1, 2])
 
     async def test_predict_twice_accumulates(self) -> None:
-        now = datetime.now(timezone.utc) - timedelta(minutes=5)
+        now = datetime.now(UTC) - timedelta(minutes=5)
 
         await self.predict_service.run_once(now=now)
         self.assertEqual(len(self.pred_repo.all), 2)
@@ -346,7 +399,9 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.pred_repo.all), 4)
 
         # all PENDING
-        self.assertTrue(all(p.status == PredictionStatus.PENDING for p in self.pred_repo.all))
+        self.assertTrue(
+            all(p.status == PredictionStatus.PENDING for p in self.pred_repo.all)
+        )
 
     async def test_score_skips_when_no_pending(self) -> None:
         """Score service does nothing when there's nothing to score."""
@@ -357,7 +412,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
 
     async def test_score_idempotent(self) -> None:
         """Running score twice doesn't re-score already scored predictions."""
-        now = datetime.now(timezone.utc) - timedelta(minutes=5)
+        now = datetime.now(UTC) - timedelta(minutes=5)
         await self.predict_service.run_once(now=now)
 
         self.score_service.run_once()
@@ -372,7 +427,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
     async def test_absent_model_marked(self) -> None:
         """If a known model doesn't respond, it gets an ABSENT prediction."""
         # First run registers both models
-        now = datetime.now(timezone.utc) - timedelta(minutes=5)
+        now = datetime.now(UTC) - timedelta(minutes=5)
         await self.predict_service.run_once(now=now)
 
         # Swap to a runner that only returns m1
@@ -389,7 +444,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(absent[0].model_id, "m2")
 
     async def test_input_ids_are_unique(self) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await self.predict_service.run_once(now=now)
         later = now + timedelta(minutes=2)
         await self.predict_service.run_once(now=later)
@@ -399,7 +454,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
 
     async def test_snapshots_written_after_scoring(self) -> None:
         """Score cycle writes snapshots per model."""
-        now = datetime.now(timezone.utc) - timedelta(minutes=5)
+        now = datetime.now(UTC) - timedelta(minutes=5)
         await self.predict_service.run_once(now=now)
         self.score_service.run_once()
 
@@ -414,7 +469,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
 
     async def test_full_pipeline_predict_to_checkpoint(self) -> None:
         """End-to-end: predict → score → snapshot → checkpoint with prize distribution."""
-        now = datetime.now(timezone.utc) - timedelta(minutes=5)
+        now = datetime.now(UTC) - timedelta(minutes=5)
 
         # ── predict ──
         await self.predict_service.run_once(now=now)
@@ -459,7 +514,7 @@ class TestPredictionLifecycle(unittest.IsolatedAsyncioTestCase):
 
     async def test_leaderboard_ranking_order(self) -> None:
         """Model with higher score should rank first (default desc)."""
-        now = datetime.now(timezone.utc) - timedelta(minutes=5)
+        now = datetime.now(UTC) - timedelta(minutes=5)
         await self.predict_service.run_once(now=now)
         self.score_service.run_once()
 

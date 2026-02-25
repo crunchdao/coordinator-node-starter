@@ -4,11 +4,10 @@ Issue #1: Placeholder values (BTC, pyth, 60s) look like real defaults.
 Users copy them into production without changing. Values that MUST be
 customized should be clearly marked and/or validated.
 """
+
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
-
 
 ENV_FILE = Path(__file__).resolve().parent.parent / ".local.env"
 
@@ -21,7 +20,12 @@ class TestPlaceholderDefaults:
         assert ENV_FILE.exists(), f"Missing {ENV_FILE}"
         content = ENV_FILE.read_text()
         # Key values that users must customize should have comments
-        assert "CHANGE THIS" in content.upper() or "PLACEHOLDER" in content.upper() or "EXAMPLE" in content.upper() or "CUSTOMIZE" in content.upper(), (
+        assert (
+            "CHANGE THIS" in content.upper()
+            or "PLACEHOLDER" in content.upper()
+            or "EXAMPLE" in content.upper()
+            or "CUSTOMIZE" in content.upper()
+        ), (
             ".local.env should contain comments marking placeholder values "
             "that users must change (CRUNCH_ID, CRUNCH_PUBKEY, FEED_SUBJECTS, etc.)"
         )
@@ -33,8 +37,11 @@ class TestPlaceholderDefaults:
             if line.strip().startswith("CRUNCH_PUBKEY="):
                 # The line or surrounding comment should indicate it's a placeholder
                 idx = content.splitlines().index(line)
-                context = "\n".join(content.splitlines()[max(0, idx-2):idx+2])
-                assert any(w in context.upper() for w in ["PLACEHOLDER", "CHANGE", "EXAMPLE", "REPLACE", "YOUR"]), (
+                context = "\n".join(content.splitlines()[max(0, idx - 2) : idx + 2])
+                assert any(
+                    w in context.upper()
+                    for w in ["PLACEHOLDER", "CHANGE", "EXAMPLE", "REPLACE", "YOUR"]
+                ), (
                     f"CRUNCH_PUBKEY should be marked as a placeholder that needs replacement. "
                     f"Context: {context}"
                 )
@@ -43,6 +50,7 @@ class TestPlaceholderDefaults:
     def test_prediction_scope_subject_has_warning(self):
         """PredictionScope.subject default should document it's an example."""
         from coordinator_node.crunch_config import PredictionScope
+
         field = PredictionScope.model_fields["subject"]
         desc = field.description or ""
         assert len(desc) > 0, (

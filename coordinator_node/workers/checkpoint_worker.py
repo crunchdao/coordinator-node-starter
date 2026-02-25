@@ -1,10 +1,11 @@
 """Checkpoint worker: periodically aggregates snapshots into checkpoints."""
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from coordinator_node.config_loader import load_config
@@ -17,8 +18,8 @@ from coordinator_node.db import (
     DBSnapshotRepository,
     create_session,
 )
-from coordinator_node.merkle.service import MerkleService
 from coordinator_node.entities.prediction import CheckpointRecord, CheckpointStatus
+from coordinator_node.merkle.service import MerkleService
 
 
 def configure_logging() -> None:
@@ -49,7 +50,9 @@ class CheckpointService:
         self.stop_event = asyncio.Event()
 
     async def run(self) -> None:
-        self.logger.info("checkpoint worker started (interval=%ds)", self.interval_seconds)
+        self.logger.info(
+            "checkpoint worker started (interval=%ds)", self.interval_seconds
+        )
         while not self.stop_event.is_set():
             try:
                 self.create_checkpoint()
@@ -58,21 +61,27 @@ class CheckpointService:
             except Exception as exc:
                 self.logger.exception("checkpoint error: %s", exc)
             try:
-                await asyncio.wait_for(self.stop_event.wait(), timeout=self.interval_seconds)
-            except asyncio.TimeoutError:
+                await asyncio.wait_for(
+                    self.stop_event.wait(), timeout=self.interval_seconds
+                )
+            except TimeoutError:
                 pass
 
     def create_checkpoint(self) -> CheckpointRecord | None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Determine period start: end of last checkpoint, or beginning of time
         last = self.checkpoint_repository.get_latest()
-        period_start = last.period_end if last else now - timedelta(seconds=self.interval_seconds)
+        period_start = (
+            last.period_end if last else now - timedelta(seconds=self.interval_seconds)
+        )
 
         # Get all snapshots in this period
         snapshots = self.snapshot_repository.find(since=period_start, until=now)
         if not snapshots:
-            self.logger.info("No snapshots since %s, skipping checkpoint", period_start.isoformat())
+            self.logger.info(
+                "No snapshots since %s, skipping checkpoint", period_start.isoformat()
+            )
             return None
 
         models = self.model_repository.fetch_all()
@@ -98,14 +107,16 @@ class CheckpointService:
                         summary[key] = summary.get(key, 0.0) + float(value) * weight
 
             model = models.get(model_id)
-            ranked_entries.append({
-                "model_id": model_id,
-                "model_name": model.name if model else None,
-                "cruncher_name": model.player_name if model else None,
-                "prediction_count": total_preds,
-                "snapshot_count": len(model_snapshots),
-                "result_summary": summary,
-            })
+            ranked_entries.append(
+                {
+                    "model_id": model_id,
+                    "model_name": model.name if model else None,
+                    "cruncher_name": model.player_name if model else None,
+                    "prediction_count": total_preds,
+                    "snapshot_count": len(model_snapshots),
+                    "result_summary": summary,
+                }
+            )
 
         # Rank by the aggregation ranking key
         ranking_key = aggregation.ranking_key
@@ -151,15 +162,22 @@ class CheckpointService:
                     now=now,
                 )
                 if merkle_root:
-                    self.checkpoint_repository.update_merkle_root(checkpoint.id, merkle_root)
-                    self.logger.info("Checkpoint %s merkle_root=%s", checkpoint.id, merkle_root[:16])
+                    self.checkpoint_repository.update_merkle_root(
+                        checkpoint.id, merkle_root
+                    )
+                    self.logger.info(
+                        "Checkpoint %s merkle_root=%s", checkpoint.id, merkle_root[:16]
+                    )
             except Exception as exc:
                 self.logger.warning("Merkle checkpoint commit failed: %s", exc)
 
         self.logger.info(
             "Created checkpoint %s: %d models, %d snapshots, period %s → %s",
-            checkpoint.id, len(ranked_entries), len(snapshots),
-            period_start.isoformat(), now.isoformat(),
+            checkpoint.id,
+            len(ranked_entries),
+            len(snapshots),
+            period_start.isoformat(),
+            now.isoformat(),
         )
         return checkpoint
 

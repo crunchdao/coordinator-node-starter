@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from coordinator_node.crunch_config import Aggregation, AggregationWindow, CrunchConfig
 from coordinator_node.entities.feed_record import FeedRecord
 from coordinator_node.entities.model import Model
-from coordinator_node.entities.prediction import InputRecord, PredictionRecord, ScoreRecord
-from coordinator_node.crunch_config import Aggregation, AggregationWindow, CrunchConfig
+from coordinator_node.entities.prediction import (
+    InputRecord,
+    PredictionRecord,
+    ScoreRecord,
+)
 from coordinator_node.services.score import ScoreService
 
 
@@ -22,13 +26,22 @@ class MemInputRepository:
                 return
         self._records.append(record)
 
-    def find(self, *, status: str | None = None, resolvable_before: datetime | None = None,
-             **kwargs: Any) -> list[InputRecord]:
+    def find(
+        self,
+        *,
+        status: str | None = None,
+        resolvable_before: datetime | None = None,
+        **kwargs: Any,
+    ) -> list[InputRecord]:
         results = list(self._records)
         if status is not None:
             results = [r for r in results if r.status == status]
         if resolvable_before is not None:
-            results = [r for r in results if r.resolvable_at and r.resolvable_at <= resolvable_before]
+            results = [
+                r
+                for r in results
+                if r.resolvable_at and r.resolvable_at <= resolvable_before
+            ]
         return results
 
 
@@ -36,7 +49,9 @@ class MemPredictionRepository:
     def __init__(self, predictions: list[PredictionRecord] | None = None) -> None:
         self._predictions = list(predictions or [])
 
-    def find(self, *, status: str | None = None, **kwargs: Any) -> list[PredictionRecord]:
+    def find(
+        self, *, status: str | None = None, **kwargs: Any
+    ) -> list[PredictionRecord]:
         results = list(self._predictions)
         if status is not None:
             results = [p for p in results if p.status == status]
@@ -71,8 +86,15 @@ class MemScoreRepository:
 
 class MemModelRepository:
     def __init__(self) -> None:
-        self.models = {"m1": Model(id="m1", name="model-one", player_id="p1",
-                                   player_name="alice", deployment_identifier="d1")}
+        self.models = {
+            "m1": Model(
+                id="m1",
+                name="model-one",
+                player_id="p1",
+                player_name="alice",
+                deployment_identifier="d1",
+            )
+        }
 
     def fetch_all(self) -> dict[str, Model]:
         return self.models
@@ -107,48 +129,81 @@ class FakeFeedReader:
     def __init__(self, records: list | None = None) -> None:
         self._records = records or []
 
-    def fetch_window(self, start=None, end=None, source=None, subject=None,
-                     kind=None, granularity=None) -> list:
+    def fetch_window(
+        self,
+        start=None,
+        end=None,
+        source=None,
+        subject=None,
+        kind=None,
+        granularity=None,
+    ) -> list:
         return self._records
 
 
-now = datetime.now(timezone.utc)
+now = datetime.now(UTC)
 
 
 def _make_input(status: str = "RECEIVED") -> InputRecord:
     return InputRecord(
-        id="inp-1", raw_data={"symbol": "BTC"},
+        id="inp-1",
+        raw_data={"symbol": "BTC"},
         scope={"source": "pyth", "subject": "BTC", "kind": "tick", "granularity": "1s"},
-        status=status, received_at=now - timedelta(minutes=5),
+        status=status,
+        received_at=now - timedelta(minutes=5),
         resolvable_at=now - timedelta(minutes=1),
     )
 
 
-def _make_prediction(input_id: str = "inp-1", status: str = "PENDING") -> PredictionRecord:
+def _make_prediction(
+    input_id: str = "inp-1", status: str = "PENDING"
+) -> PredictionRecord:
     return PredictionRecord(
-        id="pre-1", input_id=input_id, model_id="m1",
+        id="pre-1",
+        input_id=input_id,
+        model_id="m1",
         prediction_config_id="CFG_1",
-        scope_key="BTC-60", scope={"subject": "BTC", "horizon": 60},
-        status=status, exec_time_ms=10.0,
+        scope_key="BTC-60",
+        scope={"subject": "BTC", "horizon": 60},
+        status=status,
+        exec_time_ms=10.0,
         inference_output={"value": 0.5},
         performed_at=now - timedelta(minutes=5),
         resolvable_at=now - timedelta(minutes=1),
     )
 
 
-def _make_feed_records(entry_price: float = 100.0, resolved_price: float = 105.0) -> list[FeedRecord]:
+def _make_feed_records(
+    entry_price: float = 100.0, resolved_price: float = 105.0
+) -> list[FeedRecord]:
     return [
-        FeedRecord(source="pyth", subject="BTC", kind="tick", granularity="1s",
-                   ts_event=now - timedelta(minutes=5), values={"close": entry_price}),
-        FeedRecord(source="pyth", subject="BTC", kind="tick", granularity="1s",
-                   ts_event=now - timedelta(minutes=1), values={"close": resolved_price}),
+        FeedRecord(
+            source="pyth",
+            subject="BTC",
+            kind="tick",
+            granularity="1s",
+            ts_event=now - timedelta(minutes=5),
+            values={"close": entry_price},
+        ),
+        FeedRecord(
+            source="pyth",
+            subject="BTC",
+            kind="tick",
+            granularity="1s",
+            ts_event=now - timedelta(minutes=1),
+            values={"close": resolved_price},
+        ),
     ]
 
 
 def _build_service(*, inputs=None, predictions=None, feed_records=None, contract=None):
     return ScoreService(
         checkpoint_interval_seconds=60,
-        scoring_function=lambda pred, act: {"value": 0.5, "success": True, "failed_reason": None},
+        scoring_function=lambda pred, act: {
+            "value": 0.5,
+            "success": True,
+            "failed_reason": None,
+        },
         feed_reader=FakeFeedReader(records=feed_records or []),
         input_repository=MemInputRepository(inputs or []),
         prediction_repository=MemPredictionRepository(predictions or []),
@@ -214,15 +269,24 @@ class TestScoreService(unittest.TestCase):
         contract = CrunchConfig(
             aggregation=Aggregation(
                 windows={"loss": AggregationWindow(hours=24)},
-                ranking_key="loss", ranking_direction="asc",
+                ranking_key="loss",
+                ranking_direction="asc",
             )
         )
         service = _build_service(contract=contract)
 
-        ranked = service._rank_leaderboard([
-            {"model_id": "m1", "score": {"metrics": {"loss": 0.4}, "ranking": {}, "payload": {}}},
-            {"model_id": "m2", "score": {"metrics": {"loss": 0.2}, "ranking": {}, "payload": {}}},
-        ])
+        ranked = service._rank_leaderboard(
+            [
+                {
+                    "model_id": "m1",
+                    "score": {"metrics": {"loss": 0.4}, "ranking": {}, "payload": {}},
+                },
+                {
+                    "model_id": "m2",
+                    "score": {"metrics": {"loss": 0.2}, "ranking": {}, "payload": {}},
+                },
+            ]
+        )
         self.assertEqual([e["model_id"] for e in ranked], ["m2", "m1"])
         self.assertEqual([e["rank"] for e in ranked], [1, 2])
 
@@ -325,18 +389,24 @@ class TestScoringReceivesTypedOutput(unittest.TestCase):
             scoring_function=capturing_scorer,
             feed_reader=FakeFeedReader(records=_make_feed_records()),
             input_repository=MemInputRepository([_make_input()]),
-            prediction_repository=MemPredictionRepository([
-                PredictionRecord(
-                    id="pre-1", input_id="inp-1", model_id="m1",
-                    prediction_config_id="CFG_1",
-                    scope_key="BTC-60", scope={"subject": "BTC"},
-                    status="PENDING", exec_time_ms=10.0,
-                    # Model only returned direction — confidence should get its default
-                    inference_output={"direction": "LONG"},
-                    performed_at=now - timedelta(minutes=5),
-                    resolvable_at=now - timedelta(minutes=1),
-                ),
-            ]),
+            prediction_repository=MemPredictionRepository(
+                [
+                    PredictionRecord(
+                        id="pre-1",
+                        input_id="inp-1",
+                        model_id="m1",
+                        prediction_config_id="CFG_1",
+                        scope_key="BTC-60",
+                        scope={"subject": "BTC"},
+                        status="PENDING",
+                        exec_time_ms=10.0,
+                        # Model only returned direction — confidence should get its default
+                        inference_output={"direction": "LONG"},
+                        performed_at=now - timedelta(minutes=5),
+                        resolvable_at=now - timedelta(minutes=1),
+                    ),
+                ]
+            ),
             score_repository=MemScoreRepository(),
             snapshot_repository=MemSnapshotRepository(),
             model_repository=MemModelRepository(),
@@ -487,17 +557,23 @@ class TestScorerReceivesPredictionMetadata(unittest.TestCase):
             scoring_function=capturing_scorer,
             feed_reader=FakeFeedReader(records=_make_feed_records()),
             input_repository=MemInputRepository([_make_input()]),
-            prediction_repository=MemPredictionRepository([
-                PredictionRecord(
-                    id="pre-1", input_id="inp-1", model_id="model_42",
-                    prediction_config_id="CFG_1",
-                    scope_key="BTC-60", scope={"subject": "BTC"},
-                    status="PENDING", exec_time_ms=10.0,
-                    inference_output={"value": 0.5},
-                    performed_at=now - timedelta(minutes=5),
-                    resolvable_at=now - timedelta(minutes=1),
-                ),
-            ]),
+            prediction_repository=MemPredictionRepository(
+                [
+                    PredictionRecord(
+                        id="pre-1",
+                        input_id="inp-1",
+                        model_id="model_42",
+                        prediction_config_id="CFG_1",
+                        scope_key="BTC-60",
+                        scope={"subject": "BTC"},
+                        status="PENDING",
+                        exec_time_ms=10.0,
+                        inference_output={"value": 0.5},
+                        performed_at=now - timedelta(minutes=5),
+                        resolvable_at=now - timedelta(minutes=1),
+                    ),
+                ]
+            ),
             score_repository=MemScoreRepository(),
             snapshot_repository=MemSnapshotRepository(),
             model_repository=MemModelRepository(),
@@ -548,10 +624,14 @@ class TestScorerReceivesPredictionMetadata(unittest.TestCase):
         inp = _make_input()
         preds = [
             PredictionRecord(
-                id=f"pre-{mid}", input_id="inp-1", model_id=mid,
+                id=f"pre-{mid}",
+                input_id="inp-1",
+                model_id=mid,
                 prediction_config_id="CFG_1",
-                scope_key="BTC-60", scope={"subject": "BTC"},
-                status="PENDING", exec_time_ms=10.0,
+                scope_key="BTC-60",
+                scope={"subject": "BTC"},
+                status="PENDING",
+                exec_time_ms=10.0,
                 inference_output={"value": 0.5},
                 performed_at=now - timedelta(minutes=5),
                 resolvable_at=now - timedelta(minutes=1),
@@ -589,17 +669,23 @@ class TestScorerReceivesPredictionMetadata(unittest.TestCase):
             scoring_function=capturing_scorer,
             feed_reader=FakeFeedReader(records=_make_feed_records()),
             input_repository=MemInputRepository([_make_input()]),
-            prediction_repository=MemPredictionRepository([
-                PredictionRecord(
-                    id="pre-1", input_id="inp-1", model_id="correct_model",
-                    prediction_config_id="CFG_1",
-                    scope_key="BTC-60", scope={"subject": "BTC"},
-                    status="PENDING", exec_time_ms=10.0,
-                    inference_output={"value": 0.5, "model_id": "wrong_model"},
-                    performed_at=now - timedelta(minutes=5),
-                    resolvable_at=now - timedelta(minutes=1),
-                ),
-            ]),
+            prediction_repository=MemPredictionRepository(
+                [
+                    PredictionRecord(
+                        id="pre-1",
+                        input_id="inp-1",
+                        model_id="correct_model",
+                        prediction_config_id="CFG_1",
+                        scope_key="BTC-60",
+                        scope={"subject": "BTC"},
+                        status="PENDING",
+                        exec_time_ms=10.0,
+                        inference_output={"value": 0.5, "model_id": "wrong_model"},
+                        performed_at=now - timedelta(minutes=5),
+                        resolvable_at=now - timedelta(minutes=1),
+                    ),
+                ]
+            ),
             score_repository=MemScoreRepository(),
             snapshot_repository=MemSnapshotRepository(),
             model_repository=MemModelRepository(),

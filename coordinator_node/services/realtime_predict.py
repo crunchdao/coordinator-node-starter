@@ -1,18 +1,24 @@
 """Realtime predict service: event-driven loop, config-based scheduling."""
+
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from coordinator_node.entities.prediction import InputRecord, PredictionRecord, PredictionStatus
+from coordinator_node.entities.prediction import (
+    InputRecord,
+    PredictionRecord,
+    PredictionStatus,
+)
 from coordinator_node.schemas import ScheduleEnvelope
 from coordinator_node.services.predict import PredictService
 
 
 class RealtimePredictService(PredictService):
-
-    def __init__(self, checkpoint_interval_seconds: int = 60, **kwargs: Any) -> None:
+    def __init__(
+        self, checkpoint_interval_seconds: int = 60 * 60, **kwargs: Any
+    ) -> None:
         super().__init__(**kwargs)
         self.checkpoint_interval_seconds = checkpoint_interval_seconds
         self._next_run: dict[str, datetime] = {}
@@ -58,13 +64,17 @@ class RealtimePredictService(PredictService):
                 self.logger.exception("predict loop error: %s", exc)
             await self._wait_for_data()
 
-    async def run_once(self, raw_input: dict[str, Any] | None = None, now: datetime | None = None) -> bool:
-        now = now or datetime.now(timezone.utc)
+    async def run_once(
+        self, raw_input: dict[str, Any] | None = None, now: datetime | None = None
+    ) -> bool:
+        now = now or datetime.now(UTC)
         await self.init_runner()
 
         # 1. get data → tick models
         if raw_input is not None:
-            data = self.transform(raw_input) if self.transform is not None else raw_input
+            data = (
+                self.transform(raw_input) if self.transform is not None else raw_input
+            )
             inp = InputRecord(
                 id=f"INP_{now.strftime('%Y%m%d_%H%M%S.%f')[:-3]}",
                 raw_data=data,
@@ -81,7 +91,9 @@ class RealtimePredictService(PredictService):
 
     # ── predict across configs ──
 
-    async def _predict_all_configs(self, inp: InputRecord, now: datetime) -> list[PredictionRecord]:
+    async def _predict_all_configs(
+        self, inp: InputRecord, now: datetime
+    ) -> list[PredictionRecord]:
         configs = self._fetch_active_configs()
         if not configs:
             self.logger.info("No active prediction configs found")
@@ -108,7 +120,9 @@ class RealtimePredictService(PredictService):
             scope_key = scope["scope_key"]
             resolve_seconds = schedule.resolve_after_seconds
             if resolve_seconds is None:
-                resolve_seconds = scope.get("horizon_seconds", self.contract.scope.horizon_seconds)
+                resolve_seconds = scope.get(
+                    "horizon_seconds", self.contract.scope.horizon_seconds
+                )
             resolvable_at = now + timedelta(seconds=max(0, int(resolve_seconds or 0)))
 
             # set resolvable_at on input (earliest horizon wins)
@@ -140,7 +154,11 @@ class RealtimePredictService(PredictService):
                 seen.add(model.id)
 
                 raw_status = getattr(result, "status", "UNKNOWN")
-                runner_status = str(raw_status.value) if hasattr(raw_status, "value") else str(raw_status)
+                runner_status = (
+                    str(raw_status.value)
+                    if hasattr(raw_status, "value")
+                    else str(raw_status)
+                )
 
                 output = getattr(result, "result", {})
                 output = output if isinstance(output, dict) else {"result": output}
@@ -148,30 +166,54 @@ class RealtimePredictService(PredictService):
                 validation_error = self.validate_output(output)
                 if validation_error:
                     status = PredictionStatus.FAILED
-                    output = {"_validation_error": validation_error, "raw_output": output}
+                    output = {
+                        "_validation_error": validation_error,
+                        "raw_output": output,
+                    }
                 elif runner_status == "SUCCESS":
                     status = PredictionStatus.PENDING
                 else:
-                    status = PredictionStatus(runner_status) if runner_status in PredictionStatus.__members__ else PredictionStatus.FAILED
+                    status = (
+                        PredictionStatus(runner_status)
+                        if runner_status in PredictionStatus.__members__
+                        else PredictionStatus.FAILED
+                    )
 
-                all_predictions.append(self._build_record(
-                    model_id=model.id, input_id=inp.id, scope_key=scope_key,
-                    scope=scope, status=status, output=output,
-                    now=now, resolvable_at=resolvable_at,
-                    exec_time_ms=float(getattr(result, "exec_time_us", 0.0)),
-                    config_id=config_id,
-                ))
+                all_predictions.append(
+                    self._build_record(
+                        model_id=model.id,
+                        input_id=inp.id,
+                        scope_key=scope_key,
+                        scope=scope,
+                        status=status,
+                        output=output,
+                        now=now,
+                        resolvable_at=resolvable_at,
+                        exec_time_ms=float(getattr(result, "exec_time_us", 0.0)),
+                        config_id=config_id,
+                    )
+                )
 
             # absent models
             for model_id in self._known_models:
                 if model_id not in seen:
-                    all_predictions.append(self._build_record(
-                        model_id=model_id, input_id=inp.id, scope_key=scope_key,
-                        scope=scope, status=PredictionStatus.ABSENT, output={},
-                        now=now, resolvable_at=resolvable_at, config_id=config_id,
-                    ))
+                    all_predictions.append(
+                        self._build_record(
+                            model_id=model_id,
+                            input_id=inp.id,
+                            scope_key=scope_key,
+                            scope=scope,
+                            status=PredictionStatus.ABSENT,
+                            output={},
+                            now=now,
+                            resolvable_at=resolvable_at,
+                            config_id=config_id,
+                        )
+                    )
 
-            self._next_run[config_id] = now + timedelta(seconds=int(schedule.prediction_interval_seconds))
+            self._next_run[config_id] = now + timedelta(
+                seconds=int(schedule.prediction_interval_seconds)
+            )
 
         return all_predictions
 
@@ -182,6 +224,7 @@ class RealtimePredictService(PredictService):
         timeout = float(self.checkpoint_interval_seconds)
         try:
             from coordinator_node.db.pg_notify import wait_for_notify
+
             await self._race_stop(wait_for_notify("new_feed_data", timeout=timeout))
         except Exception:
             await self._race_stop(asyncio.sleep(timeout))
@@ -190,7 +233,9 @@ class RealtimePredictService(PredictService):
         """Run coro until it completes or stop_event fires."""
         task = asyncio.create_task(coro)
         stop = asyncio.create_task(self.stop_event.wait())
-        done, pending = await asyncio.wait({task, stop}, return_when=asyncio.FIRST_COMPLETED)
+        done, pending = await asyncio.wait(
+            {task, stop}, return_when=asyncio.FIRST_COMPLETED
+        )
         for p in pending:
             p.cancel()
             try:

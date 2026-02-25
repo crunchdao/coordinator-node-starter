@@ -1,17 +1,18 @@
 """Alembic environment configuration — uses SQLModel metadata + app DB URL."""
+
 from __future__ import annotations
 
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
+from sqlmodel import SQLModel
 
+from alembic import context
 from coordinator_node.db.session import database_url
 
 # Import all models so SQLModel.metadata knows about every table.
 # The tables/__init__.py re-exports them all.
 from coordinator_node.db.tables import *  # noqa: F401,F403
-from sqlmodel import SQLModel
 
 config = context.config
 

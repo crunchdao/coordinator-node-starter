@@ -5,7 +5,12 @@ import logging
 
 from coordinator_node.config.runtime import RuntimeSettings
 from coordinator_node.config_loader import load_config
-from coordinator_node.db import DBInputRepository, DBModelRepository, DBPredictionRepository, create_session
+from coordinator_node.db import (
+    DBInputRepository,
+    DBModelRepository,
+    DBPredictionRepository,
+    create_session,
+)
 from coordinator_node.services.feed_reader import FeedReader
 from coordinator_node.services.realtime_predict import RealtimePredictService
 

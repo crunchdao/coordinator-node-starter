@@ -7,13 +7,13 @@ Predictions carry `inference_output` (what the model predicted).
 Scores carry `result` (the per-prediction scoring output, including ground truth info).
 Context carries cross-model data for correlation/contribution metrics.
 """
+
 from __future__ import annotations
 
 import math
 from typing import Any
 
 from coordinator_node.metrics.context import MetricsContext
-
 
 # ── Helpers ──
 
@@ -288,7 +288,7 @@ def compute_sortino_ratio(
         strategy_returns.append(sign * actual_returns[i])
 
     mean_ret = sum(strategy_returns) / n
-    downside_sq = [r ** 2 for r in strategy_returns if r < 0]
+    downside_sq = [r**2 for r in strategy_returns if r < 0]
 
     if not downside_sq:
         # No downside — cap at ±10.0 to keep values JSON-safe and displayable

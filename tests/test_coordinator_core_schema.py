@@ -23,7 +23,9 @@ class TestCoordinatorCoreSchema(unittest.TestCase):
         self.assertEqual(SnapshotRow.__tablename__, "snapshots")
         self.assertEqual(CheckpointRow.__tablename__, "checkpoints")
         self.assertEqual(LeaderboardRow.__tablename__, "leaderboards")
-        self.assertEqual(PredictionConfigRow.__tablename__, "scheduled_prediction_configs")
+        self.assertEqual(
+            PredictionConfigRow.__tablename__, "scheduled_prediction_configs"
+        )
         self.assertEqual(FeedRecordRow.__tablename__, "feed_records")
         self.assertEqual(FeedIngestionStateRow.__tablename__, "feed_ingestion_state")
 
@@ -50,11 +52,19 @@ class TestCoordinatorCoreSchema(unittest.TestCase):
 
     def test_prediction_protocol_columns_exist(self):
         required_prediction_fields = {
-            "id", "input_id", "model_id", "prediction_config_id",
-            "scope_key", "scope_jsonb", "status",
-            "performed_at", "resolvable_at",
+            "id",
+            "input_id",
+            "model_id",
+            "prediction_config_id",
+            "scope_key",
+            "scope_jsonb",
+            "status",
+            "performed_at",
+            "resolvable_at",
         }
-        self.assertTrue(required_prediction_fields.issubset(PredictionRow.model_fields.keys()))
+        self.assertTrue(
+            required_prediction_fields.issubset(PredictionRow.model_fields.keys())
+        )
 
     def test_score_columns_exist(self):
         required = {"id", "prediction_id", "result_jsonb", "success", "scored_at"}

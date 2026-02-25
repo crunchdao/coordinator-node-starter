@@ -1,5 +1,7 @@
 """Merkle tree tamper evidence for snapshots and checkpoints."""
+
 from coordinator_node.merkle.hasher import canonical_snapshot_hash, sha256_concat
+from coordinator_node.merkle.service import MerkleService
 from coordinator_node.merkle.tree import (
     MerkleNode,
     MerkleProof,
@@ -9,7 +11,6 @@ from coordinator_node.merkle.tree import (
     get_root,
     verify_proof,
 )
-from coordinator_node.merkle.service import MerkleService
 
 __all__ = [
     "MerkleNode",

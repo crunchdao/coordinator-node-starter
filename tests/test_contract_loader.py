@@ -1,4 +1,5 @@
 """Tests for config_loader — resolve operator's CrunchConfig."""
+
 from __future__ import annotations
 
 import os
@@ -6,7 +7,7 @@ import sys
 import types
 import unittest
 
-from coordinator_node.config_loader import load_config, reset_cache, _try_load
+from coordinator_node.config_loader import _try_load, load_config, reset_cache
 
 
 class TestTryLoad(unittest.TestCase):
@@ -66,6 +67,7 @@ class TestLoadConfig(unittest.TestCase):
     def test_falls_back_to_engine_default(self):
         config = load_config()
         from coordinator_node.crunch_config import CrunchConfig
+
         self.assertIsInstance(config, CrunchConfig)
 
     def test_explicit_env_var(self):
@@ -120,12 +122,15 @@ class TestPredictionScopeValidation(unittest.TestCase):
 
     def test_horizon_zero_accepted(self):
         from coordinator_node.crunch_config import PredictionScope
+
         scope = PredictionScope(horizon_seconds=0)
         self.assertEqual(scope.horizon_seconds, 0)
 
     def test_horizon_negative_rejected(self):
-        from coordinator_node.crunch_config import PredictionScope
         from pydantic import ValidationError
+
+        from coordinator_node.crunch_config import PredictionScope
+
         with self.assertRaises(ValidationError):
             PredictionScope(horizon_seconds=-1)
 
@@ -135,19 +140,24 @@ class TestAggregationWindowSchema(unittest.TestCase):
 
     def test_hours_only(self):
         from coordinator_node.crunch_config import AggregationWindow
+
         w = AggregationWindow(hours=24)
         self.assertEqual(w.hours, 24)
 
     def test_rejects_name_and_seconds(self):
         """Scaffold bug #2: AggregationWindow(name='pnl_24h', seconds=86400)."""
-        from coordinator_node.crunch_config import AggregationWindow
         from pydantic import ValidationError
+
+        from coordinator_node.crunch_config import AggregationWindow
+
         with self.assertRaises(ValidationError):
             AggregationWindow(name="pnl_24h", seconds=86400)
 
     def test_rejects_extra_fields_even_with_hours(self):
-        from coordinator_node.crunch_config import AggregationWindow
         from pydantic import ValidationError
+
+        from coordinator_node.crunch_config import AggregationWindow
+
         with self.assertRaises(ValidationError):
             AggregationWindow(hours=24, name="pnl_24h", seconds=86400)
 
@@ -157,19 +167,24 @@ class TestAggregationSchema(unittest.TestCase):
 
     def test_windows_dict_accepted(self):
         from coordinator_node.crunch_config import Aggregation, AggregationWindow
+
         agg = Aggregation(windows={"w1": AggregationWindow(hours=12)})
         self.assertIn("w1", agg.windows)
 
     def test_rejects_ranking_order(self):
         """Scaffold bug #4: ranking_order='desc' instead of ranking_direction."""
-        from coordinator_node.crunch_config import Aggregation
         from pydantic import ValidationError
+
+        from coordinator_node.crunch_config import Aggregation
+
         with self.assertRaises(ValidationError):
             Aggregation(ranking_order="desc")
 
     def test_rejects_extra_fields(self):
-        from coordinator_node.crunch_config import Aggregation
         from pydantic import ValidationError
+
+        from coordinator_node.crunch_config import Aggregation
+
         with self.assertRaises(ValidationError):
             Aggregation(bogus="value")
 
@@ -190,7 +205,9 @@ class TestTryLoadValidationError(unittest.TestCase):
         sys.modules["_test_bad_config"] = mod
 
         try:
-            with self.assertLogs("coordinator_node.config_loader", level="WARNING") as cm:
+            with self.assertLogs(
+                "coordinator_node.config_loader", level="WARNING"
+            ) as cm:
                 config, found = _try_load("_test_bad_config:BadConfig")
             self.assertIsNone(config)
             self.assertTrue(found)
@@ -245,6 +262,7 @@ class TestResolveConfigFallbackMessage(unittest.TestCase):
 
         # Should still get a working config (engine default)
         from coordinator_node.crunch_config import CrunchConfig
+
         self.assertIsInstance(config, CrunchConfig)
 
         # The WARNING must mention the failed path, not "no override found"
@@ -265,23 +283,27 @@ class TestBackwardCompat(unittest.TestCase):
     def test_import_from_contracts(self):
         from coordinator_node.contracts import CrunchContract
         from coordinator_node.crunch_config import CrunchConfig
+
         # CrunchContract now resolves via config_loader → returns an instance
         self.assertIsInstance(CrunchContract, CrunchConfig)
 
     def test_crunch_contract_returns_same_cached_instance(self):
         from coordinator_node import contracts
+
         a = contracts.CrunchContract
         b = contracts.CrunchContract
         self.assertIs(a, b)
 
     def test_crunch_config_class_still_importable(self):
         from coordinator_node.contracts import CrunchConfig
+
         # The raw class must still be importable for subclassing
         self.assertTrue(isinstance(CrunchConfig, type))
 
     def test_import_load_contract(self):
-        from coordinator_node.contract_loader import load_contract
         from coordinator_node.config_loader import load_config
+        from coordinator_node.contract_loader import load_contract
+
         # Both should be the same function
         self.assertIs(load_contract, load_config)
 

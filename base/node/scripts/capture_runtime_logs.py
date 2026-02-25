@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 SERVICES = (
@@ -42,7 +42,9 @@ def _parse_line(line: str) -> dict[str, str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Capture runtime service logs to JSONL")
+    parser = argparse.ArgumentParser(
+        description="Capture runtime service logs to JSONL"
+    )
     parser.add_argument("--output", default="runtime-services.jsonl")
     parser.add_argument("--tail", type=int, default=2000)
     args = parser.parse_args()
@@ -58,7 +60,7 @@ def main() -> int:
             continue
         parsed = _parse_line(row)
         payload = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "service": parsed["service"],
             "message": parsed["message"],
         }

@@ -1,9 +1,13 @@
 """Tier 3 ensemble-related metrics — computed when ensembling is enabled."""
+
 from __future__ import annotations
 
 from typing import Any
 
-from coordinator_node.metrics.builtins import _extract_pred_values, _spearman_correlation
+from coordinator_node.metrics.builtins import (
+    _extract_pred_values,
+    _spearman_correlation,
+)
 from coordinator_node.metrics.context import MetricsContext
 
 
@@ -57,7 +61,8 @@ def compute_contribution(
 
     # Build leave-one-out ensemble: subtract this model's contribution
     other_models = {
-        m: p for m, p in context.all_model_predictions.items()
+        m: p
+        for m, p in context.all_model_predictions.items()
         if m != context.model_id and not m.startswith("__ensemble_")
     }
     if not other_models:
@@ -75,6 +80,7 @@ def compute_contribution(
 
     # Extract actual returns for IC comparison
     from coordinator_node.metrics.builtins import _extract_actual_returns
+
     actual_returns = _extract_actual_returns(scores)
 
     if len(actual_returns) < 2:
@@ -102,6 +108,7 @@ def compute_fnc(
         return 0.0
 
     from coordinator_node.metrics.builtins import _extract_actual_returns
+
     actual_returns = _extract_actual_returns(scores)
     n = min(len(my_vals), len(actual_returns))
     if n < 2:
@@ -109,7 +116,8 @@ def compute_fnc(
 
     # Compute mean prediction across all non-ensemble models
     other_models = {
-        m: p for m, p in context.all_model_predictions.items()
+        m: p
+        for m, p in context.all_model_predictions.items()
         if not m.startswith("__ensemble_")
     }
     if len(other_models) <= 1:

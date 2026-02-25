@@ -1,20 +1,24 @@
 """Tests for checkpoint worker, emission checkpoint building, and report endpoints."""
+
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import UTC, datetime, timedelta
 
 from coordinator_node.crunch_config import (
-    CrunchConfig, FRAC_64_MULTIPLIER, default_build_emission, pct_to_frac64,
+    FRAC_64_MULTIPLIER,
+    CrunchConfig,
+    default_build_emission,
+    pct_to_frac64,
 )
 from coordinator_node.entities.prediction import (
-    CheckpointRecord, CheckpointStatus, SnapshotRecord,
+    CheckpointRecord,
+    CheckpointStatus,
+    SnapshotRecord,
 )
 from coordinator_node.workers.checkpoint_worker import CheckpointService
 
-
-now = datetime.now(timezone.utc)
+now = datetime.now(UTC)
 
 
 # ── In-memory repos ──
@@ -115,7 +119,9 @@ class TestBuildEmission(unittest.TestCase):
 
         self.assertEqual(emission["crunch"], "crunch123")
         self.assertEqual(len(emission["cruncher_rewards"]), 1)
-        self.assertEqual(emission["cruncher_rewards"][0]["reward_pct"], FRAC_64_MULTIPLIER)
+        self.assertEqual(
+            emission["cruncher_rewards"][0]["reward_pct"], FRAC_64_MULTIPLIER
+        )
 
     def test_two_models_sum_to_100pct(self):
         entries = [{"model_id": "m1", "rank": 1}, {"model_id": "m2", "rank": 2}]
@@ -159,16 +165,23 @@ class TestBuildEmission(unittest.TestCase):
     def test_compute_and_data_providers(self):
         entries = [{"model_id": "m1", "rank": 1}]
         emission = default_build_emission(
-            entries, crunch_pubkey="crunch123",
+            entries,
+            crunch_pubkey="crunch123",
             compute_provider="compute_wallet",
             data_provider="data_wallet",
         )
         self.assertEqual(len(emission["compute_provider_rewards"]), 1)
-        self.assertEqual(emission["compute_provider_rewards"][0]["provider"], "compute_wallet")
-        self.assertEqual(emission["compute_provider_rewards"][0]["reward_pct"], FRAC_64_MULTIPLIER)
+        self.assertEqual(
+            emission["compute_provider_rewards"][0]["provider"], "compute_wallet"
+        )
+        self.assertEqual(
+            emission["compute_provider_rewards"][0]["reward_pct"], FRAC_64_MULTIPLIER
+        )
 
         self.assertEqual(len(emission["data_provider_rewards"]), 1)
-        self.assertEqual(emission["data_provider_rewards"][0]["provider"], "data_wallet")
+        self.assertEqual(
+            emission["data_provider_rewards"][0]["provider"], "data_wallet"
+        )
 
     def test_no_providers_when_not_set(self):
         entries = [{"model_id": "m1", "rank": 1}]
@@ -232,8 +245,10 @@ class TestCheckpointService(unittest.TestCase):
 
     def test_period_starts_from_last_checkpoint(self):
         last = CheckpointRecord(
-            id="CKP_old", period_start=now - timedelta(days=14),
-            period_end=now - timedelta(days=7), status=CheckpointStatus.PAID,
+            id="CKP_old",
+            period_start=now - timedelta(days=14),
+            period_end=now - timedelta(days=7),
+            status=CheckpointStatus.PAID,
         )
         snap_repo = MemSnapshotRepository([_make_snapshot("m1", 0.9)])
         ckpt_repo = MemCheckpointRepository([last])
@@ -271,12 +286,16 @@ class TestCheckpointEndpoints(unittest.TestCase):
             period_start=now - timedelta(days=7),
             period_end=now,
             status=status,
-            entries=[{
-                "crunch": "crunch_abc",
-                "cruncher_rewards": [{"cruncher_index": 0, "reward_pct": FRAC_64_MULTIPLIER}],
-                "compute_provider_rewards": [],
-                "data_provider_rewards": [],
-            }],
+            entries=[
+                {
+                    "crunch": "crunch_abc",
+                    "cruncher_rewards": [
+                        {"cruncher_index": 0, "reward_pct": FRAC_64_MULTIPLIER}
+                    ],
+                    "compute_provider_rewards": [],
+                    "data_provider_rewards": [],
+                }
+            ],
             created_at=now,
         )
 
@@ -312,25 +331,33 @@ class TestCheckpointEndpoints(unittest.TestCase):
         self.assertEqual(result["tx_hash"], "0xabc")
 
     def test_confirm_rejects_non_pending(self):
-        from coordinator_node.workers.report_worker import confirm_checkpoint
         from fastapi import HTTPException
 
-        repo = MemCheckpointRepository([self._make_checkpoint(status=CheckpointStatus.SUBMITTED)])
+        from coordinator_node.workers.report_worker import confirm_checkpoint
+
+        repo = MemCheckpointRepository(
+            [self._make_checkpoint(status=CheckpointStatus.SUBMITTED)]
+        )
         with self.assertRaises(HTTPException):
             confirm_checkpoint("CKP_001", {"tx_hash": "0xabc"}, repo)
 
     def test_status_transition_submitted_to_claimable(self):
         from coordinator_node.workers.report_worker import update_checkpoint_status
 
-        repo = MemCheckpointRepository([self._make_checkpoint(status=CheckpointStatus.SUBMITTED)])
+        repo = MemCheckpointRepository(
+            [self._make_checkpoint(status=CheckpointStatus.SUBMITTED)]
+        )
         result = update_checkpoint_status("CKP_001", {"status": "CLAIMABLE"}, repo)
         self.assertEqual(result["status"], CheckpointStatus.CLAIMABLE)
 
     def test_invalid_status_transition_rejected(self):
-        from coordinator_node.workers.report_worker import update_checkpoint_status
         from fastapi import HTTPException
 
-        repo = MemCheckpointRepository([self._make_checkpoint(status=CheckpointStatus.PENDING)])
+        from coordinator_node.workers.report_worker import update_checkpoint_status
+
+        repo = MemCheckpointRepository(
+            [self._make_checkpoint(status=CheckpointStatus.PENDING)]
+        )
         with self.assertRaises(HTTPException):
             update_checkpoint_status("CKP_001", {"status": "PAID"}, repo)
 
@@ -342,21 +369,28 @@ class TestEmissionEndpoints(unittest.TestCase):
             period_start=now - timedelta(days=7),
             period_end=now,
             status=CheckpointStatus.PENDING,
-            entries=[{
-                "crunch": "crunch_abc",
-                "cruncher_rewards": [
-                    {"cruncher_index": 0, "reward_pct": 600_000_000},
-                    {"cruncher_index": 1, "reward_pct": 400_000_000},
-                ],
-                "compute_provider_rewards": [
-                    {"provider": "compute_wallet", "reward_pct": FRAC_64_MULTIPLIER},
-                ],
-                "data_provider_rewards": [],
-            }],
-            meta={"ranking": [
-                {"model_id": "m1", "rank": 1},
-                {"model_id": "m2", "rank": 2},
-            ]},
+            entries=[
+                {
+                    "crunch": "crunch_abc",
+                    "cruncher_rewards": [
+                        {"cruncher_index": 0, "reward_pct": 600_000_000},
+                        {"cruncher_index": 1, "reward_pct": 400_000_000},
+                    ],
+                    "compute_provider_rewards": [
+                        {
+                            "provider": "compute_wallet",
+                            "reward_pct": FRAC_64_MULTIPLIER,
+                        },
+                    ],
+                    "data_provider_rewards": [],
+                }
+            ],
+            meta={
+                "ranking": [
+                    {"model_id": "m1", "rank": 1},
+                    {"model_id": "m2", "rank": 2},
+                ]
+            },
             created_at=now,
         )
 
@@ -372,7 +406,9 @@ class TestEmissionEndpoints(unittest.TestCase):
         self.assertEqual(total, FRAC_64_MULTIPLIER)
 
     def test_get_emission_cli_format(self):
-        from coordinator_node.workers.report_worker import get_checkpoint_emission_cli_format
+        from coordinator_node.workers.report_worker import (
+            get_checkpoint_emission_cli_format,
+        )
 
         repo = MemCheckpointRepository([self._make_checkpoint()])
         result = get_checkpoint_emission_cli_format("CKP_001", repo)
@@ -382,7 +418,9 @@ class TestEmissionEndpoints(unittest.TestCase):
         self.assertAlmostEqual(result["crunchEmission"]["m1"], 60.0, places=3)
         self.assertAlmostEqual(result["crunchEmission"]["m2"], 40.0, places=3)
         # compute provider
-        self.assertAlmostEqual(result["computeProvider"]["compute_wallet"], 100.0, places=3)
+        self.assertAlmostEqual(
+            result["computeProvider"]["compute_wallet"], 100.0, places=3
+        )
         # no data provider
         self.assertEqual(len(result["dataProvider"]), 0)
 
@@ -407,19 +445,23 @@ class TestPrizesEndpoints(unittest.TestCase):
             period_start=now - timedelta(days=7),
             period_end=now,
             status=CheckpointStatus.PENDING,
-            entries=[{
-                "crunch": "crunch_abc",
-                "cruncher_rewards": [
-                    {"cruncher_index": 0, "reward_pct": 600_000_000},
-                    {"cruncher_index": 1, "reward_pct": 400_000_000},
-                ],
-                "compute_provider_rewards": [],
-                "data_provider_rewards": [],
-            }],
-            meta={"ranking": [
-                {"model_id": "m1", "rank": 1},
-                {"model_id": "m2", "rank": 2},
-            ]},
+            entries=[
+                {
+                    "crunch": "crunch_abc",
+                    "cruncher_rewards": [
+                        {"cruncher_index": 0, "reward_pct": 600_000_000},
+                        {"cruncher_index": 1, "reward_pct": 400_000_000},
+                    ],
+                    "compute_provider_rewards": [],
+                    "data_provider_rewards": [],
+                }
+            ],
+            meta={
+                "ranking": [
+                    {"model_id": "m1", "rank": 1},
+                    {"model_id": "m2", "rank": 2},
+                ]
+            },
             created_at=now,
         )
 
@@ -450,8 +492,9 @@ class TestPrizesEndpoints(unittest.TestCase):
         self.assertEqual(result[1]["prize"], 0)
 
     def test_get_checkpoint_prizes_not_found(self):
-        from coordinator_node.workers.report_worker import get_checkpoint_prizes
         from fastapi import HTTPException
+
+        from coordinator_node.workers.report_worker import get_checkpoint_prizes
 
         repo = MemCheckpointRepository()
         with self.assertRaises(HTTPException):
@@ -481,8 +524,9 @@ class TestPrizesEndpoints(unittest.TestCase):
         self.assertEqual(result["prizes"][0]["prize"], 600_000)
 
     def test_get_latest_checkpoint_prizes_not_found(self):
-        from coordinator_node.workers.report_worker import get_latest_checkpoint_prizes
         from fastapi import HTTPException
+
+        from coordinator_node.workers.report_worker import get_latest_checkpoint_prizes
 
         repo = MemCheckpointRepository()
         with self.assertRaises(HTTPException):

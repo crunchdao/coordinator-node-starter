@@ -2,8 +2,8 @@ from coordinator_node.schemas.payload_contracts import (
     ReportLeaderboardColumn,
     ReportMetricWidget,
     ReportSchemaEnvelope,
-    ScheduleEnvelope,
     ScheduledPredictionConfigEnvelope,
+    ScheduleEnvelope,
 )
 
 __all__ = [

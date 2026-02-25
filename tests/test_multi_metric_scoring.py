@@ -1,15 +1,17 @@
 """End-to-end tests for multi-metric scoring in the score pipeline."""
+
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timedelta, timezone
-from typing import Any
-from unittest.mock import MagicMock
+from datetime import UTC, datetime, timedelta
 
 from coordinator_node.crunch_config import CrunchConfig
 from coordinator_node.entities.prediction import (
-    InputRecord, InputStatus, PredictionRecord, PredictionStatus,
-    ScoreRecord, SnapshotRecord,
+    InputRecord,
+    InputStatus,
+    PredictionRecord,
+    PredictionStatus,
+    ScoreRecord,
 )
 from coordinator_node.services.score import ScoreService
 
@@ -18,7 +20,9 @@ class InMemoryRepo:
     """Minimal in-memory repository for testing."""
 
     def __init__(self, items=None):
-        self._items = {getattr(i, "id", str(idx)): i for idx, i in enumerate(items or [])}
+        self._items = {
+            getattr(i, "id", str(idx)): i for idx, i in enumerate(items or [])
+        }
 
     def save(self, item):
         self._items[item.id] = item
@@ -55,10 +59,12 @@ class TestMultiMetricSnapshots(unittest.TestCase):
 
     def _make_service(self, metrics=None):
         contract = CrunchConfig(
-            metrics=metrics if metrics is not None else ["ic", "hit_rate", "max_drawdown"],
+            metrics=metrics
+            if metrics is not None
+            else ["ic", "hit_rate", "max_drawdown"],
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Create scored predictions
         input1 = InputRecord(
@@ -123,7 +129,7 @@ class TestMultiMetricSnapshots(unittest.TestCase):
             metrics=["ic", "hit_rate", "max_drawdown"]
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         service._write_snapshots(scores, now)
 
         snapshots = snapshot_repo.find()
@@ -139,7 +145,7 @@ class TestMultiMetricSnapshots(unittest.TestCase):
     def test_empty_metrics_list_no_enrichment(self):
         service, scores, snapshot_repo = self._make_service(metrics=[])
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         service._write_snapshots(scores, now)
 
         snapshots = snapshot_repo.find()
@@ -155,7 +161,7 @@ class TestMultiMetricSnapshots(unittest.TestCase):
             metrics=["ic", "hit_rate", "turnover"]
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         service._write_snapshots(scores, now)
 
         snapshots = snapshot_repo.find()
@@ -168,7 +174,7 @@ class TestMultiMetricSnapshots(unittest.TestCase):
         """When predictions increase with actual returns, IC should be positive."""
         service, scores, snapshot_repo = self._make_service(metrics=["ic"])
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         service._write_snapshots(scores, now)
 
         snapshots = snapshot_repo.find()
@@ -179,7 +185,7 @@ class TestMultiMetricSnapshots(unittest.TestCase):
         """All predictions and returns positive → 100% hit rate."""
         service, scores, snapshot_repo = self._make_service(metrics=["hit_rate"])
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         service._write_snapshots(scores, now)
 
         snapshots = snapshot_repo.find()
@@ -199,7 +205,7 @@ class TestEnsembleInScorePipeline(unittest.TestCase):
             ensembles=[EnsembleConfig(name="main", strategy=equal_weight)],
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         input1 = InputRecord(
             id="inp1",
@@ -216,25 +222,32 @@ class TestEnsembleInScorePipeline(unittest.TestCase):
         for model_idx, model_id in enumerate(["model_a", "model_b"]):
             for i in range(3):
                 pred_id = f"pred_{model_id}_{i}"
-                predictions.append(PredictionRecord(
-                    id=pred_id,
-                    input_id="inp1",
-                    model_id=model_id,
-                    prediction_config_id="cfg1",
-                    scope_key="BTC-60",
-                    scope={"subject": "BTC"},
-                    status=PredictionStatus.SCORED,
-                    exec_time_ms=10.0,
-                    inference_output={"value": float(i + 1 + model_idx)},
-                    performed_at=now - timedelta(seconds=60 * (3 - i)),
-                ))
-                scores.append(ScoreRecord(
-                    id=f"scr_{model_id}_{i}",
-                    prediction_id=pred_id,
-                    result={"value": 0.1 * (i + 1), "actual_return": 0.01 * (i + 1)},
-                    success=True,
-                    scored_at=now - timedelta(seconds=60 * (3 - i)),
-                ))
+                predictions.append(
+                    PredictionRecord(
+                        id=pred_id,
+                        input_id="inp1",
+                        model_id=model_id,
+                        prediction_config_id="cfg1",
+                        scope_key="BTC-60",
+                        scope={"subject": "BTC"},
+                        status=PredictionStatus.SCORED,
+                        exec_time_ms=10.0,
+                        inference_output={"value": float(i + 1 + model_idx)},
+                        performed_at=now - timedelta(seconds=60 * (3 - i)),
+                    )
+                )
+                scores.append(
+                    ScoreRecord(
+                        id=f"scr_{model_id}_{i}",
+                        prediction_id=pred_id,
+                        result={
+                            "value": 0.1 * (i + 1),
+                            "actual_return": 0.01 * (i + 1),
+                        },
+                        success=True,
+                        scored_at=now - timedelta(seconds=60 * (3 - i)),
+                    )
+                )
 
         input_repo = InMemoryRepo([input1])
         pred_repo = InMemoryRepo(predictions)
@@ -274,20 +287,30 @@ class TestEnsembleInScorePipeline(unittest.TestCase):
     def test_no_ensemble_when_empty_config(self):
         contract = CrunchConfig(metrics=["ic"], ensembles=[])
 
-        now = datetime.now(timezone.utc)
-        predictions = [PredictionRecord(
-            id="pred1", input_id="inp1", model_id="m1",
-            prediction_config_id="cfg1", scope_key="BTC-60",
-            scope={}, status=PredictionStatus.SCORED,
-            exec_time_ms=10.0,
-            inference_output={"value": 1.0},
-            performed_at=now,
-        )]
-        scores = [ScoreRecord(
-            id="scr1", prediction_id="pred1",
-            result={"value": 0.1, "actual_return": 0.01},
-            success=True, scored_at=now,
-        )]
+        now = datetime.now(UTC)
+        predictions = [
+            PredictionRecord(
+                id="pred1",
+                input_id="inp1",
+                model_id="m1",
+                prediction_config_id="cfg1",
+                scope_key="BTC-60",
+                scope={},
+                status=PredictionStatus.SCORED,
+                exec_time_ms=10.0,
+                inference_output={"value": 1.0},
+                performed_at=now,
+            )
+        ]
+        scores = [
+            ScoreRecord(
+                id="scr1",
+                prediction_id="pred1",
+                result={"value": 0.1, "actual_return": 0.01},
+                success=True,
+                scored_at=now,
+            )
+        ]
 
         pred_repo = InMemoryRepo(predictions)
         snapshot_repo = InMemoryRepo()

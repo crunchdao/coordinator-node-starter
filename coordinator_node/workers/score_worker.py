@@ -6,7 +6,6 @@ import logging
 from coordinator_node.config.extensions import ExtensionSettings
 from coordinator_node.config.runtime import RuntimeSettings
 from coordinator_node.config_loader import load_config
-from coordinator_node.extensions.callable_resolver import resolve_callable
 from coordinator_node.db import (
     DBInputRepository,
     DBLeaderboardRepository,
@@ -18,6 +17,7 @@ from coordinator_node.db import (
     DBSnapshotRepository,
     create_session,
 )
+from coordinator_node.extensions.callable_resolver import resolve_callable
 from coordinator_node.services.feed_reader import FeedReader
 from coordinator_node.services.score import ScoreService
 

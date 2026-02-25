@@ -3,6 +3,7 @@
 Competitors don't need to know or change these values.
 Override via environment variables if needed (e.g. local dev).
 """
+
 import os
 
 # Coordinator URL — set by the challenge maintainer when publishing the package.
@@ -17,4 +18,6 @@ COORDINATOR_URL = os.getenv(
 DEFAULT_SOURCE = os.getenv("FEED_SOURCE", os.getenv("BACKTEST_SOURCE", "pyth"))
 DEFAULT_SUBJECT = os.getenv("FEED_SUBJECTS", os.getenv("BACKTEST_SUBJECT", "BTC"))
 DEFAULT_KIND = os.getenv("FEED_KIND", os.getenv("BACKTEST_KIND", "tick"))
-DEFAULT_GRANULARITY = os.getenv("FEED_GRANULARITY", os.getenv("BACKTEST_GRANULARITY", "1s"))
+DEFAULT_GRANULARITY = os.getenv(
+    "FEED_GRANULARITY", os.getenv("BACKTEST_GRANULARITY", "1s")
+)

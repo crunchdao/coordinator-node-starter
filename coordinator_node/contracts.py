@@ -7,8 +7,8 @@ existing `from coordinator_node.contracts import CrunchContract` working.
 operator overrides in ``runtime_definitions`` are auto-discovered.  Direct
 class references (``CrunchConfig``) are still re-exported for subclassing.
 """
+
 from coordinator_node.crunch_config import *  # noqa: F401,F403
-from coordinator_node.crunch_config import CrunchConfig
 
 
 def __getattr__(name: str):
@@ -20,5 +20,6 @@ def __getattr__(name: str):
     """
     if name == "CrunchContract":
         from coordinator_node.config_loader import load_config
+
         return load_config()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

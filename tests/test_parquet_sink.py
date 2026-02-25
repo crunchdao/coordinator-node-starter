@@ -1,10 +1,11 @@
 """Tests for ParquetBackfillSink."""
+
 from __future__ import annotations
 
 import json
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pyarrow.parquet as pq
@@ -28,7 +29,8 @@ def _make_record(
         kind=kind,
         granularity=granularity,
         ts_event=ts_event,
-        values=values or {"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 50.0},
+        values=values
+        or {"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 50.0},
         meta=meta or {},
     )
 
@@ -40,25 +42,45 @@ class TestParquetBackfillSink(unittest.TestCase):
 
     def test_write_creates_partitioned_parquet_file(self):
         records = [
-            _make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc)),
-            _make_record(datetime(2026, 1, 15, 10, 1, 0, tzinfo=timezone.utc)),
+            _make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC)),
+            _make_record(datetime(2026, 1, 15, 10, 1, 0, tzinfo=UTC)),
         ]
         count = self.sink.append_records(records)
         self.assertEqual(count, 2)
 
-        expected_path = Path(self.tmp_dir) / "binance" / "BTC" / "candle" / "1m" / "2026-01-15.parquet"
+        expected_path = (
+            Path(self.tmp_dir)
+            / "binance"
+            / "BTC"
+            / "candle"
+            / "1m"
+            / "2026-01-15.parquet"
+        )
         self.assertTrue(expected_path.exists())
 
     def test_read_back_values(self):
         records = [
             _make_record(
-                datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
-                values={"open": 100.0, "high": 105.0, "low": 98.0, "close": 103.0, "volume": 200.0},
+                datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC),
+                values={
+                    "open": 100.0,
+                    "high": 105.0,
+                    "low": 98.0,
+                    "close": 103.0,
+                    "volume": 200.0,
+                },
             ),
         ]
         self.sink.append_records(records)
 
-        path = Path(self.tmp_dir) / "binance" / "BTC" / "candle" / "1m" / "2026-01-15.parquet"
+        path = (
+            Path(self.tmp_dir)
+            / "binance"
+            / "BTC"
+            / "candle"
+            / "1m"
+            / "2026-01-15.parquet"
+        )
         table = pq.read_table(path)
         self.assertEqual(table.num_rows, 1)
         self.assertAlmostEqual(table.column("open")[0].as_py(), 100.0)
@@ -67,14 +89,43 @@ class TestParquetBackfillSink(unittest.TestCase):
         self.assertAlmostEqual(table.column("volume")[0].as_py(), 200.0)
 
     def test_deduplication_on_overlap(self):
-        ts = datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
-        records1 = [_make_record(ts, values={"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 10.0})]
-        records2 = [_make_record(ts, values={"open": 200.0, "high": 201.0, "low": 199.0, "close": 200.0, "volume": 20.0})]
+        ts = datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC)
+        records1 = [
+            _make_record(
+                ts,
+                values={
+                    "open": 100.0,
+                    "high": 101.0,
+                    "low": 99.0,
+                    "close": 100.0,
+                    "volume": 10.0,
+                },
+            )
+        ]
+        records2 = [
+            _make_record(
+                ts,
+                values={
+                    "open": 200.0,
+                    "high": 201.0,
+                    "low": 199.0,
+                    "close": 200.0,
+                    "volume": 20.0,
+                },
+            )
+        ]
 
         self.sink.append_records(records1)
         self.sink.append_records(records2)
 
-        path = Path(self.tmp_dir) / "binance" / "BTC" / "candle" / "1m" / "2026-01-15.parquet"
+        path = (
+            Path(self.tmp_dir)
+            / "binance"
+            / "BTC"
+            / "candle"
+            / "1m"
+            / "2026-01-15.parquet"
+        )
         table = pq.read_table(path)
         # Should have 1 row (deduplicated), with the second write winning
         self.assertEqual(table.num_rows, 1)
@@ -82,25 +133,46 @@ class TestParquetBackfillSink(unittest.TestCase):
 
     def test_multiple_dates_create_separate_files(self):
         records = [
-            _make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc)),
-            _make_record(datetime(2026, 1, 16, 10, 0, 0, tzinfo=timezone.utc)),
+            _make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC)),
+            _make_record(datetime(2026, 1, 16, 10, 0, 0, tzinfo=UTC)),
         ]
         self.sink.append_records(records)
 
-        day1 = Path(self.tmp_dir) / "binance" / "BTC" / "candle" / "1m" / "2026-01-15.parquet"
-        day2 = Path(self.tmp_dir) / "binance" / "BTC" / "candle" / "1m" / "2026-01-16.parquet"
+        day1 = (
+            Path(self.tmp_dir)
+            / "binance"
+            / "BTC"
+            / "candle"
+            / "1m"
+            / "2026-01-15.parquet"
+        )
+        day2 = (
+            Path(self.tmp_dir)
+            / "binance"
+            / "BTC"
+            / "candle"
+            / "1m"
+            / "2026-01-16.parquet"
+        )
         self.assertTrue(day1.exists())
         self.assertTrue(day2.exists())
 
     def test_records_sorted_by_ts_event(self):
         records = [
-            _make_record(datetime(2026, 1, 15, 10, 5, 0, tzinfo=timezone.utc)),
-            _make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc)),
-            _make_record(datetime(2026, 1, 15, 10, 2, 0, tzinfo=timezone.utc)),
+            _make_record(datetime(2026, 1, 15, 10, 5, 0, tzinfo=UTC)),
+            _make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC)),
+            _make_record(datetime(2026, 1, 15, 10, 2, 0, tzinfo=UTC)),
         ]
         self.sink.append_records(records)
 
-        path = Path(self.tmp_dir) / "binance" / "BTC" / "candle" / "1m" / "2026-01-15.parquet"
+        path = (
+            Path(self.tmp_dir)
+            / "binance"
+            / "BTC"
+            / "candle"
+            / "1m"
+            / "2026-01-15.parquet"
+        )
         table = pq.read_table(path)
         timestamps = [row.as_py() for row in table.column("ts_event")]
         self.assertEqual(timestamps, sorted(timestamps))
@@ -108,13 +180,27 @@ class TestParquetBackfillSink(unittest.TestCase):
     def test_non_standard_values_go_to_meta(self):
         records = [
             _make_record(
-                datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
-                values={"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 10.0, "vwap": 100.3},
+                datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC),
+                values={
+                    "open": 100.0,
+                    "high": 101.0,
+                    "low": 99.0,
+                    "close": 100.0,
+                    "volume": 10.0,
+                    "vwap": 100.3,
+                },
             ),
         ]
         self.sink.append_records(records)
 
-        path = Path(self.tmp_dir) / "binance" / "BTC" / "candle" / "1m" / "2026-01-15.parquet"
+        path = (
+            Path(self.tmp_dir)
+            / "binance"
+            / "BTC"
+            / "candle"
+            / "1m"
+            / "2026-01-15.parquet"
+        )
         table = pq.read_table(path)
         meta_str = table.column("meta")[0].as_py()
         meta = json.loads(meta_str)
@@ -122,8 +208,8 @@ class TestParquetBackfillSink(unittest.TestCase):
 
     def test_list_files_returns_manifest(self):
         records = [
-            _make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc)),
-            _make_record(datetime(2026, 1, 16, 10, 0, 0, tzinfo=timezone.utc)),
+            _make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC)),
+            _make_record(datetime(2026, 1, 16, 10, 0, 0, tzinfo=UTC)),
         ]
         self.sink.append_records(records)
 
@@ -143,7 +229,7 @@ class TestParquetBackfillSink(unittest.TestCase):
         self.assertEqual(manifest, [])
 
     def test_read_file_returns_path(self):
-        records = [_make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc))]
+        records = [_make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC))]
         self.sink.append_records(records)
 
         path = self.sink.read_file("binance/BTC/candle/1m/2026-01-15.parquet")
@@ -155,25 +241,50 @@ class TestParquetBackfillSink(unittest.TestCase):
 
     def test_different_subjects_create_separate_dirs(self):
         records = [
-            _make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc), subject="BTC"),
-            _make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc), subject="ETH"),
+            _make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC), subject="BTC"),
+            _make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC), subject="ETH"),
         ]
         self.sink.append_records(records)
 
-        btc = Path(self.tmp_dir) / "binance" / "BTC" / "candle" / "1m" / "2026-01-15.parquet"
-        eth = Path(self.tmp_dir) / "binance" / "ETH" / "candle" / "1m" / "2026-01-15.parquet"
+        btc = (
+            Path(self.tmp_dir)
+            / "binance"
+            / "BTC"
+            / "candle"
+            / "1m"
+            / "2026-01-15.parquet"
+        )
+        eth = (
+            Path(self.tmp_dir)
+            / "binance"
+            / "ETH"
+            / "candle"
+            / "1m"
+            / "2026-01-15.parquet"
+        )
         self.assertTrue(btc.exists())
         self.assertTrue(eth.exists())
 
     def test_merge_appends_new_records(self):
-        self.sink.append_records([
-            _make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc)),
-        ])
-        self.sink.append_records([
-            _make_record(datetime(2026, 1, 15, 10, 1, 0, tzinfo=timezone.utc)),
-        ])
+        self.sink.append_records(
+            [
+                _make_record(datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC)),
+            ]
+        )
+        self.sink.append_records(
+            [
+                _make_record(datetime(2026, 1, 15, 10, 1, 0, tzinfo=UTC)),
+            ]
+        )
 
-        path = Path(self.tmp_dir) / "binance" / "BTC" / "candle" / "1m" / "2026-01-15.parquet"
+        path = (
+            Path(self.tmp_dir)
+            / "binance"
+            / "BTC"
+            / "candle"
+            / "1m"
+            / "2026-01-15.parquet"
+        )
         table = pq.read_table(path)
         self.assertEqual(table.num_rows, 2)
 

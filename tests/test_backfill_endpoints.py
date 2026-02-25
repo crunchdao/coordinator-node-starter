@@ -1,11 +1,11 @@
 """Tests for backfill and data-serving endpoints on the report worker."""
+
 from __future__ import annotations
 
 import tempfile
 import unittest
-from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -15,9 +15,18 @@ from coordinator_node.services.parquet_sink import ParquetBackfillSink
 
 def _make_record(ts_event: datetime) -> FeedRecord:
     return FeedRecord(
-        source="binance", subject="BTC", kind="candle", granularity="1m",
+        source="binance",
+        subject="BTC",
+        kind="candle",
+        granularity="1m",
         ts_event=ts_event,
-        values={"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 50.0},
+        values={
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.5,
+            "volume": 50.0,
+        },
     )
 
 
@@ -28,6 +37,7 @@ class TestBackfillEndpoints(unittest.TestCase):
         self.tmp_dir = tempfile.mkdtemp()
         # Patch the parquet sink and backfill data dir before importing app
         import coordinator_node.workers.report_worker as rw
+
         self._original_sink = rw._parquet_sink
         self._original_dir = rw.BACKFILL_DATA_DIR
         rw._parquet_sink = ParquetBackfillSink(base_dir=self.tmp_dir)
@@ -36,16 +46,26 @@ class TestBackfillEndpoints(unittest.TestCase):
 
     def tearDown(self):
         import coordinator_node.workers.report_worker as rw
+
         rw._parquet_sink = self._original_sink
         rw.BACKFILL_DATA_DIR = self._original_dir
 
     def test_get_backfill_feeds(self):
         """GET /reports/backfill/feeds returns feed list."""
-        from coordinator_node.workers.report_worker import app, get_feed_record_repository
+        from coordinator_node.workers.report_worker import (
+            app,
+            get_feed_record_repository,
+        )
 
         mock_repo = MagicMock()
         mock_repo.list_indexed_feeds.return_value = [
-            {"source": "binance", "subject": "BTC", "kind": "candle", "granularity": "1m", "record_count": 100}
+            {
+                "source": "binance",
+                "subject": "BTC",
+                "kind": "candle",
+                "granularity": "1m",
+                "record_count": 100,
+            }
         ]
 
         app.dependency_overrides[get_feed_record_repository] = lambda: mock_repo
@@ -60,7 +80,11 @@ class TestBackfillEndpoints(unittest.TestCase):
 
     def test_post_backfill_creates_job(self):
         """POST /reports/backfill creates a job and returns 201."""
-        from coordinator_node.workers.report_worker import app, get_backfill_job_repository, get_feed_record_repository
+        from coordinator_node.workers.report_worker import (
+            app,
+            get_backfill_job_repository,
+            get_feed_record_repository,
+        )
 
         mock_backfill_repo = MagicMock()
         mock_backfill_repo.get_running.return_value = None
@@ -70,30 +94,35 @@ class TestBackfillEndpoints(unittest.TestCase):
         mock_job.subject = "BTC"
         mock_job.kind = "candle"
         mock_job.granularity = "1m"
-        mock_job.start_ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        mock_job.end_ts = datetime(2026, 2, 1, tzinfo=timezone.utc)
-        mock_job.cursor_ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        mock_job.start_ts = datetime(2026, 1, 1, tzinfo=UTC)
+        mock_job.end_ts = datetime(2026, 2, 1, tzinfo=UTC)
+        mock_job.cursor_ts = datetime(2026, 1, 1, tzinfo=UTC)
         mock_job.records_written = 0
         mock_job.pages_fetched = 0
         mock_job.status = "pending"
         mock_job.error = None
-        mock_job.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        mock_job.updated_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        mock_job.created_at = datetime(2026, 1, 1, tzinfo=UTC)
+        mock_job.updated_at = datetime(2026, 1, 1, tzinfo=UTC)
         mock_backfill_repo.create.return_value = mock_job
 
         mock_feed_repo = MagicMock()
 
-        app.dependency_overrides[get_backfill_job_repository] = lambda: mock_backfill_repo
+        app.dependency_overrides[get_backfill_job_repository] = lambda: (
+            mock_backfill_repo
+        )
         app.dependency_overrides[get_feed_record_repository] = lambda: mock_feed_repo
         try:
-            resp = self.client.post("/reports/backfill", json={
-                "source": "binance",
-                "subject": "BTC",
-                "kind": "candle",
-                "granularity": "1m",
-                "start": "2026-01-01T00:00:00Z",
-                "end": "2026-02-01T00:00:00Z",
-            })
+            resp = self.client.post(
+                "/reports/backfill",
+                json={
+                    "source": "binance",
+                    "subject": "BTC",
+                    "kind": "candle",
+                    "granularity": "1m",
+                    "start": "2026-01-01T00:00:00Z",
+                    "end": "2026-02-01T00:00:00Z",
+                },
+            )
             self.assertEqual(resp.status_code, 201)
             data = resp.json()
             self.assertEqual(data["id"], "job-1")
@@ -103,7 +132,11 @@ class TestBackfillEndpoints(unittest.TestCase):
 
     def test_post_backfill_returns_409_when_running(self):
         """POST /reports/backfill returns 409 if a job is already running."""
-        from coordinator_node.workers.report_worker import app, get_backfill_job_repository, get_feed_record_repository
+        from coordinator_node.workers.report_worker import (
+            app,
+            get_backfill_job_repository,
+            get_feed_record_repository,
+        )
 
         mock_backfill_repo = MagicMock()
         running_job = MagicMock()
@@ -113,24 +146,32 @@ class TestBackfillEndpoints(unittest.TestCase):
 
         mock_feed_repo = MagicMock()
 
-        app.dependency_overrides[get_backfill_job_repository] = lambda: mock_backfill_repo
+        app.dependency_overrides[get_backfill_job_repository] = lambda: (
+            mock_backfill_repo
+        )
         app.dependency_overrides[get_feed_record_repository] = lambda: mock_feed_repo
         try:
-            resp = self.client.post("/reports/backfill", json={
-                "source": "binance",
-                "subject": "BTC",
-                "kind": "candle",
-                "granularity": "1m",
-                "start": "2026-01-01T00:00:00Z",
-                "end": "2026-02-01T00:00:00Z",
-            })
+            resp = self.client.post(
+                "/reports/backfill",
+                json={
+                    "source": "binance",
+                    "subject": "BTC",
+                    "kind": "candle",
+                    "granularity": "1m",
+                    "start": "2026-01-01T00:00:00Z",
+                    "end": "2026-02-01T00:00:00Z",
+                },
+            )
             self.assertEqual(resp.status_code, 409)
         finally:
             app.dependency_overrides.clear()
 
     def test_list_backfill_jobs(self):
         """GET /reports/backfill/jobs returns list of jobs."""
-        from coordinator_node.workers.report_worker import app, get_backfill_job_repository
+        from coordinator_node.workers.report_worker import (
+            app,
+            get_backfill_job_repository,
+        )
 
         mock_job = MagicMock()
         mock_job.id = "job-1"
@@ -138,15 +179,15 @@ class TestBackfillEndpoints(unittest.TestCase):
         mock_job.subject = "BTC"
         mock_job.kind = "candle"
         mock_job.granularity = "1m"
-        mock_job.start_ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        mock_job.end_ts = datetime(2026, 2, 1, tzinfo=timezone.utc)
-        mock_job.cursor_ts = datetime(2026, 1, 15, tzinfo=timezone.utc)
+        mock_job.start_ts = datetime(2026, 1, 1, tzinfo=UTC)
+        mock_job.end_ts = datetime(2026, 2, 1, tzinfo=UTC)
+        mock_job.cursor_ts = datetime(2026, 1, 15, tzinfo=UTC)
         mock_job.records_written = 500
         mock_job.pages_fetched = 10
         mock_job.status = "completed"
         mock_job.error = None
-        mock_job.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        mock_job.updated_at = datetime(2026, 1, 15, tzinfo=timezone.utc)
+        mock_job.created_at = datetime(2026, 1, 1, tzinfo=UTC)
+        mock_job.updated_at = datetime(2026, 1, 15, tzinfo=UTC)
 
         mock_repo = MagicMock()
         mock_repo.find.return_value = [mock_job]
@@ -164,7 +205,10 @@ class TestBackfillEndpoints(unittest.TestCase):
 
     def test_get_backfill_job_with_progress(self):
         """GET /reports/backfill/jobs/{id} returns job with progress_pct."""
-        from coordinator_node.workers.report_worker import app, get_backfill_job_repository
+        from coordinator_node.workers.report_worker import (
+            app,
+            get_backfill_job_repository,
+        )
 
         mock_job = MagicMock()
         mock_job.id = "job-1"
@@ -172,15 +216,15 @@ class TestBackfillEndpoints(unittest.TestCase):
         mock_job.subject = "BTC"
         mock_job.kind = "candle"
         mock_job.granularity = "1m"
-        mock_job.start_ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        mock_job.end_ts = datetime(2026, 2, 1, tzinfo=timezone.utc)
-        mock_job.cursor_ts = datetime(2026, 1, 16, tzinfo=timezone.utc)  # ~50%
+        mock_job.start_ts = datetime(2026, 1, 1, tzinfo=UTC)
+        mock_job.end_ts = datetime(2026, 2, 1, tzinfo=UTC)
+        mock_job.cursor_ts = datetime(2026, 1, 16, tzinfo=UTC)  # ~50%
         mock_job.records_written = 250
         mock_job.pages_fetched = 5
         mock_job.status = "running"
         mock_job.error = None
-        mock_job.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        mock_job.updated_at = datetime(2026, 1, 16, tzinfo=timezone.utc)
+        mock_job.created_at = datetime(2026, 1, 1, tzinfo=UTC)
+        mock_job.updated_at = datetime(2026, 1, 16, tzinfo=UTC)
 
         mock_repo = MagicMock()
         mock_repo.get.return_value = mock_job
@@ -198,7 +242,10 @@ class TestBackfillEndpoints(unittest.TestCase):
 
     def test_get_backfill_job_not_found(self):
         """GET /reports/backfill/jobs/{id} returns 404 for unknown job."""
-        from coordinator_node.workers.report_worker import app, get_backfill_job_repository
+        from coordinator_node.workers.report_worker import (
+            app,
+            get_backfill_job_repository,
+        )
 
         mock_repo = MagicMock()
         mock_repo.get.return_value = None
@@ -217,6 +264,7 @@ class TestDataServingEndpoints(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.mkdtemp()
         import coordinator_node.workers.report_worker as rw
+
         self._original_sink = rw._parquet_sink
         rw._parquet_sink = ParquetBackfillSink(base_dir=self.tmp_dir)
         self.sink = rw._parquet_sink
@@ -224,6 +272,7 @@ class TestDataServingEndpoints(unittest.TestCase):
 
     def tearDown(self):
         import coordinator_node.workers.report_worker as rw
+
         rw._parquet_sink = self._original_sink
 
     def test_index_empty(self):
@@ -234,7 +283,9 @@ class TestDataServingEndpoints(unittest.TestCase):
 
     def test_index_with_data(self):
         """GET /data/backfill/index returns manifest after writing data."""
-        self.sink.append_records([_make_record(datetime(2026, 1, 15, 10, 0, tzinfo=timezone.utc))])
+        self.sink.append_records(
+            [_make_record(datetime(2026, 1, 15, 10, 0, tzinfo=UTC))]
+        )
 
         resp = self.client.get("/data/backfill/index")
         self.assertEqual(resp.status_code, 200)
@@ -246,9 +297,13 @@ class TestDataServingEndpoints(unittest.TestCase):
 
     def test_serve_parquet_file(self):
         """GET /data/backfill/{path} serves the parquet file."""
-        self.sink.append_records([_make_record(datetime(2026, 1, 15, 10, 0, tzinfo=timezone.utc))])
+        self.sink.append_records(
+            [_make_record(datetime(2026, 1, 15, 10, 0, tzinfo=UTC))]
+        )
 
-        resp = self.client.get("/data/backfill/binance/BTC/candle/1m/2026-01-15.parquet")
+        resp = self.client.get(
+            "/data/backfill/binance/BTC/candle/1m/2026-01-15.parquet"
+        )
         self.assertEqual(resp.status_code, 200)
         self.assertIn("application/octet-stream", resp.headers.get("content-type", ""))
         # Should be valid parquet content
@@ -256,7 +311,9 @@ class TestDataServingEndpoints(unittest.TestCase):
 
     def test_serve_missing_file_returns_404(self):
         """GET /data/backfill/{path} returns 404 for missing files."""
-        resp = self.client.get("/data/backfill/binance/BTC/candle/1m/2026-99-99.parquet")
+        resp = self.client.get(
+            "/data/backfill/binance/BTC/candle/1m/2026-99-99.parquet"
+        )
         self.assertEqual(resp.status_code, 404)
 
 

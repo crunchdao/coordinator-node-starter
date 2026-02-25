@@ -1,18 +1,18 @@
 """Tests for collective intelligence endpoints: diversity, ensemble history, reward history."""
+
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from coordinator_node.entities.prediction import SnapshotRecord
 from coordinator_node.workers.report_worker import (
+    get_checkpoint_rewards,
     get_diversity_overview,
     get_ensemble_history,
-    get_checkpoint_rewards,
 )
 
-
-NOW = datetime.now(timezone.utc)
+NOW = datetime.now(UTC)
 
 
 class InMemorySnapshotRepository:
@@ -43,16 +43,28 @@ class TestDiversityOverview(unittest.TestCase):
     def test_returns_diversity_for_all_models(self):
         snaps = [
             SnapshotRecord(
-                id="s1", model_id="m1",
-                period_start=NOW - timedelta(hours=1), period_end=NOW,
+                id="s1",
+                model_id="m1",
+                period_start=NOW - timedelta(hours=1),
+                period_end=NOW,
                 prediction_count=10,
-                result_summary={"ic": 0.03, "model_correlation": 0.2, "contribution": 0.05},
+                result_summary={
+                    "ic": 0.03,
+                    "model_correlation": 0.2,
+                    "contribution": 0.05,
+                },
             ),
             SnapshotRecord(
-                id="s2", model_id="m2",
-                period_start=NOW - timedelta(hours=1), period_end=NOW,
+                id="s2",
+                model_id="m2",
+                period_start=NOW - timedelta(hours=1),
+                period_end=NOW,
                 prediction_count=8,
-                result_summary={"ic": 0.05, "model_correlation": 0.8, "contribution": 0.01},
+                result_summary={
+                    "ic": 0.05,
+                    "model_correlation": 0.8,
+                    "contribution": 0.01,
+                },
             ),
         ]
         result = get_diversity_overview(InMemorySnapshotRepository(snaps))
@@ -67,14 +79,18 @@ class TestDiversityOverview(unittest.TestCase):
     def test_excludes_ensemble_models(self):
         snaps = [
             SnapshotRecord(
-                id="s1", model_id="m1",
-                period_start=NOW - timedelta(hours=1), period_end=NOW,
+                id="s1",
+                model_id="m1",
+                period_start=NOW - timedelta(hours=1),
+                period_end=NOW,
                 prediction_count=10,
                 result_summary={"model_correlation": 0.3},
             ),
             SnapshotRecord(
-                id="s2", model_id="__ensemble_main__",
-                period_start=NOW - timedelta(hours=1), period_end=NOW,
+                id="s2",
+                model_id="__ensemble_main__",
+                period_start=NOW - timedelta(hours=1),
+                period_end=NOW,
                 prediction_count=10,
                 result_summary={"model_correlation": 0.0},
             ),
@@ -86,14 +102,18 @@ class TestDiversityOverview(unittest.TestCase):
     def test_uses_latest_snapshot_per_model(self):
         snaps = [
             SnapshotRecord(
-                id="s1", model_id="m1",
-                period_start=NOW - timedelta(hours=2), period_end=NOW - timedelta(hours=1),
+                id="s1",
+                model_id="m1",
+                period_start=NOW - timedelta(hours=2),
+                period_end=NOW - timedelta(hours=1),
                 prediction_count=5,
                 result_summary={"model_correlation": 0.9},
             ),
             SnapshotRecord(
-                id="s2", model_id="m1",
-                period_start=NOW - timedelta(hours=1), period_end=NOW,
+                id="s2",
+                model_id="m1",
+                period_start=NOW - timedelta(hours=1),
+                period_end=NOW,
                 prediction_count=10,
                 result_summary={"model_correlation": 0.3},
             ),
@@ -107,14 +127,18 @@ class TestEnsembleHistory(unittest.TestCase):
     def test_returns_only_ensemble_snapshots(self):
         snaps = [
             SnapshotRecord(
-                id="s1", model_id="__ensemble_main__",
-                period_start=NOW - timedelta(hours=1), period_end=NOW,
+                id="s1",
+                model_id="__ensemble_main__",
+                period_start=NOW - timedelta(hours=1),
+                period_end=NOW,
                 prediction_count=10,
                 result_summary={"ic": 0.04, "ic_sharpe": 1.2},
             ),
             SnapshotRecord(
-                id="s2", model_id="m1",
-                period_start=NOW - timedelta(hours=1), period_end=NOW,
+                id="s2",
+                model_id="m1",
+                period_start=NOW - timedelta(hours=1),
+                period_end=NOW,
                 prediction_count=5,
                 result_summary={"ic": 0.03},
             ),
@@ -127,31 +151,45 @@ class TestEnsembleHistory(unittest.TestCase):
     def test_filters_by_ensemble_name(self):
         snaps = [
             SnapshotRecord(
-                id="s1", model_id="__ensemble_main__",
-                period_start=NOW - timedelta(hours=1), period_end=NOW,
-                prediction_count=10, result_summary={"ic": 0.04},
+                id="s1",
+                model_id="__ensemble_main__",
+                period_start=NOW - timedelta(hours=1),
+                period_end=NOW,
+                prediction_count=10,
+                result_summary={"ic": 0.04},
             ),
             SnapshotRecord(
-                id="s2", model_id="__ensemble_top5__",
-                period_start=NOW - timedelta(hours=1), period_end=NOW,
-                prediction_count=10, result_summary={"ic": 0.05},
+                id="s2",
+                model_id="__ensemble_top5__",
+                period_start=NOW - timedelta(hours=1),
+                period_end=NOW,
+                prediction_count=10,
+                result_summary={"ic": 0.05},
             ),
         ]
-        result = get_ensemble_history(InMemorySnapshotRepository(snaps), ensemble_name="top5")
+        result = get_ensemble_history(
+            InMemorySnapshotRepository(snaps), ensemble_name="top5"
+        )
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["ensemble_name"], "top5")
 
     def test_sorted_by_period_end(self):
         snaps = [
             SnapshotRecord(
-                id="s1", model_id="__ensemble_main__",
-                period_start=NOW - timedelta(hours=2), period_end=NOW - timedelta(hours=1),
-                prediction_count=5, result_summary={"ic": 0.02},
+                id="s1",
+                model_id="__ensemble_main__",
+                period_start=NOW - timedelta(hours=2),
+                period_end=NOW - timedelta(hours=1),
+                prediction_count=5,
+                result_summary={"ic": 0.02},
             ),
             SnapshotRecord(
-                id="s2", model_id="__ensemble_main__",
-                period_start=NOW - timedelta(hours=1), period_end=NOW,
-                prediction_count=10, result_summary={"ic": 0.04},
+                id="s2",
+                model_id="__ensemble_main__",
+                period_start=NOW - timedelta(hours=1),
+                period_end=NOW,
+                prediction_count=10,
+                result_summary={"ic": 0.04},
             ),
         ]
         result = get_ensemble_history(InMemorySnapshotRepository(snaps))
@@ -175,12 +213,18 @@ class TestCheckpointRewards(unittest.TestCase):
             period_start = NOW - timedelta(hours=1)
             period_end = NOW
             status = "PENDING"
-            entries = [{
-                "crunch": "pubkey",
-                "cruncher_rewards": cruncher_rewards,
-                "compute_provider_rewards": [],
-                "data_provider_rewards": [],
-            }] if cruncher_rewards else []
+            entries = (
+                [
+                    {
+                        "crunch": "pubkey",
+                        "cruncher_rewards": cruncher_rewards,
+                        "compute_provider_rewards": [],
+                        "data_provider_rewards": [],
+                    }
+                ]
+                if cruncher_rewards
+                else []
+            )
             meta = {"ranking": ranking}
             created_at = NOW
             tx_hash = None
@@ -191,10 +235,18 @@ class TestCheckpointRewards(unittest.TestCase):
     def test_returns_reward_per_model(self):
         cp = self._make_checkpoint(
             ranking=[
-                {"model_id": "m1", "model_name": "Alpha", "rank": 1,
-                 "result_summary": {"ic": 0.05}},
-                {"model_id": "m2", "model_name": "Beta", "rank": 2,
-                 "result_summary": {"ic": 0.03}},
+                {
+                    "model_id": "m1",
+                    "model_name": "Alpha",
+                    "rank": 1,
+                    "result_summary": {"ic": 0.05},
+                },
+                {
+                    "model_id": "m2",
+                    "model_name": "Beta",
+                    "rank": 2,
+                    "result_summary": {"ic": 0.03},
+                },
             ],
             emission_rewards=[60.0, 40.0],
         )
@@ -223,7 +275,9 @@ class TestCheckpointRewards(unittest.TestCase):
                 {"model_id": "m2", "rank": 2, "result_summary": {}},
             ],
         )
-        result = get_checkpoint_rewards(InMemoryCheckpointRepository([cp]), model_id="m2")
+        result = get_checkpoint_rewards(
+            InMemoryCheckpointRepository([cp]), model_id="m2"
+        )
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["model_id"], "m2")
 
